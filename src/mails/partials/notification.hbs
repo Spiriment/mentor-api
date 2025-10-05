@@ -1,0 +1,48 @@
+{{#if userName}}
+  <div style="font-size: 16px; color: #333; margin-bottom: 16px;">
+    Hi
+    {{userName}},
+  </div>
+{{/if}}
+
+<div
+  style="font-size: 15px; color: #333; line-height: 1.6; margin-bottom: 24px;"
+>
+  {{message}}
+</div>
+
+{{#if actionUrl}}
+  <div style="margin: 32px 0;">
+    <a
+      href="{{actionUrl}}"
+      style="
+       display: inline-block;
+       background: #2563eb;
+       color: #fff;
+       text-decoration: none;
+       padding: 12px 24px;
+       border-radius: 6px;
+       font-weight: 500;
+       font-size: 15px;
+     "
+    >
+      {{#if actionText}}{{actionText}}{{else}}View Details{{/if}}
+    </a>
+  </div>
+{{/if}}
+
+<div
+  style="
+  margin-top: 32px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border-left: 4px solid #2563eb;
+"
+>
+  <div style="font-size: 13px; color: #64748b; line-height: 1.5;">
+    <strong>Note:</strong>
+    This is an automated notification from Aptfuel. If you have any questions or
+    need assistance, please don't hesitate to contact our support team.
+  </div>
+</div>

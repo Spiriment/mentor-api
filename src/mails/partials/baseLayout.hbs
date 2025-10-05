@@ -1,0 +1,58 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{title}}</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { box-sizing: border-box; } body { margin: 0; padding: 0;
+      background-color: #f5f5f5; font-family: 'Poppins', Arial, sans-serif; }
+      .email-container { max-width: 600px; margin: 0 auto; background-color:
+      #ffffff; padding: 30px 25px; border-radius: 10px; box-shadow: 0 2px 10px
+      rgba(0, 0, 0, 0.05); color: #333; } .logo-container { text-align: center;
+      margin-bottom: 20px; } .logo-container img { width: 80px; height: 80px; }
+      .content { font-size: 16px; line-height: 1.6; color: #333; } .footer {
+      margin-top: 30px; text-align: center; } .footer hr { border: none;
+      border-top: 1px solid #e0e0e0; margin: 30px 0; } .support-text {
+      font-size: 14px; color: #666; margin-bottom: 10px; } .support-link {
+      color: #002E66; text-decoration: none; font-weight: 600; } .tagline {
+      font-size: 13px; font-style: italic; color: #999; margin-top: 10px; }
+      .copyright { font-size: 12px; color: #999; margin-top: 8px; } @media
+      (max-width: 520px) { .email-container { padding: 20px 15px; } }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="logo-container">
+        <img
+          src="https://res.cloudinary.com/doxklmomb/image/upload/v1716546614/logo/xjsifrnvxmpgkdjurqfd.ico"
+          alt="AptFuel Logo"
+        />
+      </div>
+
+      <div class="content">
+        {{{body}}}
+      </div>
+
+      <div class="footer">
+        <hr />
+        <p class="support-text">
+          Need assistance? Contact
+          <a href="mailto:support@aptfuel.com" class="support-link">Support</a>,
+          we are here to help.
+        </p>
+        <p class="tagline">
+          AptFuel – Fastest way to get fuel!
+        </p>
+        <p class="copyright">
+          ©
+          {{currentYear}}
+          AptFuel. All rights reserved.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
