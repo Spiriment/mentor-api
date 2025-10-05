@@ -1,0 +1,301 @@
+{{! Dynamic Email Template }}
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{title}}</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #f4f6fa;
+      font-family: Arial, Helvetica, sans-serif;
+    "
+  >
+    <table
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      style="background: #f4f6fa; padding: 12px 0; max-width: 600px"
+    >
+      <tr>
+        <td align="center">
+          <table
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            style="
+              background: #fff;
+              border-radius: 10px;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+              overflow: hidden;
+            "
+          >
+            <tr>
+              <td
+                align="center"
+                style="
+                  padding: 32px 0 16px 0;
+                  background: #fff;
+                  border-bottom: 1px solid #eaeaea;
+                "
+              >
+                <img
+                  src="cid:logo"
+                  alt="Aptfuel"
+                  style="
+                    max-width: 160px;
+                    display: block;
+                    margin: 0 auto 8px auto;
+                  "
+                />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 32px 20px 24px 20px">
+                <div
+                  style="
+                    font-size: 18px;
+                    color: #222;
+                    font-weight: 600;
+                    margin-bottom: 12px;
+                  "
+                >
+                  {{title}}
+                </div>
+                <div style="font-size: 15px; color: #333; line-height: 1.7">
+                  {{#each sections}}
+                    <div style="margin-bottom: 24px;">
+                      {{#if (eq this.type "text")}}
+                        {{#if this.title}}
+                          <div
+                            style="
+                              font-size: 16px;
+                              color: #222;
+                              font-weight: 600;
+                              margin-bottom: 12px;
+                            "
+                          >
+                            {{this.title}}
+                          </div>
+                        {{/if}}
+                        <div
+                          style="
+                            font-size: 15px;
+                            color: #333;
+                            line-height: 1.6;
+                            margin-bottom: 16px;
+                          "
+                        >
+                          {{{this.content}}}
+                        </div>
+
+                      {{else if (eq this.type "list")}}
+                        {{#if this.title}}
+                          <div
+                            style="
+                              font-size: 16px;
+                              color: #222;
+                              font-weight: 600;
+                              margin-bottom: 12px;
+                            "
+                          >
+                            {{this.title}}
+                          </div>
+                        {{/if}}
+                        <ul
+                          style="
+                            margin: 0;
+                            padding-left: 20px;
+                            font-size: 15px;
+                            color: #333;
+                            line-height: 1.6;
+                          "
+                        >
+                          {{#each this.items}}
+                            <li style="margin-bottom: 8px;">{{this}}</li>
+                          {{/each}}
+                        </ul>
+
+                      {{else if (eq this.type "table")}}
+                        {{#if this.title}}
+                          <div
+                            style="
+                              font-size: 16px;
+                              color: #222;
+                              font-weight: 600;
+                              margin-bottom: 12px;
+                            "
+                          >
+                            {{this.title}}
+                          </div>
+                        {{/if}}
+                        <div
+                          style="
+                            margin: 16px 0;
+                            border-radius: 6px;
+                            overflow: hidden;
+                            border: 1px solid #eaeaea;
+                          "
+                        >
+                          <table
+                            style="
+                              width: 100%;
+                              border-collapse: collapse;
+                              background: white;
+                              font-size: 14px;
+                            "
+                          >
+                            {{#if this.headers}}
+                              <thead>
+                                <tr>
+                                  {{#each this.headers}}
+                                    <th
+                                      style="
+                                        background: #f8fafc;
+                                        font-weight: 600;
+                                        padding: 12px;
+                                        text-align: left;
+                                        border-bottom: 2px solid #eaeaea;
+                                        color: #222;
+                                      "
+                                    >
+                                      {{this}}
+                                    </th>
+                                  {{/each}}
+                                </tr>
+                              </thead>
+                            {{/if}}
+                            <tbody>
+                              {{#each this.rows}}
+                                <tr>
+                                  {{#each this}}
+                                    <td
+                                      style="
+                                        padding: 12px;
+                                        text-align: left;
+                                        border-bottom: 1px solid #eaeaea;
+                                        color: #333;
+                                      "
+                                    >
+                                      {{this}}
+                                    </td>
+                                  {{/each}}
+                                </tr>
+                              {{/each}}
+                            </tbody>
+                          </table>
+                        </div>
+
+                      {{else if (eq this.type "alert")}}
+                        <div
+                          style="
+                            margin: 16px 0;
+                            padding: 16px;
+                            background: {{#if (eq this.level "error")}}#fef2f2{{else if (eq this.level "warning")}}#fffbeb{{else if (eq this.level "success")}}#f0fdf4{{else}}#f8fafc{{/if}};
+                            border-radius: 6px;
+                            border-left: 4px solid {{#if (eq this.level "error")}}#dc2626{{else if (eq this.level "warning")}}#d97706{{else if (eq this.level "success")}}#16a34a{{else}}#2563eb{{/if}};
+                          "
+                        >
+                          {{#if this.title}}
+                            <div
+                              style="
+                                font-size: 15px;
+                                font-weight: 600;
+                                color: {{#if (eq this.level "error")}}#dc2626{{else if (eq this.level "warning")}}#d97706{{else if (eq this.level "success")}}#16a34a{{else}}#2563eb{{/if}};
+                                margin-bottom: 8px;
+                              "
+                            >
+                              {{this.title}}
+                            </div>
+                          {{/if}}
+                          <div
+                            style="
+                              font-size: 14px;
+                              color: {{#if (eq this.level "error")}}#991b1b{{else if (eq this.level "warning")}}#92400e{{else if (eq this.level "success")}}#166534{{else}}#1e40af{{/if}};
+                              line-height: 1.5;
+                            "
+                          >
+                            {{{this.content}}}
+                          </div>
+                        </div>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0 20px 32px 20px">
+                <div
+                  style="
+                    margin-top: 24px;
+                    margin-bottom: 8px;
+                    font-size: 15px;
+                    color: #222;
+                    font-weight: 500;
+                  "
+                >
+                  Best Regards,<br /><span
+                    style="font-weight: 700; color: #2563eb"
+                  >Aptfuel Team</span>
+                </div>
+                <div style="margin: 18px 0 10px 0">
+                  <a
+                    href="https://twitter.com/aptfuel"
+                    style="
+                      color: #2563eb;
+                      text-decoration: none;
+                      margin-right: 16px;
+                    "
+                  >Twitter</a>
+                  <a
+                    href="https://linkedin.com/company/aptfuel"
+                    style="
+                      color: #2563eb;
+                      text-decoration: none;
+                      margin-right: 16px;
+                    "
+                  >LinkedIn</a>
+                  <a
+                    href="https://facebook.com/aptfuel"
+                    style="color: #2563eb; text-decoration: none"
+                  >Facebook</a>
+                </div>
+                <div style="font-size: 13px; color: #555; margin-bottom: 8px">
+                  Need help? Contact our support team
+                </div>
+                <div
+                  style="font-size: 13px; color: #2563eb; margin-bottom: 2px"
+                >
+                  <a
+                    href="mailto:support@aptfuel.com"
+                    style="color: #2563eb; text-decoration: none"
+                  >support@aptfuel.com</a>
+                </div>
+                <div style="font-size: 13px; color: #555; margin-bottom: 12px">
+                  Phone: +1 (555) 123-4567
+                </div>
+                <div
+                  style="border-top: 1px solid #eaeaea; margin: 18px 0 12px 0"
+                ></div>
+                <div style="font-size: 12px; color: #999; margin-top: 10px">
+                  ©
+                  {{currentYear}}
+                  Aptfuel. All rights reserved.<br />
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
