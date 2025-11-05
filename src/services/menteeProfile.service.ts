@@ -2,7 +2,7 @@ import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MenteeProfile } from '../database/entities/menteeProfile.entity';
 import { User } from '../database/entities/user.entity';
-import { Logger } from '../common';
+import { Logger, USER_ROLE } from '../common';
 
 export class MenteeProfileService {
   private menteeProfileRepository: Repository<MenteeProfile>;
@@ -29,7 +29,7 @@ export class MenteeProfileService {
       if (!profile) {
         // Verify user exists and has mentee role
         const user = await this.userRepository.findOne({
-          where: { id: userId, role: 'mentee' },
+          where: { id: userId, role: USER_ROLE.MENTEE as any },
         });
 
         if (!user) {
@@ -48,7 +48,7 @@ export class MenteeProfileService {
 
       return profile;
     } catch (error) {
-      this.logger.error('Error getting or creating mentee profile', error);
+      this.logger.error('Error getting or creating mentee profile', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -114,7 +114,7 @@ export class MenteeProfileService {
 
       return updatedProfile;
     } catch (error) {
-      this.logger.error('Error updating mentee onboarding step', error);
+      this.logger.error('Error updating mentee onboarding step', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -134,7 +134,7 @@ export class MenteeProfileService {
 
       return completedProfile;
     } catch (error) {
-      this.logger.error('Error completing mentee onboarding', error);
+      this.logger.error('Error completing mentee onboarding', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -147,7 +147,7 @@ export class MenteeProfileService {
         relations: ['user'],
       });
     } catch (error) {
-      this.logger.error('Error getting mentee profile', error);
+      this.logger.error('Error getting mentee profile', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -195,7 +195,7 @@ export class MenteeProfileService {
         progress: Math.min(progress, 100),
       };
     } catch (error) {
-      this.logger.error('Error getting mentee onboarding progress', error);
+      this.logger.error('Error getting mentee onboarding progress', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }

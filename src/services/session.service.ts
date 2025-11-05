@@ -14,6 +14,7 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
+import { USER_ROLE } from '@/common/constants';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -32,6 +33,8 @@ export interface CreateSessionDTO {
 }
 
 export interface UpdateSessionDTO {
+  startedAt?: Date | string;
+  endedAt?: Date | string;
   scheduledAt?: Date;
   type?: SESSION_TYPE;
   duration?: SESSION_DURATION;
@@ -76,7 +79,7 @@ export class SessionService {
     try {
       // Validate mentor and mentee exist
       const mentor = await this.userRepository.findOne({
-        where: { id: data.mentorId, role: 'mentor' },
+        where: { id: data.mentorId, role: USER_ROLE.MENTOR as any },
       });
 
       if (!mentor) {
@@ -84,7 +87,7 @@ export class SessionService {
       }
 
       const mentee = await this.userRepository.findOne({
-        where: { id: data.menteeId, role: 'mentee' },
+        where: { id: data.menteeId, role: USER_ROLE.MENTEE as any },
       });
 
       if (!mentee) {
@@ -400,7 +403,7 @@ export class SessionService {
   ): Promise<MentorAvailability> {
     try {
       const mentor = await this.userRepository.findOne({
-        where: { id: data.mentorId, role: 'mentor' },
+        where: { id: data.mentorId, role: USER_ROLE.MENTOR as any },
       });
 
       if (!mentor) {

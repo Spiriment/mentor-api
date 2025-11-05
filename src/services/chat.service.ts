@@ -97,7 +97,7 @@ export class ChatService {
       return fullConversation!;
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      logger.error('Error creating conversation:', error);
+      logger.error('Error creating conversation:', error instanceof Error ? error : new Error(String(error)));
       throw error;
     } finally {
       await queryRunner.release();

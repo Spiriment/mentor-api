@@ -33,7 +33,8 @@ export class StudyService {
     session: Omit<StudySession, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<StudySession> {
     const entity = this.sessionRepo.create(session as any);
-    return this.sessionRepo.save(entity);
+    const saved = await this.sessionRepo.save(entity);
+    return (Array.isArray(saved) ? saved[0] : saved) as StudySession;
   }
 
   async listSessions(userId: string): Promise<StudySession[]> {
@@ -47,7 +48,8 @@ export class StudyService {
     reflection: Omit<StudyReflection, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<StudyReflection> {
     const entity = this.reflectionRepo.create(reflection as any);
-    return this.reflectionRepo.save(entity);
+    const saved = await this.reflectionRepo.save(entity);
+    return (Array.isArray(saved) ? saved[0] : saved) as StudyReflection;
   }
 
   async listReflections(userId: string): Promise<StudyReflection[]> {

@@ -6,7 +6,7 @@ import { User } from '@/database/entities';
 
 export class UserRepository extends BaseRepository<User> {
   constructor(dataSource: DataSource, redis?: RedisClient | null) {
-    super(User, dataSource, redis);
+    super(User, dataSource, redis || undefined);
   }
 
   protected getAlias(): string {

@@ -41,7 +41,6 @@ export class CronService {
           }
         },
         {
-          scheduled: true,
           timezone: "UTC",
         }
       );
