@@ -139,6 +139,13 @@ export class EmailService {
         subject: props.subject,
         compiledContent: content,
       });
+    } else {
+      // Send directly if no queue service
+      await this.sendEmail({
+        to: props.to,
+        subject: props.subject,
+        compiledContent: content,
+      });
     }
   }
 

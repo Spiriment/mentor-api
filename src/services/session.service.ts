@@ -364,13 +364,20 @@ export class SessionService {
         }
       }
 
-      // Check if there's already a session at this time
+      // Check if there's already a session at this time (scheduled or confirmed)
       const existingSession = await this.sessionRepository.findOne({
-        where: {
-          mentorId,
-          scheduledAt: requestedTime,
-          status: SESSION_STATUS.SCHEDULED,
-        },
+        where: [
+          {
+            mentorId,
+            scheduledAt: requestedTime,
+            status: SESSION_STATUS.SCHEDULED,
+          },
+          {
+            mentorId,
+            scheduledAt: requestedTime,
+            status: SESSION_STATUS.CONFIRMED,
+          },
+        ],
       });
 
       if (existingSession) {
@@ -385,7 +392,8 @@ export class SessionService {
   }
 
   /**
-   * Create mentor availability
+   * Create or update mentor availability
+   * If availability exists for the same day, it updates it; otherwise creates new
    */
   async createAvailability(
     data: CreateAvailabilityDTO
@@ -399,33 +407,66 @@ export class SessionService {
         throw new AppError('Mentor not found', StatusCodes.NOT_FOUND);
       }
 
-      const availability = this.availabilityRepository.create({
-        mentorId: data.mentorId,
-        dayOfWeek: data.dayOfWeek,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        slotDuration: data.slotDuration || 30,
-        timezone: data.timezone,
-        specificDate: data.specificDate,
-        breaks: data.breaks,
-        notes: data.notes,
-        isRecurring: !data.specificDate,
-        status: AVAILABILITY_STATUS.AVAILABLE,
+      // Check if availability already exists for this day
+      const existingAvailability = await this.availabilityRepository.findOne({
+        where: {
+          mentorId: data.mentorId,
+          dayOfWeek: data.dayOfWeek,
+          isRecurring: !data.specificDate,
+          ...(data.specificDate && { specificDate: data.specificDate }),
+        },
       });
 
-      const savedAvailability = await this.availabilityRepository.save(
-        availability
-      );
+      if (existingAvailability) {
+        // Update existing availability
+        existingAvailability.startTime = data.startTime;
+        existingAvailability.endTime = data.endTime;
+        existingAvailability.slotDuration = data.slotDuration || 30;
+        existingAvailability.timezone = data.timezone;
+        existingAvailability.breaks = data.breaks;
+        existingAvailability.notes = data.notes;
+        existingAvailability.status = AVAILABILITY_STATUS.AVAILABLE;
 
-      logger.info('Mentor availability created successfully', {
-        availabilityId: savedAvailability.id,
-        mentorId: data.mentorId,
-        dayOfWeek: data.dayOfWeek,
-      });
+        const updatedAvailability =
+          await this.availabilityRepository.save(existingAvailability);
 
-      return savedAvailability;
+        logger.info('Mentor availability updated successfully', {
+          availabilityId: updatedAvailability.id,
+          mentorId: data.mentorId,
+          dayOfWeek: data.dayOfWeek,
+        });
+
+        return updatedAvailability;
+      } else {
+        // Create new availability
+        const availability = this.availabilityRepository.create({
+          mentorId: data.mentorId,
+          dayOfWeek: data.dayOfWeek,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          slotDuration: data.slotDuration || 30,
+          timezone: data.timezone,
+          specificDate: data.specificDate,
+          breaks: data.breaks,
+          notes: data.notes,
+          isRecurring: !data.specificDate,
+          status: AVAILABILITY_STATUS.AVAILABLE,
+        });
+
+        const savedAvailability = await this.availabilityRepository.save(
+          availability
+        );
+
+        logger.info('Mentor availability created successfully', {
+          availabilityId: savedAvailability.id,
+          mentorId: data.mentorId,
+          dayOfWeek: data.dayOfWeek,
+        });
+
+        return savedAvailability;
+      }
     } catch (error: any) {
-      logger.error('Error creating mentor availability', error);
+      logger.error('Error creating/updating mentor availability', error);
       throw error;
     }
   }
@@ -500,12 +541,20 @@ export class SessionService {
           0
         );
 
+        // Check for existing sessions (scheduled or confirmed) at this time
         const existingSession = await this.sessionRepository.findOne({
-          where: {
-            mentorId,
-            scheduledAt: sessionDateTime,
-            status: SESSION_STATUS.SCHEDULED,
-          },
+          where: [
+            {
+              mentorId,
+              scheduledAt: sessionDateTime,
+              status: SESSION_STATUS.SCHEDULED,
+            },
+            {
+              mentorId,
+              scheduledAt: sessionDateTime,
+              status: SESSION_STATUS.CONFIRMED,
+            },
+          ],
         });
 
         slots.push({

@@ -129,6 +129,8 @@ const createAuthRoutes = (
   // Protected profile routes (require authentication)
   router.get('/me', authenticateToken, authController.getCurrentUserProfile);
 
+  router.post('/update-streak', authenticateToken, authController.updateStreak);
+
   router.put(
     '/profile',
     authenticateToken,

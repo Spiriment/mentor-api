@@ -1,0 +1,54 @@
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+name: 🚀 Deploy API on push
+
+jobs:
+  web-deploy:
+    name: 🎉 Deploy API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚚 Get latest code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: 📦 Install dependencies
+        run: |
+          rm -rf node_modules
+          npm ci
+
+      - name: 🏗 Build
+        run: |
+          export NODE_OPTIONS=--max-old-space-size=4096
+          npm run build:${{ github.ref == 'refs/heads/main' && 'main' || 'staging' }}
+
+      - name: 📂 Create deployment directory
+        run: |
+          mkdir -p deploy
+          cp -r dist/* deploy/
+          cp package.json deploy/
+          cp package-lock.json deploy/
+
+      - name: 📂 Sync via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ github.ref == 'refs/heads/main' && secrets.FTP_USERNAME || secrets.FTP_STAGING_USERNAME }}
+          password: ${{ github.ref == 'refs/heads/main' && secrets.FTP_PASSWORD || secrets.FTP_STAGING_PASSWORD }}
+          local-dir: ./deploy/
+          log-level: verbose
+
+      - name: 📝 Log deployment
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployment time: $(date)"
