@@ -17,6 +17,8 @@ import {
   verifyOtpSchema,
   updateProfileSchema,
   selectRoleSchema,
+  sendLoginOtpSchema,
+  verifyLoginOtpSchema,
 } from '../validation/auth.validation';
 import { updateProfileSchema as updateUserProfileSchema } from '../validation/profile.validation';
 import { validate } from '@/middleware/validation';
@@ -48,6 +50,18 @@ const createAuthRoutes = (
 
   router.post('/signup', validate(registerSchema), authController.register);
   router.post('/login', validate(loginSchema), authController.login);
+  
+  // New OTP-based login endpoints
+  router.post(
+    '/send-login-otp',
+    validate(sendLoginOtpSchema),
+    authController.sendLoginOtp
+  );
+  router.post(
+    '/verify-login-otp',
+    validate(verifyLoginOtpSchema),
+    authController.verifyLoginOtp
+  );
   router.post(
     '/send-verification-email',
     validate(sendVerificationSchema),

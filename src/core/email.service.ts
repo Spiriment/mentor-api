@@ -307,23 +307,28 @@ export class EmailService {
   public async sendEmailVerificationEmail(
     to: string,
     userName: string,
-    verificationCode: string
+    verificationCode: string,
+    isLogin: boolean = false
   ): Promise<void> {
-    // Temporary: Log OTP instead of sending email for testing
-    this.logger.info(`🔐 OTP for ${to}: ${verificationCode}`);
-    console.log(`\n🔐 OTP for ${to}: ${verificationCode}\n`);
+    // Send email with template
+    await this.sendEmailWithTemplate({
+      to,
+      subject: isLogin
+        ? 'Login Verification Code - Mentor App'
+        : 'Email Verification - Mentor App',
+      partialName: 'email-verification',
+      templateData: {
+        title: isLogin ? 'Login Verification' : 'Email Verification',
+        userName,
+        verificationCode,
+        isLogin,
+      },
+    });
 
-    // TODO: Uncomment when email service is properly configured
-    // await this.sendEmailWithTemplate({
-    //   to,
-    //   subject: "Email Verification - Mentor App",
-    //   partialName: "email-verification",
-    //   templateData: {
-    //     title: "Email Verification",
-    //     userName,
-    //     verificationCode,
-    //   },
-    // });
+    // Also log for development/testing
+    this.logger.info(`🔐 OTP sent to ${to}: ${verificationCode}`, {
+      purpose: isLogin ? 'login' : 'verification',
+    });
   }
 
   public async sendAdminLoginCredentialsEmail(
