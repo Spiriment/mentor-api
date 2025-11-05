@@ -2,10 +2,13 @@ import * as cron from "node-cron";
 import { DataSource } from "typeorm";
 import { logger, redis } from "@/config/int-services";
 import { RedisClient } from "@/common";
+import { SessionReminderService } from "@/services/sessionReminder.service";
+import { EmailService } from "./email.service";
 
 export class CronService {
   private dataSource: DataSource;
   private tasks: Map<string, cron.ScheduledTask> = new Map();
+  private sessionReminderService: SessionReminderService | null = null;
 
   constructor(dataSource: DataSource) {
     this.dataSource = dataSource;
@@ -16,6 +19,42 @@ export class CronService {
    */
   startAllCronJobs(): void {
     logger.info("Starting all cron jobs...");
+
+    // Initialize email service and session reminder service
+    try {
+      // Pass null for queueService - EmailService will send emails directly
+      const emailService = new EmailService(null);
+      this.sessionReminderService = new SessionReminderService(emailService);
+
+      // Schedule session reminder job - runs every minute
+      // This checks for sessions starting in 15 minutes
+      const sessionReminderTask = cron.schedule(
+        "* * * * *", // Every minute
+        async () => {
+          try {
+            await this.sessionReminderService?.send15MinuteReminders();
+          } catch (error) {
+            logger.error(
+              "Error in session reminder cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          scheduled: true,
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("session-15min-reminder", sessionReminderTask);
+      logger.info("Session 15-minute reminder cron job scheduled");
+    } catch (error) {
+      logger.error(
+        "Error initializing cron jobs:",
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+
     logger.info(`Started ${this.tasks.size} cron jobs`);
   }
 
@@ -64,6 +103,8 @@ export class CronService {
     switch (taskName) {
       case "leaderboard-update":
         return "0 * * * * (Every hour)";
+      case "session-15min-reminder":
+        return "* * * * * (Every minute)";
       default:
         return "Unknown";
     }
@@ -134,13 +175,19 @@ export class CronService {
   async forceRunTask(taskName: string): Promise<boolean> {
     try {
       switch (taskName) {
+        case "session-15min-reminder":
+          if (this.sessionReminderService) {
+            await this.sessionReminderService.send15MinuteReminders();
+            logger.info(`Force run completed for task: ${taskName}`);
+            return true;
+          } else {
+            logger.error(`Session reminder service not initialized`);
+            return false;
+          }
         default:
           logger.error(`Unknown task: ${taskName}`);
           return false;
       }
-
-      logger.info(`Force run completed for task: ${taskName}`);
-      return true;
     } catch (error) {
       logger.error(`Error force running task ${taskName}:`, error as Error);
       return false;

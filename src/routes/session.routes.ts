@@ -28,7 +28,7 @@ router.post(
 
 router.get(
   '/',
-  validate(sessionQuerySchema),
+  validate(sessionQuerySchema, 'query'),
   sessionController.getUserSessions
 );
 
@@ -68,7 +68,7 @@ router.get(
 
 router.get(
   '/mentor/:mentorId/availability/:date',
-  validate(dateParamSchema),
+  validate(dateParamSchema, 'params'),
   sessionController.getAvailableSlots
 );
 

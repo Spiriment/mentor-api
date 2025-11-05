@@ -410,6 +410,16 @@ export class AuthController {
       if (user.role === 'mentee' && roleProfile) {
         profileData.spiritualGrowthAreas =
           roleProfile.spiritualGrowthAreas || [];
+        // Add study data to profile
+        profileData.profile = {
+          country: roleProfile.bio || user.country,
+          profileImage: roleProfile.profileImage,
+          currentBook: roleProfile.currentBook,
+          currentChapter: roleProfile.currentChapter,
+          completedChapters: roleProfile.completedChapters,
+          studyDays: roleProfile.studyDays,
+          lastSessionDate: null, // TODO: Add from sessions table
+        };
       }
 
       this.logger.info('Current user profile retrieved', {
@@ -420,6 +430,99 @@ export class AuthController {
       return sendSuccessResponse(res, profileData);
     } catch (error: any) {
       this.logger.error('Error getting current user profile', error);
+      next(error);
+    }
+  };
+
+  // Update streak when user reads for minimum time
+  updateStreak = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user; // Set by auth middleware
+
+      if (!user) {
+        throw new AppError(
+          'User not authenticated',
+          StatusCodes.UNAUTHORIZED,
+          'USER_NOT_AUTHENTICATED'
+        );
+      }
+
+      // Update streak in backend
+      const today = new Date().toISOString().split('T')[0];
+      const lastStreakDate = user.lastStreakDate
+        ? new Date(user.lastStreakDate).toISOString().split('T')[0]
+        : null;
+
+      let currentStreak = user.currentStreak || 0;
+      let longestStreak = user.longestStreak || 0;
+
+      // If user hasn't read today yet, increment streak
+      if (lastStreakDate !== today) {
+        this.logger.info('Updating streak for new day', {
+          userId: user.id,
+          lastStreakDate,
+          today,
+          currentStreak,
+        });
+        // Check if yesterday was consecutive
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0];
+
+        if (lastStreakDate === yesterday) {
+          // Consecutive day - increment streak
+          currentStreak += 1;
+        } else if (lastStreakDate !== today) {
+          // Not consecutive - reset to 1
+          currentStreak = 1;
+        }
+
+        // Update longest streak if needed
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+
+        // Update weekly streak data
+        const weeklyData = user.weeklyStreakData
+          ? typeof user.weeklyStreakData === 'string'
+            ? JSON.parse(user.weeklyStreakData)
+            : user.weeklyStreakData
+          : [0, 0, 0, 0, 0, 0, 0];
+        const todayIndex = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+        weeklyData[todayIndex] = 1; // Mark today as read
+
+        // Update user in database
+        await this.userRepository.update(user.id, {
+          currentStreak,
+          longestStreak,
+          lastStreakDate: today,
+          weeklyStreakData: JSON.stringify(weeklyData),
+        } as any);
+
+        this.logger.info('Streak updated successfully', {
+          userId: user.id,
+          currentStreak,
+          longestStreak,
+        });
+      } else {
+        this.logger.info('Streak already updated for today', {
+          userId: user.id,
+          lastStreakDate,
+          today,
+          currentStreak,
+        });
+      }
+
+      return sendSuccessResponse(res, {
+        message:
+          lastStreakDate !== today
+            ? 'Streak updated successfully'
+            : 'Streak already updated for today',
+        currentStreak,
+        longestStreak,
+      });
+    } catch (error: any) {
+      this.logger.error('Error updating streak', error);
       next(error);
     }
   };

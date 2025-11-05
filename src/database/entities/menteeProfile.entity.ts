@@ -62,4 +62,17 @@ export class MenteeProfile extends BaseEntity {
 
   @Column({ name: 'onboardingStep', default: 'bibleReadingFrequency' })
   onboardingStep!: string;
+
+  // Study progress data
+  @Column({ name: 'currentBook', nullable: true })
+  currentBook?: string;
+
+  @Column({ name: 'currentChapter', default: 1 })
+  currentChapter?: number;
+
+  @Column({ name: 'completedChapters', type: 'json', nullable: true })
+  completedChapters?: number[];
+
+  @Column({ name: 'studyDays', default: 0 })
+  studyDays?: number;
 }
