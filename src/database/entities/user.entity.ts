@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { ACCOUNT_STATUS, GENDER, USER_ROLE } from '@/common/constants';
 
@@ -7,7 +7,6 @@ export class User extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Index()
   @Column({
     unique: true,
     transformer: {
