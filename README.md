@@ -1,17 +1,6 @@
-# 🚀 Mentor App Backend
+# Mentor App Backend API
 
 A comprehensive Node.js backend for a spiritual mentorship platform connecting mentees with mentors for Bible study and spiritual growth.
-
-## 📋 Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [API Endpoints](#api-endpoints)
-3. [Authentication Flow](#authentication-flow)
-4. [Features](#features)
-5. [Database Schema](#database-schema)
-6. [Testing](#testing)
-7. [Configuration](#configuration)
-8. [Deployment](#deployment)
 
 ## 🚀 Quick Start
 
@@ -24,241 +13,71 @@ A comprehensive Node.js backend for a spiritual mentorship platform connecting m
 ### Installation
 
 ```bash
-# Clone and install dependencies
+# Install dependencies
 npm install
 
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your database and email settings
 
-# Start MySQL database
-# Create database: mentor_app
-
-# Run the server
+# Start development server
 npm run start:dev
 ```
 
 The server will start on `http://localhost:6802`
 
-### Health Check
+## 📋 Available Scripts
 
-```bash
-curl http://localhost:6802/health
-```
+- `npm run start:dev` - Start development server with hot reload
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run db-seed` - Seed database (development)
+- `npm run db-seed:prod` - Seed database (production)
+- `npm run migration:run` - Run database migrations
 
 ## 🔗 API Endpoints
 
-### Base URL
+Base URL: `http://localhost:6802/api`
 
-```
-http://localhost:6802/api
-```
+### Authentication
+- `POST /auth/login` - Login with email/password
+- `POST /auth/send-login-otp` - Send OTP for login
+- `POST /auth/verify-login-otp` - Verify OTP and login
+- `POST /auth/email-registration` - Start email registration (send OTP)
+- `POST /auth/verify-otp` - Verify OTP code
+- `POST /auth/select-role` - Select user role (mentee/mentor)
+- `GET /auth/me` - Get current user profile
 
-### 🔐 Authentication
+### Mentors & Discovery
+- `GET /mentors` - Get all approved mentors
+- `GET /mentors/recommended` - Get recommended mentors
+- `GET /mentors/{mentorId}` - Get specific mentor profile
 
-| Endpoint                   | Method | Description                         |
-| -------------------------- | ------ | ----------------------------------- |
-| `/auth/login`              | POST   | Login with email/password           |
-| `/auth/register`           | POST   | Register new user                   |
-| `/auth/email-registration` | POST   | Start email registration (send OTP) |
-| `/auth/verify-otp`         | POST   | Verify OTP code                     |
-| `/auth/update-profile`     | PUT    | Update user profile                 |
-| `/auth/select-role`        | POST   | Select user role (mentee/mentor)    |
-| `/auth/me`                 | GET    | Get current user profile            |
-| `/auth/logout`             | POST   | Logout user                         |
+### Sessions
+- `GET /sessions` - Get user sessions
+- `POST /sessions` - Create new session
+- `GET /sessions/{sessionId}` - Get session details
+- `PUT /sessions/{sessionId}` - Update session
+- `DELETE /sessions/{sessionId}` - Cancel session
 
-### 👥 User Profiles
+### Bible & Study
+- `GET /bible/books` - Get Bible books
+- `GET /bible/books/{book}/chapters/{chapter}` - Get chapter verses
+- `GET /bible/user/progress` - Get user reading progress
+- `GET /study/progress` - Get study progress
 
-| Endpoint                                        | Method | Description             |
-| ----------------------------------------------- | ------ | ----------------------- |
-| `/mentee-profiles/{userId}`                     | GET    | Get mentee profile      |
-| `/mentee-profiles/{userId}/onboarding-progress` | GET    | Get onboarding progress |
-| `/mentor-profiles/{userId}`                     | GET    | Get mentor profile      |
-| `/mentor-profiles/{userId}/approve`             | POST   | Approve mentor (admin)  |
+### Chat & Messaging
+- `GET /chat/conversations` - Get user conversations
+- `POST /chat/conversations` - Create conversation
+- `GET /chat/conversations/{id}/messages` - Get messages
 
-### 🎓 Mentors & Discovery
-
-| Endpoint               | Method | Description                 |
-| ---------------------- | ------ | --------------------------- |
-| `/mentors`             | GET    | Get all approved mentors    |
-| `/mentors/recommended` | GET    | Get recommended mentors     |
-| `/mentors/search`      | GET    | Search mentors              |
-| `/mentors/{mentorId}`  | GET    | Get specific mentor profile |
-
-### 📅 Sessions
-
-| Endpoint                | Method | Description         |
-| ----------------------- | ------ | ------------------- |
-| `/sessions`             | GET    | Get user sessions   |
-| `/sessions`             | POST   | Create new session  |
-| `/sessions/{sessionId}` | GET    | Get session details |
-| `/sessions/{sessionId}` | PUT    | Update session      |
-| `/sessions/{sessionId}` | DELETE | Cancel session      |
-
-### 💬 Chat & Messaging
-
-| Endpoint                                        | Method | Description            |
-| ----------------------------------------------- | ------ | ---------------------- |
-| `/chat/conversations`                           | GET    | Get user conversations |
-| `/chat/conversations`                           | POST   | Create conversation    |
-| `/chat/conversations/{conversationId}`          | GET    | Get conversation       |
-| `/chat/conversations/{conversationId}/messages` | GET    | Get messages           |
-| `/chat/conversations/{conversationId}/messages` | POST   | Send message           |
-
-### 📖 Bible & Study
-
-| Endpoint                                 | Method | Description               |
-| ---------------------------------------- | ------ | ------------------------- |
-| `/bible/books`                           | GET    | Get Bible books           |
-| `/bible/books/{book}/chapters`           | GET    | Get book chapters         |
-| `/bible/books/{book}/chapters/{chapter}` | GET    | Get chapter verses        |
-| `/bible/user/progress`                   | GET    | Get user reading progress |
-| `/bible/user/bookmarks`                  | GET    | Get user bookmarks        |
-| `/bible/user/highlights`                 | GET    | Get user highlights       |
-
-### 📊 Study Progress
-
-| Endpoint             | Method | Description          |
-| -------------------- | ------ | -------------------- |
-| `/study/progress`    | GET    | Get study progress   |
-| `/study/sessions`    | GET    | Get study sessions   |
-| `/study/reflections` | GET    | Get user reflections |
-| `/study/reflections` | POST   | Add reflection       |
-
-### 📁 File Uploads
-
-| Endpoint                     | Method | Description               |
-| ---------------------------- | ------ | ------------------------- |
-| `/upload/profile-image`      | POST   | Upload profile image      |
-| `/upload/video-introduction` | POST   | Upload video introduction |
-
-## 🔐 Authentication Flow
-
-### 1. Email Registration (New Users)
-
-```bash
-# Step 1: Start registration
-curl -X POST http://localhost:6802/api/auth/email-registration \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com"}'
-
-# Step 2: Verify OTP (check server console for code)
-curl -X POST http://localhost:6802/api/auth/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "otp": "123456"}'
-
-# Step 3: Update profile
-curl -X PUT http://localhost:6802/api/auth/update-profile \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "firstName": "John",
-    "lastName": "Doe",
-    "gender": "male",
-    "country": "United States",
-    "birthday": "1990-01-15"
-  }'
-
-# Step 4: Select role
-curl -X POST http://localhost:6802/api/auth/select-role \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "role": "mentee"}'
-```
-
-### 2. Direct Login (Existing Users)
-
-```bash
-curl -X POST http://localhost:6802/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123"}'
-```
-
-### 3. Get Current User
-
-```bash
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:6802/api/auth/me
-```
-
-## ✨ Features
-
-### 🎯 Core Features
-
-- **Dual Authentication**: Email/OTP registration + Email/Password login
-- **Role-Based System**: Separate mentee and mentor experiences
-- **Real-time Chat**: WebSocket-based messaging system
-- **Session Management**: Schedule and manage mentorship sessions
-- **Bible Integration**: Complete Bible API with reading progress
-- **Study Tracking**: Progress tracking, bookmarks, highlights, reflections
-- **File Uploads**: Profile images and video introductions
-- **Streak System**: Bible reading streak tracking
-
-### 🔧 Technical Features
-
-- **TypeScript**: Full type safety
-- **TypeORM**: Database ORM with migrations
-- **JWT Authentication**: Secure token-based auth
-- **Zod Validation**: Request/response validation
-- **WebSocket Support**: Real-time communication
-- **File Upload**: Multer with local storage
-- **Email Service**: OTP verification (console logging for dev)
-- **Error Handling**: Comprehensive error management
-- **Logging**: Structured logging system
-
-## 🗄️ Database Schema
-
-### Core Tables
-
-- `users` - User accounts and basic info
-- `mentee_profiles` - Mentee-specific profile data
-- `mentor_profiles` - Mentor-specific profile data
-- `sessions` - Mentorship sessions
-- `conversations` - Chat conversations
-- `messages` - Chat messages
-- `study_progress` - Bible reading progress
-- `study_sessions` - Study session records
-- `study_reflections` - User reflections
-
-### Key Relationships
-
-- Users → Mentee/Mentor Profiles (1:1)
-- Users → Sessions (1:many)
-- Users → Conversations (many:many)
-- Users → Study Progress (1:many)
-
-## 🧪 Testing
-
-### Test Accounts (Pre-seeded)
-
-**Mentees:**
-
-- `sarah.johnson@example.com` / `password123`
-- `michael.chen@example.com` / `password123`
-- `emily.rodriguez@example.com` / `password123`
-- `david.kim@example.com` / `password123`
-- `jessica.thompson@example.com` / `password123`
-
-**Mentors:** (5 seeded mentors available)
-
-### Quick Tests
-
-```bash
-# Test login
-curl -X POST http://localhost:6802/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "sarah.johnson@example.com", "password": "password123"}'
-
-# Test mentors
-curl http://localhost:6802/api/mentors/recommended
-
-# Test sessions (requires auth token)
-curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:6802/api/sessions?upcoming=true
-```
+For complete API documentation, see [docs/POSTMAN_URLS.md](docs/POSTMAN_URLS.md)
 
 ## ⚙️ Configuration
 
 ### Environment Variables
+
+Create a `.env` file with:
 
 ```env
 # Database
@@ -266,7 +85,7 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_USERNAME=root
 DB_PASSWORD=your_password
-DB_DATABASE=mentor_app
+DB_NAME=mentor_app
 
 # Server
 PORT=6802
@@ -275,124 +94,93 @@ NODE_ENV=development
 # JWT
 JWT_PRIVATE_KEY=your_private_key
 JWT_PUBLIC_KEY=your_public_key
-JWT_EXPIRES_IN=7d
 
-# Email (Development)
-EMAIL_FROM=noreply@mentorapp.com
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASS=your_app_password
-
-# File Upload
-UPLOAD_MAX_SIZE=52428800
-UPLOAD_PATH=./uploads
+# Email (SMTP)
+SMTP_HOST=mail.yourdomain.com
+SMTP_PORT=587
+SMTP_USER=noreply@yourdomain.com
+SMTP_PASSWORD=your_password
+SMTP_FROM=noreply@yourdomain.com
 ```
 
-### Database Setup
+See [docs/EMAIL_CONFIGURATION.md](docs/EMAIL_CONFIGURATION.md) for email setup.
 
-```sql
--- Create database
+## 🗄️ Database
+
+### Setup
+
+```bash
+# Create database
+mysql -u root -p
 CREATE DATABASE mentor_app;
 
--- Tables are created automatically via TypeORM
--- Or run migrations if needed
+# Run migrations
+npm run migration:run
+
+# Seed database (development)
+npm run db-seed
 ```
 
 ## 🚀 Deployment
 
-### Development
+### Production Build
 
 ```bash
-npm run start:dev
+npm run build:main
+npm start
 ```
 
-### Production
+### Database Seeding (Production)
 
 ```bash
-npm run build
-npm run start:prod
+npm run build:main
+npm run db-seed:prod
 ```
 
-### Docker (Optional)
+See [docs/CPANEL_SEEDING_GUIDE.md](docs/CPANEL_SEEDING_GUIDE.md) for cPanel deployment.
 
-```bash
-docker-compose up -d
+## 📚 Documentation
+
+All detailed documentation is available in the `docs/` folder:
+
+- [API Documentation](docs/POSTMAN_URLS.md) - Complete API endpoints
+- [Email Configuration](docs/EMAIL_CONFIGURATION.md) - SMTP setup guide
+- [Login OTP Flow](docs/LOGIN_OTP_FLOW.md) - OTP-based authentication
+- [Session Scheduling](docs/SESSION_SCHEDULING_FLOW.md) - Session management
+- [Bible Integration](docs/BIBLE_INTEGRATION.md) - Bible API integration
+- [Seeder Migration](docs/SEEDER_MIGRATION.md) - Database seeding guide
+
+## 🛠️ Tech Stack
+
+- **Runtime**: Node.js with TypeScript
+- **Framework**: Express.js
+- **Database**: MySQL with TypeORM
+- **Authentication**: JWT tokens
+- **Validation**: Zod
+- **Email**: Nodemailer
+- **File Upload**: Multer
+
+## 📁 Project Structure
+
 ```
-
-## 📱 Frontend Integration
-
-### API Base URL
-
-```javascript
-const API_BASE_URL = 'http://localhost:6802/api';
+src/
+├── config/          # Configuration files
+├── controllers/     # Request handlers
+├── services/        # Business logic
+├── routes/          # API routes
+├── database/        # Entities, migrations, seeders
+├── middleware/      # Custom middleware
+├── validation/      # Request validation schemas
+└── common/          # Shared utilities
 ```
-
-### Authentication Headers
-
-```javascript
-headers: {
-  'Authorization': `Bearer ${token}`,
-  'Content-Type': 'application/json'
-}
-```
-
-### WebSocket Connection
-
-```javascript
-const socket = io('http://localhost:6802', {
-  auth: { token: userToken },
-});
-```
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-1. **Database Connection Failed**
-
-   - Check MySQL is running
-   - Verify credentials in `.env`
-   - Ensure database `mentor_app` exists
-
-2. **Routes Not Found (404)**
-
-   - Ensure server is running on port 6802
-   - Check route registration in `root.route.ts`
-
-3. **Authentication Issues**
-
-   - Verify JWT keys in `.env`
-   - Check token format in Authorization header
-
-4. **File Upload Issues**
-   - Ensure `uploads/` directory exists
-   - Check file size limits
-
-### Logs
-
-- Server logs: `server.log`
-- Error logs: `logs/` directory
-- Console output during development
-
-## 📚 API Documentation
-
-For detailed API documentation with request/response examples, see the individual route files in `src/routes/` and `src/controllers/`.
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+1. Create a feature branch
+2. Make your changes
+3. Test thoroughly
+4. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License.
-
----
-
-**🚀 Ready for frontend integration!**
-
-The backend provides a complete, production-ready API for the mentor app with all necessary endpoints for authentication, user management, chat, sessions, and Bible study features.
+MIT License
