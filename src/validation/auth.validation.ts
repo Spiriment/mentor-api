@@ -20,6 +20,16 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// New OTP-based login schemas
+export const sendLoginOtpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
+export const verifyLoginOtpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  otp: z.string().length(6, 'OTP must be 6 digits'),
+});
+
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
 });
@@ -148,3 +158,7 @@ export type EmailRegistrationDTO = z.infer<typeof emailRegistrationSchema>;
 export type VerifyOtpDTO = z.infer<typeof verifyOtpSchema>;
 export type UpdateProfileDTO = z.infer<typeof updateProfileSchema>;
 export type SelectRoleDTO = z.infer<typeof selectRoleSchema>;
+
+// Login OTP DTOs
+export type SendLoginOtpDTO = z.infer<typeof sendLoginOtpSchema>;
+export type VerifyLoginOtpDTO = z.infer<typeof verifyLoginOtpSchema>;

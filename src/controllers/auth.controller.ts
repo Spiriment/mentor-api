@@ -74,6 +74,31 @@ export class AuthController {
     }
   };
 
+  // New OTP-based login endpoints
+  sendLoginOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.authService.sendLoginOtp(req.body);
+      this.logger.info('Login OTP sent successfully', {
+        email: req.body.email,
+      });
+      return sendSuccessResponse(res, result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  verifyLoginOtp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tokens = await this.authService.verifyLoginOtp(req.body);
+      this.logger.info('Login OTP verified successfully', {
+        email: req.body.email,
+      });
+      return sendSuccessResponse(res, tokens);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   sendVerificationEmail = async (
     req: Request,
     res: Response,

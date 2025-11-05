@@ -33,6 +33,7 @@ import { User, PasswordReset, RefreshToken } from '@/database/entities';
 import { UserRepository } from '@/repository/user.repository';
 import { generateOTP } from '@/common/helpers/auth';
 import { FileUploadService } from '@/core/fileUpload.service';
+import { StatusCodes } from 'http-status-codes';
 
 export class AuthService {
   private logger: Logger;
@@ -165,7 +166,8 @@ export class AuthService {
     await this.emailService.sendEmailVerificationEmail(
       email,
       firstName,
-      User.otpToken!
+      User.otpToken!,
+      false
     );
 
     this.logger.info('Verification email sent', { email });
@@ -586,8 +588,9 @@ export class AuthService {
     // Send OTP email
     await this.emailService.sendEmailVerificationEmail(
       data.email,
-      'User',
-      verificationToken
+      existingUser?.firstName || 'User',
+      verificationToken,
+      false
     );
 
     this.logger.info('OTP sent successfully', { email: data.email });
@@ -732,6 +735,150 @@ export class AuthService {
         isVerified: updatedUser.isEmailVerified,
         isOnboardingComplete: updatedUser.isOnboardingComplete,
       },
+    };
+  };
+
+  /**
+   * Send login OTP
+   * Checks if user exists, then sends OTP for login
+   */
+  sendLoginOtp = async (data: { email: string }): Promise<any> => {
+    // Check if user exists
+    const existingUser = await this.UserRepository.findOne({
+      where: { email: data.email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        isActive: true,
+        isEmailVerified: true,
+        otpToken: true,
+        otpTokenExpiry: true,
+      },
+    });
+
+    if (!existingUser) {
+      throw new AppError(
+        'No account found with this email address. Please sign up first.',
+        StatusCodes.NOT_FOUND
+      );
+    }
+
+    if (!existingUser.isActive) {
+      throw new AppError('Account is inactive', StatusCodes.FORBIDDEN);
+    }
+
+    if (!existingUser.isEmailVerified) {
+      throw new AppError(
+        'Email not verified. Please verify your email first.',
+        StatusCodes.BAD_REQUEST
+      );
+    }
+
+    // Generate OTP
+    const verificationToken = this.generateEmailVerificationToken();
+    const tokenExpiry = addMinutes(new Date(), 10);
+
+    // Save OTP to user
+    await this.UserRepository.update(existingUser.id, {
+      otpToken: verificationToken,
+      otpTokenExpiry: tokenExpiry,
+    });
+
+    // Send OTP email (with isLogin = true)
+    await this.emailService.sendEmailVerificationEmail(
+      data.email,
+      existingUser.firstName || 'User',
+      verificationToken,
+      true // isLogin = true
+    );
+
+    this.logger.info('Login OTP sent successfully', { email: data.email });
+
+    return {
+      success: true,
+      message: 'Verification code sent to your email. Please check your inbox.',
+    };
+  };
+
+  /**
+   * Verify login OTP and return tokens
+   */
+  verifyLoginOtp = async (data: {
+    email: string;
+    otp: string;
+  }): Promise<TokenResponse> => {
+    const User = await this.UserRepository.findOne({
+      where: { email: data.email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isActive: true,
+        isEmailVerified: true,
+        isOnboardingComplete: true,
+        otpToken: true,
+        otpTokenExpiry: true,
+      },
+    });
+
+    if (!User) {
+      throw new AppError('User not found', StatusCodes.NOT_FOUND);
+    }
+
+    if (!User.isActive) {
+      throw new AppError('Account is inactive', StatusCodes.FORBIDDEN);
+    }
+
+    if (!User.isEmailVerified) {
+      throw new AppError('Email not verified', StatusCodes.BAD_REQUEST);
+    }
+
+    // Verify OTP
+    if (!User.otpToken || !User.otpTokenExpiry) {
+      throw new AppError(
+        'No verification code found. Please request a new code.',
+        StatusCodes.BAD_REQUEST
+      );
+    }
+
+    if (User.otpTokenExpiry < new Date()) {
+      throw new AppError(
+        'Verification code has expired. Please request a new code.',
+        StatusCodes.BAD_REQUEST
+      );
+    }
+
+    if (User.otpToken !== data.otp) {
+      throw new AppError('Invalid verification code', StatusCodes.UNAUTHORIZED);
+    }
+
+    // Clear OTP after successful verification
+    await this.UserRepository.update(User.id, {
+      otpToken: null as any,
+      otpTokenExpiry: null as any,
+    });
+
+    this.logger.info('Login OTP verified successfully', { email: data.email });
+
+    // Generate tokens
+    const tokens = this.generateTokens(User);
+
+    return {
+      ...tokens,
+      user: {
+        id: User.id,
+        email: User.email,
+        firstName: User.firstName || '',
+        lastName: User.lastName || '',
+        role: User.role || '',
+        isVerified: User.isEmailVerified || false,
+        isOnboardingComplete: User.isOnboardingComplete || false,
+      },
+      token: tokens.accessToken,
     };
   };
 }

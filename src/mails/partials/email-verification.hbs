@@ -39,9 +39,14 @@
   >
     <p style="margin: 0;">
       Hey
-      {{userName}}, use this OTP verification code below to complete your
-      registration on
-      <strong>AptFuel.</strong>
+      {{userName}}, use this verification code below to complete your
+      {{#if isLogin}}
+        login
+      {{else}}
+        registration
+      {{/if}}
+      on
+      <strong>Mentor App.</strong>
     </p>
   </div>
 
@@ -87,7 +92,12 @@
     >
       <strong>Important:</strong>
       This verification code will expire in 10 minutes. Please enter it in the
-      app to complete your registration.
+      app to complete your
+      {{#if isLogin}}
+        login.
+      {{else}}
+        registration.
+      {{/if}}
     </p>
   </div>
 
@@ -110,7 +120,7 @@
     "
     >
       <strong>Security Tip:</strong>
-      Never share this code with anyone. AptFuel will never ask for this code
+      Never share this code with anyone. Mentor App will never ask for this code
       via phone, email, or text message.
     </p>
   </div>
@@ -146,6 +156,6 @@
     font-family: 'Poppins', Arial, sans-serif;
   "
   >
-    <p style="margin: 0;">Warm regards<br />AptFuel Team</p>
+    <p style="margin: 0;">Warm regards<br />Mentor App Team</p>
   </div>
 </div>
