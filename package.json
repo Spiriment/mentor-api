@@ -16,8 +16,9 @@
     "migration:revert": "cross-env NODE_ENV=development npm run typeorm migration:revert",
     "dev": "npm run start:dev",
     "db-seed": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/seed-runner.ts",
-    "db-seed:prod": "NODE_ENV=production node -r tsconfig-paths/register dist/database/seeders/seed-runner.js",
-    "db-seed:staging": "NODE_ENV=staging node -r tsconfig-paths/register dist/database/seeders/seed-runner.js"
+    "db-seed:prod": "NODE_ENV=production node dist/database/seeders/seed-runner.js",
+    "db-seed:staging": "NODE_ENV=staging node dist/database/seeders/seed-runner.js",
+    "build-and-seed:prod": "npm run build:main && npm run db-seed:prod"
   },
   "dependencies": {
     "@bull-board/api": "^6.10.0",
