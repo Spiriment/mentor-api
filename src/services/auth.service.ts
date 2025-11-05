@@ -331,11 +331,11 @@ export class AuthService {
       user: {
         id: User.id,
         email: User.email,
-        firstName: User.firstName,
-        lastName: User.lastName,
-        role: User.role,
-        isVerified: User.isEmailVerified,
-        isOnboardingComplete: User.isOnboardingComplete,
+        firstName: User.firstName || '',
+        lastName: User.lastName || '',
+        role: User.role || '',
+        isVerified: User.isEmailVerified || false,
+        isOnboardingComplete: User.isOnboardingComplete || false,
       },
       token: tokens.accessToken, // Add token alias for frontend compatibility
     };

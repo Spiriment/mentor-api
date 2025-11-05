@@ -31,6 +31,7 @@ export type {
 
 export { StatusCodes } from "./constants/index";
 export { ErrorMessages } from "./constants/index";
+export * from "./constants/options";
 export { AppDataSource } from "../config/data-source";
 
 // RBAC

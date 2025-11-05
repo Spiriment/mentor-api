@@ -97,6 +97,16 @@ export type TokenResponse = {
   refreshToken: string;
   isEmailVerified?: boolean;
   accountStatus?: string;
+  token?: string; // Alias for accessToken for frontend compatibility
+  user?: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    isVerified: boolean;
+    isOnboardingComplete: boolean;
+  };
 };
 
 export type AsyncRequestHandler = (

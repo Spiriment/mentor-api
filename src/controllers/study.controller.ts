@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { AppDataSource } from '@/config/data-source';
 import { StudyService } from '@/services/study.service';
-import { authenticateToken } from '@/middleware/auth.middleware';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 const studyService = new StudyService(AppDataSource);
 

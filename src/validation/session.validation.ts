@@ -55,6 +55,20 @@ export const updateSessionSchema = z.object({
   menteeNotes: z.string().max(1000, 'Notes too long').optional(),
   sessionNotes: z.string().max(1000, 'Notes too long').optional(),
   status: z.nativeEnum(SESSION_STATUS).optional(),
+  startedAt: z
+    .string()
+    .refine((date) => !isNaN(Date.parse(date)), {
+      message: 'Invalid date format',
+    })
+    .optional()
+    .or(z.date().optional()),
+  endedAt: z
+    .string()
+    .refine((date) => !isNaN(Date.parse(date)), {
+      message: 'Invalid date format',
+    })
+    .optional()
+    .or(z.date().optional()),
 });
 
 // Cancel session validation

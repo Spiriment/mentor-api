@@ -1,7 +1,7 @@
 import { AppDataSource } from '../../config/data-source';
 import { User } from '../entities/user.entity';
 import { MentorProfile } from '../entities/mentorProfile.entity';
-import { GENDER, ACCOUNT_STATUS } from '../entities/user.entity';
+import { GENDER, ACCOUNT_STATUS } from '@/common/constants/options';
 import bcrypt from 'bcryptjs';
 
 const mentors = [

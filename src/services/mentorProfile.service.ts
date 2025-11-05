@@ -2,7 +2,7 @@ import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
-import { Logger } from '../common';
+import { Logger, USER_ROLE } from '../common';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -29,7 +29,7 @@ export class MentorProfileService {
       if (!profile) {
         // Verify user exists and has mentor role
         const user = await this.userRepository.findOne({
-          where: { id: userId, role: 'mentor' },
+          where: { id: userId, role: USER_ROLE.MENTOR as any },
         });
 
         if (!user) {
@@ -48,7 +48,7 @@ export class MentorProfileService {
 
       return profile;
     } catch (error) {
-      this.logger.error('Error getting or creating mentor profile', error);
+      this.logger.error('Error getting or creating mentor profile', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -114,7 +114,7 @@ export class MentorProfileService {
 
       return updatedProfile;
     } catch (error) {
-      this.logger.error('Error updating mentor onboarding step', error);
+      this.logger.error('Error updating mentor onboarding step', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -134,7 +134,7 @@ export class MentorProfileService {
 
       return completedProfile;
     } catch (error) {
-      this.logger.error('Error completing mentor onboarding', error);
+      this.logger.error('Error completing mentor onboarding', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -147,7 +147,7 @@ export class MentorProfileService {
         relations: ['user'],
       });
     } catch (error) {
-      this.logger.error('Error getting mentor profile', error);
+      this.logger.error('Error getting mentor profile', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -195,7 +195,7 @@ export class MentorProfileService {
         progress: Math.min(progress, 100),
       };
     } catch (error) {
-      this.logger.error('Error getting mentor onboarding progress', error);
+      this.logger.error('Error getting mentor onboarding progress', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -225,7 +225,7 @@ export class MentorProfileService {
 
       return approvedProfile;
     } catch (error) {
-      this.logger.error('Error approving mentor', error);
+      this.logger.error('Error approving mentor', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -242,7 +242,7 @@ export class MentorProfileService {
         order: { createdAt: 'DESC' },
       });
     } catch (error) {
-      this.logger.error('Error getting pending mentors', error);
+      this.logger.error('Error getting pending mentors', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }

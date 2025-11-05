@@ -51,7 +51,7 @@ export class UploadController {
         message: 'Profile image uploaded successfully',
       });
     } catch (error) {
-      this.logger.error('Error uploading profile image', error);
+      this.logger.error('Error uploading profile image', error instanceof Error ? error : new Error(String(error)));
       next(error);
     }
   };
@@ -95,7 +95,7 @@ export class UploadController {
         message: 'Video introduction uploaded successfully',
       });
     } catch (error) {
-      this.logger.error('Error uploading video introduction', error);
+      this.logger.error('Error uploading video introduction', error instanceof Error ? error : new Error(String(error)));
       next(error);
     }
   };
@@ -136,7 +136,7 @@ export class UploadController {
         message: 'Files uploaded successfully',
       });
     } catch (error) {
-      this.logger.error('Error uploading files', error);
+      this.logger.error('Error uploading files', error instanceof Error ? error : new Error(String(error)));
       next(error);
     }
   };
@@ -165,7 +165,7 @@ export class UploadController {
 
       res.sendFile(filePath, (err) => {
         if (err) {
-          this.logger.error('Error serving file', { filePath, error: err });
+          this.logger.error('Error serving file', err instanceof Error ? err : new Error(String(err)));
           res.status(404).json({
             success: false,
             error: {
@@ -176,7 +176,7 @@ export class UploadController {
         }
       });
     } catch (error) {
-      this.logger.error('Error serving file', error);
+      this.logger.error('Error serving file', error instanceof Error ? error : new Error(String(error)));
       next(error);
     }
   };

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { BibleUserController } from '@/controllers/bibleUser.controller';
-import { authenticateToken } from '@/middleware/auth.middleware';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 const controller = new BibleUserController();
 const bibleUserRoutes = Router();
