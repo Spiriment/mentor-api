@@ -1,13 +1,11 @@
 import { DataSource } from 'typeorm';
+import { Seeder, SeederFactoryManager } from 'typeorm-extension';
 import { User } from '@/database/entities/user.entity';
-import { SeederFactoryManager } from 'typeorm-extension';
 import { encryptionService } from '@/config/int-services';
 import { faker } from '@faker-js/faker';
 import { ACCOUNT_STATUS, GENDER } from '@/common/constants';
 
-export class UserSeeder {
-  private dataSource: DataSource;
-
+export default class UserSeeder implements Seeder {
   public async run(
     dataSource: DataSource,
     factoryManager: SeederFactoryManager
