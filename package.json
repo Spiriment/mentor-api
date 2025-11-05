@@ -4,9 +4,9 @@
   "description": "api service for aptfuel platform",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && tsc-alias && npm run copy-assets",
-    "build:staging": "NODE_ENV=staging tsc && tsc-alias && npm run copy-assets",
-    "build:main": "NODE_ENV=production tsc && tsc-alias && npm run copy-assets",
+    "build": "npx tsc && npx tsc-alias && npm run copy-assets",
+    "build:staging": "NODE_ENV=staging npx tsc && npx tsc-alias && npm run copy-assets",
+    "build:main": "NODE_ENV=production npx tsc && npx tsc-alias && npm run copy-assets",
     "copy-assets": "cp -r src/mails dist/",
     "start": "node -r tsconfig-paths/register dist/index.js",
     "start:dev": "cross-env NODE_ENV=development ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
