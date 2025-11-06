@@ -10,22 +10,13 @@ const runSeeders = async () => {
     console.log('✅ Data Source has been initialized!');
 
     // Check if we should drop database (only in development)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('⚠️  Development mode: Dropping database...');
-      await AppDataSource.dropDatabase();
-      console.log('✅ Database schema has been dropped.');
 
-      await AppDataSource.synchronize();
-      console.log('✅ Database schema has been synchronized.');
-    } else {
-      console.log(
-        '⚠️  Production/Staging mode: Skipping database drop and sync.'
-      );
-      console.log('⚠️  Make sure migrations are up to date!');
-      console.log(
-        '⚠️  Database structure will NOT be modified - only data will be seeded.'
-      );
-    }
+    console.log('⚠️  Development mode: Dropping database...');
+    await AppDataSource.dropDatabase();
+    console.log('✅ Database schema has been dropped.');
+
+    await AppDataSource.synchronize();
+    console.log('✅ Database schema has been synchronized.');
 
     // Run seeders in order
     console.log('\n📦 Running UserSeeder...');
