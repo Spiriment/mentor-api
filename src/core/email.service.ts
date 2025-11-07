@@ -223,7 +223,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Password Reset - AptFuel',
+      subject: 'Password Reset - Mentor App',
       partialName: 'password-reset',
       templateData: {
         title: 'Password Reset',
