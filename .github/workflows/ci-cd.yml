@@ -43,6 +43,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ github.ref == 'refs/heads/main' && secrets.FTP_USERNAME || secrets.FTP_STAGING_USERNAME }}
           password: ${{ github.ref == 'refs/heads/main' && secrets.FTP_PASSWORD || secrets.FTP_STAGING_PASSWORD }}
+          protocol: ftps
           local-dir: ./deploy/
           log-level: verbose
 
