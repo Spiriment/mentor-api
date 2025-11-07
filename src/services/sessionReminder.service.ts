@@ -113,19 +113,15 @@ export class SessionReminderService {
       `${
         session.description ? `- Description: ${session.description}\n` : ''
       }` +
-      `${
-        session.meetingLink ? `- Meeting Link: ${session.meetingLink}\n` : ''
-      }` +
       `${session.location ? `- Location: ${session.location}\n` : ''}\n` +
-      `Please make sure you're ready for the session!`;
+      `\nPlease open the Mentor App to start your session and connect with ${menteeName} via chat or call.`;
 
     await this.emailService.sendNotificationEmail({
       to: mentor.email,
       subject: `⏰ Session Reminder: Your session starts in 15 minutes`,
       message,
       userName: mentor.firstName || mentor.email,
-      actionUrl: session.meetingLink || undefined,
-      actionText: session.meetingLink ? 'Join Session' : undefined,
+      // No actionUrl - users should open the app instead
     });
 
     logger.info(
@@ -163,19 +159,15 @@ export class SessionReminderService {
       `${
         session.description ? `- Description: ${session.description}\n` : ''
       }` +
-      `${
-        session.meetingLink ? `- Meeting Link: ${session.meetingLink}\n` : ''
-      }` +
       `${session.location ? `- Location: ${session.location}\n` : ''}\n` +
-      `Please make sure you're ready for the session!`;
+      `\nPlease open the Mentor App to start your session and connect with ${mentorName} via chat or call.`;
 
     await this.emailService.sendNotificationEmail({
       to: mentee.email,
       subject: `⏰ Session Reminder: Your session starts in 15 minutes`,
       message,
       userName: mentee.firstName || mentee.email,
-      actionUrl: session.meetingLink || undefined,
-      actionText: session.meetingLink ? 'Join Session' : undefined,
+      // No actionUrl - users should open the app instead
     });
 
     logger.info(

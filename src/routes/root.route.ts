@@ -51,12 +51,37 @@ const getQueueBoard = () => {
 const createRootRoutes = () => {
   const rootRouter = Router();
 
-  rootRouter.get('/health', (req, res) => {
-    res.json({
+  rootRouter.get('/health', async (req, res) => {
+    const healthCheck = {
       status: 'ok',
-      service: process.env.SERVICE_NAME,
-      version: process.env.SERVICE_VERSION,
-    });
+      service: process.env.SERVICE_NAME || 'mentor-app-api',
+      version: process.env.SERVICE_VERSION || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      checks: {
+        database: 'unknown',
+        server: 'ok',
+      },
+    };
+
+    // Check database connection
+    try {
+      if (AppDataSource.isInitialized) {
+        // Try a simple query to verify connection
+        await AppDataSource.query('SELECT 1');
+        healthCheck.checks.database = 'connected';
+      } else {
+        healthCheck.checks.database = 'not_initialized';
+      }
+    } catch (error) {
+      healthCheck.checks.database = 'error';
+      healthCheck.status = 'degraded';
+    }
+
+    // Return appropriate status code
+    const statusCode = healthCheck.status === 'ok' ? 200 : 503;
+    res.status(statusCode).json(healthCheck);
   });
 
   rootRouter.use('/api/auth', (req, res, next) => {
