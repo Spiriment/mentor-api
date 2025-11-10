@@ -1,15 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import { Logger } from '../common';
-import { getFileUrl } from '../middleware/upload.middleware';
+import { getFileUrl, deleteFile } from '../middleware/upload.middleware';
+import { FileUploadService } from '../core/fileUpload.service';
+import path from 'path';
 
 export class UploadController {
   private logger: Logger;
+  private fileUploadService: FileUploadService;
 
   constructor() {
     this.logger = new Logger({
       service: 'upload-controller',
       level: process.env.LOG_LEVEL || 'info',
     });
+    this.fileUploadService = new FileUploadService();
   }
 
   // Upload profile image
@@ -73,14 +77,23 @@ export class UploadController {
         });
       }
 
-      const fileUrl = getFileUrl(req, req.file.filename, 'videoIntroduction');
+      // Upload to Cloudinary
+      const filePath = path.join(req.file.destination, req.file.filename);
+      const uploadResult = await this.fileUploadService.uploadFile(filePath, {
+        folder: 'mentor-app/video-introductions',
+        resource_type: 'video',
+      });
 
-      this.logger.info('Video introduction uploaded successfully', {
+      // Delete local file after successful Cloudinary upload
+      deleteFile(filePath);
+
+      this.logger.info('Video introduction uploaded successfully to Cloudinary', {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
         mimetype: req.file.mimetype,
-        url: fileUrl,
+        cloudinaryUrl: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
       });
 
       res.json({
@@ -90,7 +103,8 @@ export class UploadController {
           originalName: req.file.originalname,
           size: req.file.size,
           mimetype: req.file.mimetype,
-          url: fileUrl,
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
         },
         message: 'Video introduction uploaded successfully',
       });

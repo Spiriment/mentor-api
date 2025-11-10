@@ -16,6 +16,7 @@ export enum SESSION_STATUS {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   NO_SHOW = 'no_show',
+  RESCHEDULED = 'rescheduled',
 }
 
 export enum SESSION_TYPE {
@@ -108,6 +109,12 @@ export class Session {
 
   @Column({ type: 'text', nullable: true })
   sessionNotes?: string;
+
+  @Column({ type: 'text', nullable: true })
+  sessionSummary?: string; // Summary of what was discussed
+
+  @Column({ type: 'json', nullable: true })
+  assignments?: string[]; // Assignments or action items from session
 
   @Column({ type: 'json', nullable: true })
   feedback?: {

@@ -10,6 +10,7 @@ import {
   updateSessionStatusSchema,
   sessionQuerySchema,
   dateParamSchema,
+  rescheduleSessionSchema,
 } from '@/validation/session.validation';
 
 const sessionController = new SessionController();
@@ -53,6 +54,20 @@ router.patch(
   sessionController.updateSessionStatus
 );
 
+// Reschedule session (mentor only)
+router.patch(
+  '/:sessionId/reschedule',
+  requireRole(['mentor']),
+  validate(rescheduleSessionSchema),
+  sessionController.rescheduleSession
+);
+
+// Confirm session attendance
+router.patch(
+  '/:sessionId/confirm',
+  sessionController.confirmSession
+);
+
 // Availability management
 router.post(
   '/availability',
@@ -70,6 +85,12 @@ router.get(
   '/mentor/:mentorId/availability/:date',
   validate(dateParamSchema, 'params'),
   sessionController.getAvailableSlots
+);
+
+// Session notes and summaries
+router.patch(
+  '/:sessionId/notes',
+  sessionController.addSessionNotes
 );
 
 export { router as sessionRoutes };

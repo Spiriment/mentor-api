@@ -21,6 +21,8 @@ import {
   Conversation,
   Message,
   ConversationParticipant,
+  AppNotification,
+  Review,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -59,6 +61,8 @@ export const AppDataSource = new DataSource({
     Conversation,
     Message,
     ConversationParticipant,
+    AppNotification,
+    Review,
   ],
   migrations: ['src/migrations/*.ts'],
   subscribers: [],

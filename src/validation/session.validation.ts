@@ -145,3 +145,12 @@ export const dateParamSchema = z.object({
     message: 'Invalid date format',
   }),
 });
+
+// Reschedule session validation
+export const rescheduleSessionSchema = z.object({
+  newScheduledAt: z.string().refine((date) => !isNaN(Date.parse(date)), {
+    message: 'Invalid date format',
+  }),
+  reason: z.string().max(500, 'Reason too long').optional(),
+  message: z.string().max(1000, 'Message too long').optional(),
+});
