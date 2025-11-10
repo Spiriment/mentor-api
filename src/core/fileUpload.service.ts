@@ -1,6 +1,8 @@
 import { Config } from "@/common";
 import { Logger } from "@/common/logger";
 import { AppError } from "@/common/errors";
+import { v2 as cloudinary } from "cloudinary";
+import { Readable } from "stream";
 
 export interface UploadResult {
   public_id: string;
@@ -29,6 +31,13 @@ export class FileUploadService {
     this.logger = new Logger({
       level: process.env.LOG_LEVEL as any,
       service: "file-upload-service",
+    });
+
+    // Configure Cloudinary
+    cloudinary.config({
+      cloud_name: Config.cloudinary.cloudName,
+      api_key: Config.cloudinary.apiKey,
+      api_secret: Config.cloudinary.apiSecret,
     });
   }
 
@@ -75,7 +84,7 @@ export class FileUploadService {
         uploadOptions.format = options.format;
       }
 
-      const result = await this.uploadBase64(base64String, uploadOptions);
+      const result = await cloudinary.uploader.upload(base64String, uploadOptions);
 
       this.logger.info("File uploaded successfully", {
         public_id: result.public_id,
@@ -88,9 +97,9 @@ export class FileUploadService {
         public_id: result.public_id,
         url: result.url,
         secure_url: result.secure_url,
-        format: result.format,
-        width: result.width,
-        height: result.height,
+        format: result.format || "",
+        width: result.width || 0,
+        height: result.height || 0,
         bytes: result.bytes,
         created_at: result.created_at,
       };
@@ -128,24 +137,41 @@ export class FileUploadService {
         uploadOptions.format = options.format;
       }
 
-      const result = await new Promise<any>((resolve, reject) => {});
+      // Convert buffer to a stream for Cloudinary
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          uploadOptions,
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+
+        const readable = new Readable();
+        readable.push(buffer);
+        readable.push(null);
+        readable.pipe(uploadStream);
+      });
 
       this.logger.info("File uploaded successfully", {
-        public_id: result.public_id,
-        format: result.format,
-        bytes: result.bytes,
+        public_id: uploadResult.public_id,
+        format: uploadResult.format,
+        bytes: uploadResult.bytes,
         folder: options.folder,
       });
 
       return {
-        public_id: result.public_id,
-        url: result.url,
-        secure_url: result.secure_url,
-        format: result.format,
-        width: result.width,
-        height: result.height,
-        bytes: result.bytes,
-        created_at: result.created_at,
+        public_id: uploadResult.public_id,
+        url: uploadResult.url,
+        secure_url: uploadResult.secure_url,
+        format: uploadResult.format || "",
+        width: uploadResult.width || 0,
+        height: uploadResult.height || 0,
+        bytes: uploadResult.bytes,
+        created_at: uploadResult.created_at,
       };
     } catch (error: any) {
       this.logger.error("Failed to upload file", error);
@@ -200,6 +226,53 @@ export class FileUploadService {
       return Buffer.byteLength(base64String, "base64");
     } catch {
       return 0;
+    }
+  }
+
+  /**
+   * Upload file from file path (for multer files)
+   */
+  async uploadFile(
+    filePath: string,
+    options: UploadOptions & { resource_type?: string } = {}
+  ): Promise<UploadResult> {
+    try {
+      const uploadOptions: any = {
+        folder: options.folder || `mentor-app/${Config.nodeEnv}/uploads`,
+        resource_type: options.resource_type || "auto", // Cloudinary will auto-detect video/image if not specified
+        quality: options.quality || "auto",
+      };
+
+      if (options.transformation) {
+        uploadOptions.transformation = options.transformation;
+      }
+
+      if (options.format) {
+        uploadOptions.format = options.format;
+      }
+
+      const result = await cloudinary.uploader.upload(filePath, uploadOptions);
+
+      this.logger.info("File uploaded successfully", {
+        public_id: result.public_id,
+        format: result.format,
+        bytes: result.bytes,
+        folder: options.folder,
+      });
+
+      return {
+        public_id: result.public_id,
+        url: result.url,
+        secure_url: result.secure_url,
+        format: result.format || "",
+        width: result.width || 0,
+        height: result.height || 0,
+        bytes: result.bytes,
+        created_at: result.created_at,
+      };
+    } catch (error: any) {
+      this.logger.error("Failed to upload file", error);
+      throw new AppError(`Upload failed: ${error.message}`, error);
     }
   }
 

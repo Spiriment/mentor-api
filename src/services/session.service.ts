@@ -11,10 +11,16 @@ import {
   AVAILABILITY_STATUS,
 } from '@/database/entities/mentorAvailability.entity';
 import { User } from '@/database/entities/user.entity';
+import {
+  AppNotification,
+  AppNotificationType,
+} from '@/database/entities/appNotification.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
+import { EmailService } from '@/core/email.service';
+import { format } from 'date-fns';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -71,6 +77,13 @@ export class SessionService {
   private availabilityRepository =
     AppDataSource.getRepository(MentorAvailability);
   private userRepository = AppDataSource.getRepository(User);
+  private notificationRepository = AppDataSource.getRepository(AppNotification);
+  private emailService: EmailService;
+
+  constructor() {
+    // Initialize EmailService without queue for direct sending
+    this.emailService = new EmailService(null);
+  }
 
   /**
    * Create a new session
@@ -126,6 +139,34 @@ export class SessionService {
 
       const savedSession = await this.sessionRepository.save(session);
 
+      // Load relations for email notification
+      const sessionWithRelations = await this.sessionRepository.findOne({
+        where: { id: savedSession.id },
+        relations: ['mentor', 'mentee'],
+      });
+
+      // Send email and in-app notification to mentor
+      if (sessionWithRelations) {
+        await this.sendSessionRequestEmail(sessionWithRelations).catch((error) => {
+          logger.error('Failed to send session request email', error);
+          // Don't throw - email failure shouldn't break session creation
+        });
+
+        // Create in-app notification for mentor
+        await this.createInAppNotification({
+          userId: sessionWithRelations.mentorId,
+          type: AppNotificationType.SESSION_REQUEST,
+          title: 'New Session Request',
+          message: `${sessionWithRelations.mentee?.firstName || 'A mentee'} has requested a session with you`,
+          data: {
+            sessionId: sessionWithRelations.id,
+            menteeId: sessionWithRelations.menteeId,
+          },
+        }).catch((error) => {
+          logger.error('Failed to create in-app notification', error);
+        });
+      }
+
       logger.info('Session created successfully', {
         sessionId: savedSession.id,
         mentorId: data.mentorId,
@@ -166,9 +207,56 @@ export class SessionService {
         );
       }
 
+      // Check if status is being changed to confirmed
+      const wasConfirmed = session.status === SESSION_STATUS.CONFIRMED;
+      const isBeingConfirmed = data.status === SESSION_STATUS.CONFIRMED;
+
       // Update session fields
       Object.assign(session, data);
       const updatedSession = await this.sessionRepository.save(session);
+
+      // Send email notification if status changed to confirmed
+      // Reload with relations for email
+      if (!wasConfirmed && isBeingConfirmed) {
+        const sessionWithRelations = await this.sessionRepository.findOne({
+          where: { id: updatedSession.id },
+          relations: ['mentor', 'mentee'],
+        });
+        
+        if (sessionWithRelations) {
+          await this.sendSessionConfirmedEmail(sessionWithRelations).catch((error) => {
+            logger.error('Failed to send session confirmed email', error);
+            // Don't throw - email failure shouldn't break session update
+          });
+
+          // Create in-app notifications for both parties
+          await this.createInAppNotification({
+            userId: sessionWithRelations.menteeId,
+            type: AppNotificationType.SESSION_CONFIRMED,
+            title: 'Session Confirmed',
+            message: `Your session with ${sessionWithRelations.mentor?.firstName || 'your mentor'} has been confirmed`,
+            data: {
+              sessionId: sessionWithRelations.id,
+              mentorId: sessionWithRelations.mentorId,
+            },
+          }).catch((error) => {
+            logger.error('Failed to create in-app notification for mentee', error);
+          });
+
+          await this.createInAppNotification({
+            userId: sessionWithRelations.mentorId,
+            type: AppNotificationType.SESSION_CONFIRMED,
+            title: 'Session Confirmed',
+            message: `You confirmed a session with ${sessionWithRelations.mentee?.firstName || 'your mentee'}`,
+            data: {
+              sessionId: sessionWithRelations.id,
+              menteeId: sessionWithRelations.menteeId,
+            },
+          }).catch((error) => {
+            logger.error('Failed to create in-app notification for mentor', error);
+          });
+        }
+      }
 
       logger.info('Session updated successfully', {
         sessionId,
@@ -318,6 +406,151 @@ export class SessionService {
       return updatedSession;
     } catch (error: any) {
       logger.error('Error cancelling session', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reschedule a session (mentor suggests new time)
+   */
+  async rescheduleSession(
+    sessionId: string,
+    mentorId: string,
+    newScheduledAt: Date,
+    reason?: string,
+    message?: string
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Only mentor can reschedule
+      if (session.mentorId !== mentorId) {
+        throw new AppError(
+          'Only the mentor can reschedule this session',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Check if session can be rescheduled
+      if (session.status === SESSION_STATUS.CANCELLED) {
+        throw new AppError(
+          'Cannot reschedule a cancelled session',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      if (session.status === SESSION_STATUS.COMPLETED) {
+        throw new AppError(
+          'Cannot reschedule a completed session',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // Check if mentor is available at new time
+      const isAvailable = await this.isMentorAvailable(mentorId, newScheduledAt);
+      if (!isAvailable) {
+        throw new AppError(
+          'Mentor is not available at the requested time',
+          StatusCodes.CONFLICT
+        );
+      }
+
+      // Store old scheduled time for logging
+      const oldScheduledAt = session.scheduledAt;
+
+      // Update session with new time and status
+      session.scheduledAt = newScheduledAt;
+      session.status = SESSION_STATUS.RESCHEDULED;
+      if (reason) {
+        session.cancellationReason = reason;
+      }
+      if (message) {
+        session.mentorNotes = message;
+      }
+
+      const updatedSession = await this.sessionRepository.save(session);
+
+      logger.info('Session rescheduled successfully', {
+        sessionId,
+        mentorId,
+        oldScheduledAt,
+        newScheduledAt,
+        reason,
+      });
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error rescheduling session', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Confirm session attendance (mentor or mentee)
+   */
+  async confirmSession(
+    sessionId: string,
+    userId: string,
+    confirmType: 'mentor' | 'mentee'
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Check if user has permission
+      if (confirmType === 'mentor' && session.mentorId !== userId) {
+        throw new AppError(
+          'Only the mentor can confirm as mentor',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      if (confirmType === 'mentee' && session.menteeId !== userId) {
+        throw new AppError(
+          'Only the mentee can confirm as mentee',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Only confirmed sessions can be confirmed for attendance
+      if (session.status !== SESSION_STATUS.CONFIRMED) {
+        throw new AppError(
+          'Only confirmed sessions can be confirmed for attendance',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // Update confirmation status
+      if (confirmType === 'mentor') {
+        session.mentorConfirmed = true;
+      } else {
+        session.menteeConfirmed = true;
+      }
+
+      const updatedSession = await this.sessionRepository.save(session);
+
+      logger.info('Session attendance confirmed', {
+        sessionId,
+        userId,
+        confirmType,
+      });
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error confirming session', error);
       throw error;
     }
   }
@@ -573,5 +806,167 @@ export class SessionService {
       logger.error('Error getting available slots', error);
       throw error;
     }
+  }
+
+  /**
+   * Send email notification when mentee requests a session
+   */
+  private async sendSessionRequestEmail(session: Session): Promise<void> {
+    if (!session.mentor || !session.mentor.email) {
+      logger.warn(`Mentor email not found for session ${session.id}`);
+      return;
+    }
+
+    if (!session.mentee) {
+      logger.warn(`Mentee not found for session ${session.id}`);
+      return;
+    }
+
+    const scheduledTime = new Date(session.scheduledAt);
+    const formattedTime = format(
+      scheduledTime,
+      'EEEE, MMMM d, yyyy "at" h:mm a'
+    );
+    const menteeName = session.mentee
+      ? `${session.mentee.firstName || ''} ${session.mentee.lastName || ''}`.trim() || session.mentee.email
+      : 'A mentee';
+
+    const message =
+      `You have received a new session request!\n\n` +
+      `Session Details:\n` +
+      `- Requested by: ${menteeName}\n` +
+      `- Date & Time: ${formattedTime}\n` +
+      `- Duration: ${session.duration} minutes\n` +
+      `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
+      `\nPlease open the Mentor App to review and respond to this request.`;
+
+    await this.emailService.sendNotificationEmail({
+      to: session.mentor.email,
+      subject: `📅 New Session Request from ${menteeName}`,
+      message,
+      userName: session.mentor.firstName || session.mentor.email,
+      type: 'Session Request',
+      priority: 'medium',
+      title: 'New Session Request',
+      actionUrl: `/sessions/${session.id}`,
+      actionText: 'View Session Request',
+    });
+
+    logger.info(
+      `Session request email sent to mentor ${session.mentor.email} for session ${session.id}`
+    );
+  }
+
+  /**
+   * Send email notification when mentor confirms a session
+   */
+  private async sendSessionConfirmedEmail(session: Session): Promise<void> {
+    if (!session.mentor || !session.mentee) {
+      logger.warn(`Session relations not loaded for session ${session.id}`);
+      return;
+    }
+
+    const scheduledTime = new Date(session.scheduledAt);
+    const formattedTime = format(
+      scheduledTime,
+      'EEEE, MMMM d, yyyy "at" h:mm a'
+    );
+
+    // Send to mentee
+    if (session.mentee.email) {
+      const mentorName = session.mentor
+        ? `${session.mentor.firstName || ''} ${session.mentor.lastName || ''}`.trim() || session.mentor.email
+        : 'Your mentor';
+
+      const menteeMessage =
+        `Great news! Your session request has been confirmed.\n\n` +
+        `Session Details:\n` +
+        `- With: ${mentorName}\n` +
+        `- Date & Time: ${formattedTime}\n` +
+        `- Duration: ${session.duration} minutes\n` +
+        `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
+        `\nPlease open the Mentor App to view your confirmed session.`;
+
+      await this.emailService.sendNotificationEmail({
+        to: session.mentee.email,
+        subject: `✅ Session Confirmed with ${mentorName}`,
+        message: menteeMessage,
+        userName: session.mentee.firstName || session.mentee.email,
+        type: 'Session Confirmed',
+        priority: 'high',
+        title: 'Session Confirmed',
+        actionUrl: `/sessions/${session.id}`,
+        actionText: 'View Session',
+      }).catch((error) => {
+        logger.error('Failed to send confirmation email to mentee', error);
+      });
+
+      logger.info(
+        `Session confirmed email sent to mentee ${session.mentee.email} for session ${session.id}`
+      );
+    }
+
+    // Send to mentor
+    if (session.mentor.email) {
+      const menteeName = session.mentee
+        ? `${session.mentee.firstName || ''} ${session.mentee.lastName || ''}`.trim() || session.mentee.email
+        : 'Your mentee';
+
+      const mentorMessage =
+        `You have confirmed a session request.\n\n` +
+        `Session Details:\n` +
+        `- With: ${menteeName}\n` +
+        `- Date & Time: ${formattedTime}\n` +
+        `- Duration: ${session.duration} minutes\n` +
+        `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
+        `\nPlease open the Mentor App to view your confirmed session.`;
+
+      await this.emailService.sendNotificationEmail({
+        to: session.mentor.email,
+        subject: `✅ Session Confirmed with ${menteeName}`,
+        message: mentorMessage,
+        userName: session.mentor.firstName || session.mentor.email,
+        type: 'Session Confirmed',
+        priority: 'high',
+        title: 'Session Confirmed',
+        actionUrl: `/sessions/${session.id}`,
+        actionText: 'View Session',
+      }).catch((error) => {
+        logger.error('Failed to send confirmation email to mentor', error);
+      });
+
+      logger.info(
+        `Session confirmed email sent to mentor ${session.mentor.email} for session ${session.id}`
+      );
+    }
+  }
+
+  /**
+   * Create in-app notification
+   */
+  private async createInAppNotification(data: {
+    userId: string;
+    type: AppNotificationType;
+    title: string;
+    message: string;
+    data?: Record<string, any>;
+  }): Promise<AppNotification> {
+    const notification = this.notificationRepository.create({
+      userId: data.userId,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      data: data.data,
+      isRead: false,
+    });
+
+    const savedNotification = await this.notificationRepository.save(notification);
+    logger.info('In-app notification created', {
+      notificationId: savedNotification.id,
+      userId: data.userId,
+      type: data.type,
+    });
+
+    return savedNotification;
   }
 }

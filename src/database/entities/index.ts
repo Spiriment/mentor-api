@@ -25,3 +25,9 @@ export * from './studyReflection.entity';
 export * from './conversation.entity';
 export * from './message.entity';
 export * from './conversationParticipant.entity';
+
+// Notification entities
+export * from './appNotification.entity';
+
+// Review entities
+export * from './review.entity';

@@ -88,18 +88,36 @@ export class EmailService {
   }
 
   public async sendEmail(options: EmailJobData): Promise<void> {
+    // Default attachments including the logo
+    const logoPath = path.join(__dirname, '../mails/assets/logo.png');
+    const defaultAttachments: any[] = [];
+
+    // Only add logo if the file exists
+    if (fs.existsSync(logoPath)) {
+      defaultAttachments.push({
+        filename: 'logo.png',
+        path: logoPath,
+        cid: 'mentor-app-logo', // Content-ID for embedding in email
+      });
+    } else {
+      this.logger.warn(`Logo file not found at: ${logoPath}`);
+    }
+
     const mailOptions = {
       from: process.env.SMTP_FROM,
       to: options.to,
       subject: options.subject,
       html: options.compiledContent,
-      attachments: options.attachments,
+      attachments: options.attachments
+        ? [...defaultAttachments, ...options.attachments]
+        : defaultAttachments,
     };
 
     await this.transporter.sendMail(mailOptions);
     this.logger.info('Email sent successfully', {
       to: options.to,
       subject: options.subject,
+      hasLogo: defaultAttachments.length > 0,
     });
   }
 
@@ -113,6 +131,7 @@ export class EmailService {
       ...data,
       body: bodyContent,
       currentYear: new Date().getFullYear(),
+      appUrl: data.appUrl || Config.appUrl || '',
     });
   }
 
@@ -123,6 +142,9 @@ export class EmailService {
     userName?: string;
     actionUrl?: string;
     actionText?: string;
+    type?: string;
+    priority?: 'high' | 'medium' | 'low' | 'urgent';
+    title?: string;
   }): Promise<void> {
     const content = this.generateEmailContent(
       {
@@ -130,6 +152,10 @@ export class EmailService {
         message: props.message,
         actionUrl: props.actionUrl,
         actionText: props.actionText,
+        type: props.type,
+        priority: props.priority || 'low',
+        title: props.title,
+        appUrl: Config.appUrl,
       },
       'notification'
     );

@@ -8,7 +8,7 @@ export class CreateSessionTables1759357400680 implements MigrationInterface {
         \`id\` varchar(36) NOT NULL,
         \`mentorId\` varchar(36) NOT NULL,
         \`menteeId\` varchar(36) NOT NULL,
-        \`status\` enum('scheduled','confirmed','in_progress','completed','cancelled','no_show') NOT NULL DEFAULT 'scheduled',
+        \`status\` enum('scheduled','confirmed','in_progress','completed','cancelled','no_show','rescheduled') NOT NULL DEFAULT 'scheduled',
         \`type\` enum('one_on_one','group','video_call','phone_call','in_person') NOT NULL DEFAULT 'one_on_one',
         \`duration\` enum('30','60','90','120') NOT NULL DEFAULT '60',
         \`scheduledAt\` datetime NOT NULL,

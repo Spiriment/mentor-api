@@ -1,35 +1,83 @@
-{{#if userName}}
-  <div style="font-size: 16px; color: #333; margin-bottom: 16px;">
-    Hi
-    {{userName}},
-  </div>
-{{/if}}
+<style>
+  .notification-type { 
+    display: inline-block; 
+    background-color: #e9ecef; 
+    color: #495057; 
+    padding: 4px 8px; 
+    border-radius: 4px; 
+    font-size: 12px; 
+    font-weight: bold; 
+    text-transform: uppercase; 
+    margin-bottom: 15px; 
+  } 
+  .priority-high { 
+    background-color: #dc3545; 
+    color: white; 
+  } 
+  .priority-medium { 
+    background-color: #ffc107; 
+    color: #212529; 
+  } 
+  .priority-low { 
+    background-color: #28a745; 
+    color: white; 
+  } 
+  .priority-urgent { 
+    background-color: #6f42c1; 
+    color: white; 
+  } 
+  .action-button { 
+    display: inline-block; 
+    background-color: #2563eb; 
+    color: #ffffff; 
+    padding: 12px 24px; 
+    text-decoration: none; 
+    border-radius: 5px; 
+    font-weight: 600; 
+    margin: 20px 0; 
+    transition: background-color 0.3s ease; 
+  } 
+  .action-button:hover { 
+    background-color: #1d4ed8; 
+  } 
+  .notification-content h2 { 
+    color: #333; 
+    margin-top: 0; 
+    font-size: 20px; 
+    font-weight: 600; 
+  } 
+  .notification-content p { 
+    margin-bottom: 15px; 
+    font-size: 16px; 
+    line-height: 1.6; 
+  }
+</style>
 
-<div
-  style="font-size: 15px; color: #333; line-height: 1.6; margin-bottom: 24px;"
->
-  {{message}}
+<div class="notification-content">
+  {{#if type}}
+    <div class="notification-type priority-{{#if priority}}{{priority}}{{else}}low{{/if}}">
+      {{type}}
+    </div>
+  {{/if}}
+
+  {{#if title}}
+    <h2>{{title}}</h2>
+  {{/if}}
+
+  {{#if userName}}
+    <p>Hello {{userName}},</p>
+  {{/if}}
+
+  <p>{{message}}</p>
+
+  {{#if actionUrl}}
+    <p>
+      <a href="{{#if appUrl}}{{appUrl}}{{/if}}{{actionUrl}}" class="action-button">
+        {{#if actionText}}{{actionText}}{{else}}View Details{{/if}}
+      </a>
+    </p>
+  {{/if}}
 </div>
-
-{{#if actionUrl}}
-  <div style="margin: 32px 0;">
-    <a
-      href="{{actionUrl}}"
-      style="
-       display: inline-block;
-       background: #2563eb;
-       color: #fff;
-       text-decoration: none;
-       padding: 12px 24px;
-       border-radius: 6px;
-       font-weight: 500;
-       font-size: 15px;
-     "
-    >
-      {{#if actionText}}{{actionText}}{{else}}View Details{{/if}}
-    </a>
-  </div>
-{{/if}}
 
 <div
   style="
@@ -42,7 +90,7 @@
 >
   <div style="font-size: 13px; color: #64748b; line-height: 1.5;">
     <strong>Note:</strong>
-    This is an automated notification from Aptfuel. If you have any questions or
+    This is an automated notification from Mentor App. If you have any questions or
     need assistance, please don't hesitate to contact our support team.
   </div>
 </div>

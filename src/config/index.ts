@@ -1,49 +1,49 @@
-import { z } from "zod";
-import dotenv from "dotenv";
-import path from "path";
+import { z } from 'zod';
+import dotenv from 'dotenv';
+import path from 'path';
 
 const envFile =
-  process.env.NODE_ENV === "production"
-    ? ".env.production"
-    : process.env.NODE_ENV === "staging"
-    ? ".env.staging"
-    : process.env.NODE_ENV === "development"
-    ? ".env.development"
-    : ".env";
+  process.env.NODE_ENV === 'production'
+    ? '.env.production'
+    : process.env.NODE_ENV === 'staging'
+    ? '.env.staging'
+    : process.env.NODE_ENV === 'development'
+    ? '.env.development'
+    : '.env';
 
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 const configSchema = z.object({
-  port: z.string().transform(Number).default("3000"),
+  port: z.string().transform(Number).default('3000'),
   nodeEnv: z
-    .enum(["development", "production", "test", "staging"])
-    .default("development"),
+    .enum(['development', 'production', 'test', 'staging'])
+    .default('development'),
   appUrl: z.string(),
   database: z.object({
-    host: z.string().default("localhost"),
-    port: z.string().transform(Number).default("5432"),
-    username: z.string().default("postgres"),
-    password: z.string().default("postgres"),
-    name: z.string().default("notification_service"),
+    host: z.string().default('localhost'),
+    port: z.string().transform(Number).default('5432'),
+    username: z.string().default('postgres'),
+    password: z.string().default('postgres'),
+    name: z.string().default('notification_service'),
     ssl: z.boolean().default(false),
     synchronize: z.boolean().default(false),
   }),
   redis: z.object({
-    host: z.string().default("localhost"),
-    username: z.string().default(""),
-    port: z.string().transform(Number).default("6378"),
-    password: z.string().default(""),
-    db: z.string().transform(Number).default("1"),
+    host: z.string().default('localhost'),
+    username: z.string().default(''),
+    port: z.string().transform(Number).default('6378'),
+    password: z.string().default(''),
+    db: z.string().transform(Number).default('1'),
   }),
-  allowedOrigins: z.array(z.string()).default(["http://localhost:3000"]),
+  allowedOrigins: z.array(z.string()).default(['http://localhost:3000']),
   jwt: z.object({
     publicKey: z.string(),
     privateKey: z.string(),
-    expiresIn: z.string().default("1d"),
+    expiresIn: z.string().default('1d'),
   }),
   rateLimit: z.object({
-    windowMs: z.string().transform(Number).default("900000"),
-    max: z.string().transform(Number).default("100"),
+    windowMs: z.string().transform(Number).default('900000'),
+    max: z.string().transform(Number).default('100'),
   }),
   encryption: z.object({
     algorithm: z.string(),
@@ -58,21 +58,30 @@ const configSchema = z.object({
     origin: z.string(),
   }),
   logging: z.object({
-    level: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    level: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   }),
   email: z.object({
     host: z.string(),
-    port: z.string().transform(Number).default("").optional(),
+    port: z.string().transform(Number).default('').optional(),
     user: z.string(),
     password: z.string(),
     from: z.string(),
   }),
   queue: z.object({
     settings: z.object({
-      removeOnComplete: z.string().transform(Number).default("100"),
-      removeOnFail: z.string().transform(Number).default("50"),
-      attempts: z.string().transform(Number).default("3"),
+      removeOnComplete: z.string().transform(Number).default('100'),
+      removeOnFail: z.string().transform(Number).default('50'),
+      attempts: z.string().transform(Number).default('3'),
     }),
+  }),
+  cloudinary: z.object({
+    cloudName: z.string(),
+    apiKey: z.string(),
+    apiSecret: z.string(),
+  }),
+  agora: z.object({
+    appId: z.string(),
+    appCertificate: z.string().optional(),
   }),
 });
 
@@ -86,8 +95,8 @@ const Config = configSchema.parse({
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     name: process.env.DB_NAME,
-    ssl: process.env.DB_SSL === "true",
-    synchronize: process.env.DB_SYNCHRONIZE === "true",
+    ssl: process.env.DB_SSL === 'true',
+    synchronize: process.env.DB_SYNCHRONIZE === 'true',
   },
   encryption: {
     key: process.env.ENCRYPTION_KEY,
@@ -118,7 +127,7 @@ const Config = configSchema.parse({
     origin: process.env.CORS_ORIGIN,
   },
   logging: {
-    level: process.env.LOG_LEVEL as "debug" | "info" | "warn" | "error",
+    level: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error',
   },
   email: {
     host: process.env.SMTP_HOST,
@@ -133,6 +142,15 @@ const Config = configSchema.parse({
       removeOnFail: process.env.QUEUE_REMOVE_ON_FAIL,
       attempts: process.env.QUEUE_ATTEMPTS,
     },
+  },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    apiSecret: process.env.CLOUDINARY_API_SECRET,
+  },
+  agora: {
+    appId: process.env.AGORA_APP_ID || '',
+    appCertificate: process.env.AGORA_APP_CERTIFICATE,
   },
 });
 

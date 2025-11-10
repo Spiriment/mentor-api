@@ -351,6 +351,104 @@ export class SessionController {
   };
 
   /**
+   * Reschedule a session (mentor suggests new time)
+   * PATCH /api/sessions/:sessionId/reschedule
+   */
+  rescheduleSession = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can reschedule sessions',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { sessionId } = req.params;
+      const { newScheduledAt, reason, message } = req.body;
+
+      if (!newScheduledAt) {
+        throw new AppError(
+          'newScheduledAt is required',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      const session = await this.sessionService.rescheduleSession(
+        sessionId,
+        user.id,
+        new Date(newScheduledAt),
+        reason,
+        message
+      );
+
+      this.logger.info('Session rescheduled successfully', {
+        sessionId,
+        mentorId: user.id,
+        newScheduledAt,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session rescheduled successfully. The mentee will be notified.',
+      });
+    } catch (error: any) {
+      this.logger.error('Error rescheduling session', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Confirm session attendance
+   * PATCH /api/sessions/:sessionId/confirm
+   */
+  confirmSession = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      const { sessionId } = req.params;
+      const confirmType = user.role === 'mentor' ? 'mentor' : 'mentee';
+
+      const session = await this.sessionService.confirmSession(
+        sessionId,
+        user.id,
+        confirmType
+      );
+
+      this.logger.info('Session attendance confirmed', {
+        sessionId,
+        userId: user.id,
+        confirmType,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session attendance confirmed successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error confirming session', error);
+      next(error);
+    }
+  };
+
+  /**
    * Update session status (for starting/ending sessions)
    * PATCH /api/sessions/:sessionId/status
    */
@@ -400,6 +498,68 @@ export class SessionController {
       });
     } catch (error: any) {
       this.logger.error('Error updating session status', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Add session notes (mentor or mentee)
+   * PATCH /api/sessions/:sessionId/notes
+   */
+  addSessionNotes = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      const { sessionId } = req.params;
+      const { notes, summary, assignments } = req.body;
+
+      // Get session to verify user is part of it
+      const session = await this.sessionService.getSessionById(
+        sessionId,
+        user.id
+      );
+
+      // Determine which notes field to update based on user role
+      const updateData: any = {};
+
+      if (notes !== undefined) {
+        if (user.role === 'mentor') {
+          updateData.mentorNotes = notes;
+        } else {
+          updateData.menteeNotes = notes;
+        }
+      }
+
+      if (summary !== undefined) {
+        updateData.sessionSummary = summary;
+      }
+
+      if (assignments !== undefined) {
+        updateData.assignments = Array.isArray(assignments)
+          ? assignments
+          : [assignments];
+      }
+
+      const updatedSession = await this.sessionService.updateSession(
+        sessionId,
+        updateData,
+        user.id
+      );
+
+      return sendSuccessResponse(res, {
+        session: updatedSession,
+        message: 'Session notes updated successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error adding session notes', error);
       next(error);
     }
   };
