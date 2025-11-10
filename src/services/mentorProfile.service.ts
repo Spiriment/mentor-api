@@ -130,6 +130,12 @@ export class MentorProfileService {
       profile.onboardingStep = 'completed';
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
+      
+      // Also update User entity's isOnboardingComplete flag
+      await this.userRepository.update(userId, {
+        isOnboardingComplete: true,
+      });
+      
       this.logger.info(`Completed mentor onboarding for user ${userId}`);
 
       return completedProfile;
