@@ -38,7 +38,8 @@ export class AgoraService {
     }
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
+    const tokenExpire = currentTimestamp + expirationTimeInSeconds;
+    const privilegeExpire = currentTimestamp + expirationTimeInSeconds;
 
     const rtcRole =
       role === 'publisher' ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
@@ -53,7 +54,8 @@ export class AgoraService {
         channelName,
         numericUserId,
         rtcRole,
-        privilegeExpiredTs
+        tokenExpire,
+        privilegeExpire
       );
 
       this.logger.info('Agora RTC token generated', {
