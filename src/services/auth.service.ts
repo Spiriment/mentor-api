@@ -703,10 +703,10 @@ export class AuthService {
       throw new AppError('Email not verified', 400);
     }
 
-    // Update user role and mark onboarding as complete
+    // Update user role - onboarding is NOT complete yet (role-specific onboarding still needed)
     await this.UserRepository.update(User.id, {
       role: data.role,
-      isOnboardingComplete: true,
+      isOnboardingComplete: false, // Will be set to true after role-specific onboarding
     });
 
     // Get updated user for token generation
