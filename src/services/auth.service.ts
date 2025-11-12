@@ -554,21 +554,21 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        firstName: true,
         isEmailVerified: true,
         otpToken: true,
         otpTokenExpiry: true,
+        role: true,
+        isOnboardingComplete: true,
       },
     });
-
-    if (existingUser && existingUser.isEmailVerified) {
-      throw new AppError('Email already registered and verified', 409);
-    }
 
     const verificationToken = this.generateEmailVerificationToken();
     const tokenExpiry = addMinutes(new Date(), 10);
 
-    if (existingUser && !existingUser.isEmailVerified) {
-      // Update existing user with new OTP
+    if (existingUser) {
+      // User exists - send OTP for login/verification
+      // Update OTP even if already verified (for login flow)
       await this.UserRepository.update(existingUser.id, {
         otpToken: verificationToken,
         otpTokenExpiry: tokenExpiry,
@@ -585,18 +585,37 @@ export class AuthService {
       await this.UserRepository.save(User);
     }
 
-    // Send OTP email
-    await this.emailService.sendEmailVerificationEmail(
+    // Send OTP email asynchronously (don't block the response)
+    // Fire and forget - don't await, let it run in background
+    this.emailService.sendEmailVerificationEmail(
       data.email,
       existingUser?.firstName || 'User',
       verificationToken,
-      false
-    );
+      !!existingUser?.isEmailVerified // isLogin flag
+    ).then(() => {
+      this.logger.info('OTP sent successfully', { email: data.email });
+    }).catch((emailError: any) => {
+      // Log email error but don't fail the registration
+      // OTP is still generated and stored, user can see it in logs for development
+      const errorMessage = emailError?.message || emailError?.toString() || 'Unknown email error';
+      const error = emailError instanceof Error ? emailError : new Error(errorMessage);
+      this.logger.error('Failed to send OTP email, but OTP is still valid', error, {
+        email: data.email,
+        errorCode: emailError?.code,
+        otp: verificationToken, // Log OTP for development/testing
+      });
+    });
 
-    this.logger.info('OTP sent successfully', { email: data.email });
-
+    // Return immediately - don't wait for email
     return {
       message: 'Verification code sent to your email',
+      isExistingUser: !!existingUser,
+      isEmailVerified: existingUser?.isEmailVerified || false,
+      // In development, include OTP in response for testing (remove in production)
+      ...(process.env.NODE_ENV !== 'production' && {
+        otp: verificationToken,
+        note: 'OTP included for development only',
+      }),
     };
   };
 
@@ -606,9 +625,13 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isEmailVerified: true,
+        isOnboardingComplete: true,
         otpToken: true,
         otpTokenExpiry: true,
-        isEmailVerified: true,
       },
     });
 
@@ -638,11 +661,20 @@ export class AuthService {
 
     this.logger.info('OTP verified successfully', { email: data.email });
 
-    // Generate and return tokens
+    // Generate and return tokens with user data
     const tokens = this.generateTokens(User);
     return {
       ...tokens,
       message: 'Email verified successfully',
+      user: {
+        id: User.id,
+        email: User.email,
+        firstName: User.firstName,
+        lastName: User.lastName,
+        role: User.role,
+        isEmailVerified: true,
+        isOnboardingComplete: User.isOnboardingComplete || false,
+      },
     };
   };
 

@@ -14,7 +14,13 @@ import { WebSocketService } from './services/websocket.service';
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors());
+// CORS configuration - allow all origins in development
+app.use(cors({
+  origin: Config.nodeEnv === 'production' 
+    ? Config.cors.origin 
+    : true, // Allow all origins in development
+  credentials: true,
+}));
 app.use(express.json({ limit: '52mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
