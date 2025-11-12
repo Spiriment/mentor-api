@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { AppError } from "../errors";
+import { AppError, ValidationError } from "../errors";
 import { Logger } from "../logger";
 
 export const errorHandler = (logger: Logger) => {
@@ -7,6 +7,7 @@ export const errorHandler = (logger: Logger) => {
     logger.error("Error occurred:", error, {
       requestPath: _req.path,
       requestMethod: _req.method,
+      requestBody: _req.body,
     });
 
     // Handle payload too large error specifically
@@ -22,11 +23,23 @@ export const errorHandler = (logger: Logger) => {
     }
 
     if (error instanceof AppError) {
+      // For ValidationError, include the detailed validation errors
+      if (error instanceof ValidationError && error.details) {
+        return res.status(error.status).json({
+          success: false,
+          error: {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+          },
+        });
+      }
+      
       return res.status(error.status).json({
         success: false,
         error: {
           message: error.message,
-          code: error.status,
+          code: error.code || error.status,
           ...(error.details && typeof error.details === "object"
             ? { details: error.details }
             : {}),
