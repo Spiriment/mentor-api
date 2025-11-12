@@ -344,15 +344,50 @@ export class BibleService {
         this.setCache(key, data, this.defaultTtlMs);
         return data;
       } catch (error) {
-        console.warn('Bible Brain failed, trying bible-api.com:', error);
-        // Fall through to bible-api.com
+        console.warn(`Bible Brain failed for ${language}, trying fallback:`, error);
+        // If non-English language fails, fall back to English
+        if (language !== 'eng') {
+          console.warn(`Falling back to English for ${book} ${chapter}`);
+          try {
+            const englishKey = `chapter:${book}:${chapter}:eng`;
+            const englishCached = this.getCache<any>(englishKey);
+            if (englishCached) {
+              // Return cached English version but note the language mismatch
+              return {
+                ...englishCached,
+                translation_note: `English (requested: ${language.toUpperCase()})`,
+              };
+            }
+            // Try to get English from Bible Brain or bible-api.com
+            const englishData = await this.getChapterFromBibleBrain(book, chapter, 'eng').catch(() => 
+              this.getChapterFromBibleApi(book, chapter)
+            );
+            this.setCache(englishKey, englishData, this.defaultTtlMs);
+            return {
+              ...englishData,
+              translation_note: `English (requested: ${language.toUpperCase()})`,
+            };
+          } catch (fallbackError) {
+            console.error('English fallback also failed:', fallbackError);
+            // Continue to final fallback
+          }
+        }
+        // Fall through to bible-api.com for English
       }
     }
 
     // Fallback to bible-api.com (English only)
     try {
       const data = await this.getChapterFromBibleApi(book, chapter);
-      this.setCache(key, data, this.defaultTtlMs);
+      const cacheKey = language === 'eng' ? key : `chapter:${book}:${chapter}:eng`;
+      this.setCache(cacheKey, data, this.defaultTtlMs);
+      // If language was not English, note the fallback
+      if (language !== 'eng') {
+        return {
+          ...data,
+          translation_note: `English (requested: ${language.toUpperCase()})`,
+        };
+      }
       return data;
     } catch (error) {
       console.error('Both Bible APIs failed:', error);

@@ -10,7 +10,7 @@ export class ChatController {
   // Get user's conversations
   static async getConversations(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { limit = 50, offset = 0 } = req.query;
 
       const conversations = await chatService.getUserConversations(
@@ -44,7 +44,7 @@ export class ChatController {
   // Get specific conversation with messages
   static async getConversation(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
       const { limit = 50, offset = 0, beforeMessageId } = req.query;
 
@@ -109,7 +109,22 @@ export class ChatController {
   // Create new conversation
   static async createConversation(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      // Get userId from auth middleware - User entity has 'id' field
+      const user = (req as any).user;
+      const userId = user?.id; // User entity uses 'id', not 'userId'
+
+      if (!userId) {
+        logger.error('User ID not found in request', undefined, {
+          user: user ? { id: user.id, email: user.email } : null,
+        });
+        return res.status(401).json({
+          success: false,
+          error: {
+            message: 'User authentication required',
+          },
+        });
+      }
+
       const { participantIds, type, title, description } = req.body;
 
       if (
@@ -125,8 +140,45 @@ export class ChatController {
         });
       }
 
+      // Filter out any invalid participant IDs (null, undefined, empty string)
+      const validParticipantIds = participantIds.filter(
+        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
+      );
+
+      if (validParticipantIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'At least one valid participant ID is required',
+          },
+        });
+      }
+
       // Ensure current user is included in participants
-      const allParticipants = [...new Set([userId, ...participantIds])];
+      // Filter out any undefined/null values after creating the Set
+      const allParticipants = [...new Set([userId, ...validParticipantIds])].filter(
+        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
+      );
+
+      if (allParticipants.length === 0) {
+        logger.error('No valid participants after filtering', undefined, {
+          userId,
+          participantIds,
+          validParticipantIds,
+        });
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'No valid participants found',
+          },
+        });
+      }
+
+      logger.info('Creating conversation', {
+        userId,
+        participantCount: allParticipants.length,
+        participantIds: allParticipants,
+      });
 
       const conversationData = {
         participantIds: allParticipants,
@@ -160,7 +212,7 @@ export class ChatController {
   // Send message (for REST API - WebSocket is preferred)
   static async sendMessage(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId, content, type, metadata } = req.body;
 
       if (!conversationId || !content) {
@@ -219,7 +271,7 @@ export class ChatController {
   // Mark conversation as read
   static async markConversationRead(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
       // Verify user is participant
@@ -257,7 +309,7 @@ export class ChatController {
   // Mark specific message as read
   static async markMessageRead(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
 
       await chatService.markMessageAsRead(messageId, userId);
@@ -281,7 +333,7 @@ export class ChatController {
   // Add reaction to message
   static async addReaction(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
       const { emoji } = req.body;
 
@@ -315,7 +367,7 @@ export class ChatController {
   // Remove reaction from message
   static async removeReaction(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
 
       await chatService.removeReactionFromMessage(messageId, userId);
@@ -339,7 +391,7 @@ export class ChatController {
   // Get conversation participants
   static async getConversationParticipants(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
       // Verify user is participant

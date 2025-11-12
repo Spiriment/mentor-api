@@ -5,6 +5,8 @@ import {
   Conversation,
   Message,
   ConversationParticipant,
+  MentorProfile,
+  MenteeProfile,
   CONVERSATION_TYPE,
   MESSAGE_TYPE,
   MESSAGE_STATUS,
@@ -29,8 +31,8 @@ export interface CreateMessageData {
 }
 
 export interface UpdateParticipantData {
-  isOnline?: boolean;
-  lastSeen?: Date;
+  // Note: isOnline and lastSeen are not fields in ConversationParticipant entity
+  // Online status should be tracked separately if needed
   isTyping?: boolean;
   typingAt?: Date;
 }
@@ -70,11 +72,24 @@ export class ChatService {
 
       const savedConversation = await queryRunner.manager.save(conversation);
 
+      // Filter out any invalid participant IDs before creating participants
+      const validParticipantIds = (data.participantIds || []).filter(
+        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
+      );
+
+      if (validParticipantIds.length === 0) {
+        throw new Error('No valid participant IDs provided');
+      }
+
       // Add participants
-      const participants = data.participantIds.map((userId) => {
+      const participants = validParticipantIds.map((userId) => {
+        if (!userId || typeof userId !== 'string') {
+          throw new Error(`Invalid participant ID: ${userId}`);
+        }
+        
         const participant = this.participantRepository.create({
           conversationId: savedConversation.id,
-          userId,
+          userId: userId,
           role: this.determineParticipantRole(userId, data.createdBy),
           status: PARTICIPANT_STATUS.ACTIVE,
         });
@@ -118,15 +133,23 @@ export class ChatService {
     limit = 50,
     offset = 0
   ): Promise<Conversation[]> {
+    // First, find conversation IDs where the user is a participant
+    const userParticipantQuery = this.participantRepository
+      .createQueryBuilder('participant')
+      .select('participant.conversationId')
+      .where('participant.userId = :userId', { userId })
+      .andWhere('participant.status = :status', {
+        status: PARTICIPANT_STATUS.ACTIVE,
+      });
+
+    // Then, load all conversations with ALL their participants
     const queryBuilder = this.conversationRepository
       .createQueryBuilder('conversation')
       .leftJoinAndSelect('conversation.participants', 'participant')
       .leftJoinAndSelect('participant.user', 'user')
       .leftJoinAndSelect('conversation.messages', 'message')
-      .where('participant.userId = :userId', { userId })
-      .andWhere('participant.status = :status', {
-        status: PARTICIPANT_STATUS.ACTIVE,
-      })
+      .where(`conversation.id IN (${userParticipantQuery.getQuery()})`)
+      .setParameters(userParticipantQuery.getParameters())
       .andWhere('conversation.status = :conversationStatus', {
         conversationStatus: 'active',
       })
@@ -135,7 +158,56 @@ export class ChatService {
       .limit(limit)
       .offset(offset);
 
-    return await queryBuilder.getMany();
+    const conversations = await queryBuilder.getMany();
+    
+    // Enrich user data with profileImage from profile entities
+    // Since User doesn't have reverse relations to profiles, we need to fetch them separately
+    const mentorProfileRepository = this.dataSource.getRepository(MentorProfile);
+    const menteeProfileRepository = this.dataSource.getRepository(MenteeProfile);
+    
+    // Collect all unique user IDs to fetch profiles in batch
+    const userIds = new Set<string>();
+    conversations.forEach((conversation) => {
+      conversation.participants?.forEach((participant) => {
+        if (participant.user?.id) {
+          userIds.add(participant.user.id);
+        }
+      });
+    });
+    
+    // Fetch all profiles in parallel
+    const [mentorProfiles, menteeProfiles] = await Promise.all([
+      mentorProfileRepository.find({
+        where: Array.from(userIds).map((id) => ({ userId: id })),
+        select: ['userId', 'profileImage'],
+      }),
+      menteeProfileRepository.find({
+        where: Array.from(userIds).map((id) => ({ userId: id })),
+        select: ['userId', 'profileImage'],
+      }),
+    ]);
+    
+    // Create maps for quick lookup
+    const mentorProfileMap = new Map(
+      mentorProfiles.map((p) => [p.userId, p.profileImage])
+    );
+    const menteeProfileMap = new Map(
+      menteeProfiles.map((p) => [p.userId, p.profileImage])
+    );
+    
+    // Enrich user data with profileImage
+    conversations.forEach((conversation) => {
+      conversation.participants?.forEach((participant) => {
+        if (participant.user) {
+          const user = participant.user as any;
+          // Try mentor profile first, then mentee profile
+          user.profileImage =
+            mentorProfileMap.get(user.id) || menteeProfileMap.get(user.id) || undefined;
+        }
+      });
+    });
+
+    return conversations;
   }
 
   async isUserParticipant(
@@ -275,21 +347,21 @@ export class ChatService {
   ): Promise<void> {
     const updateData: any = {};
 
-    if (data.isOnline !== undefined) {
-      updateData.isOnline = data.isOnline;
-    }
-    if (data.lastSeen !== undefined) {
-      updateData.lastSeen = data.lastSeen;
-    }
+    // Note: isOnline and lastSeen are not fields in ConversationParticipant entity
+    // Online status should be tracked separately if needed (e.g., in User entity or separate table)
+    
     if (data.isTyping !== undefined) {
       updateData.isTyping = data.isTyping;
       updateData.typingAt = data.typingAt || new Date();
     }
 
-    await this.participantRepository.update(
-      { userId, conversationId },
-      updateData
-    );
+    // Only update if there's data to update
+    if (Object.keys(updateData).length > 0) {
+      await this.participantRepository.update(
+        { userId, conversationId },
+        updateData
+      );
+    }
   }
 
   // Reaction Management
