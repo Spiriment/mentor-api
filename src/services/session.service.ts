@@ -153,6 +153,7 @@ export class SessionService {
         });
 
         // Create in-app notification for mentor
+        // Note: This is non-blocking - if the table doesn't exist, it will fail gracefully
         await this.createInAppNotification({
           userId: sessionWithRelations.mentorId,
           type: AppNotificationType.SESSION_REQUEST,
@@ -162,8 +163,17 @@ export class SessionService {
             sessionId: sessionWithRelations.id,
             menteeId: sessionWithRelations.menteeId,
           },
-        }).catch((error) => {
-          logger.error('Failed to create in-app notification', error);
+        }).catch((error: any) => {
+          // Log error but don't break session creation
+          // This can happen if the app_notifications table hasn't been created yet
+          if (error?.message?.includes("doesn't exist")) {
+            logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
+              table: 'app_notifications',
+              sessionId: sessionWithRelations.id,
+            });
+          } else {
+            logger.error('Failed to create in-app notification', error);
+          }
         });
       }
 
@@ -239,8 +249,15 @@ export class SessionService {
               sessionId: sessionWithRelations.id,
               mentorId: sessionWithRelations.mentorId,
             },
-          }).catch((error) => {
-            logger.error('Failed to create in-app notification for mentee', error);
+          }).catch((error: any) => {
+            if (error?.message?.includes("doesn't exist")) {
+              logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
+                table: 'app_notifications',
+                sessionId: sessionWithRelations.id,
+              });
+            } else {
+              logger.error('Failed to create in-app notification for mentee', error);
+            }
           });
 
           await this.createInAppNotification({
@@ -252,8 +269,15 @@ export class SessionService {
               sessionId: sessionWithRelations.id,
               menteeId: sessionWithRelations.menteeId,
             },
-          }).catch((error) => {
-            logger.error('Failed to create in-app notification for mentor', error);
+          }).catch((error: any) => {
+            if (error?.message?.includes("doesn't exist")) {
+              logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
+                table: 'app_notifications',
+                sessionId: sessionWithRelations.id,
+              });
+            } else {
+              logger.error('Failed to create in-app notification for mentor', error);
+            }
           });
         }
       }

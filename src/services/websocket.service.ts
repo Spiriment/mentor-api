@@ -187,15 +187,9 @@ export class WebSocketService {
       // Join the conversation room
       socket.join(`conversation:${conversationId}`);
 
-      // Update user's online status in conversation
-      await this.chatService.updateParticipantStatus(
-        socket.userId!,
-        conversationId,
-        {
-          isOnline: true,
-          lastSeen: new Date(),
-        }
-      );
+      // Note: Online status and lastSeen are not tracked in ConversationParticipant entity
+      // They should be tracked separately if needed (e.g., in User entity or separate table)
+      // For now, we just join the conversation room without updating participant status
 
       socket.emit('joined-conversation', { conversationId });
       logger.info(
@@ -216,9 +210,26 @@ export class WebSocketService {
     logger.info(`User ${socket.userId} left conversation ${conversationId}`);
   }
 
+  // Track in-flight messages to prevent duplicates
+  private inFlightMessages: Map<string, Promise<any>> = new Map();
+
   private async handleSendMessage(socket: AuthenticatedSocket, data: any) {
     try {
       const { conversationId, content, type = 'text', metadata } = data;
+
+      // Create a unique key for this message to prevent duplicates
+      // Use a combination of socket ID, conversation ID, content, and timestamp (rounded to nearest second)
+      const messageKey = `${socket.id}-${conversationId}-${content}-${Math.floor(Date.now() / 1000)}`;
+
+      // Check if this message is already being processed
+      if (this.inFlightMessages.has(messageKey)) {
+        logger.warn('Duplicate message detected, ignoring:', {
+          socketId: socket.id,
+          conversationId,
+          content: content.substring(0, 50),
+        });
+        return;
+      }
 
       // Verify user is participant
       const isParticipant = await this.chatService.isUserParticipant(
@@ -232,36 +243,51 @@ export class WebSocketService {
         return;
       }
 
-      // Create message
-      const message = await this.chatService.createMessage({
-        conversationId,
-        senderId: socket.userId!,
-        content,
-        type,
-        metadata,
-      });
+      // Create a promise for this message and store it
+      const messagePromise = (async () => {
+        try {
+          // Create message
+          const message = await this.chatService.createMessage({
+            conversationId,
+            senderId: socket.userId!,
+            content,
+            type,
+            metadata,
+          });
 
-      // Broadcast message to conversation participants
-      this.io.to(`conversation:${conversationId}`).emit('new-message', {
-        message,
-        conversationId,
-      });
+          // Broadcast message to conversation participants
+          this.io.to(`conversation:${conversationId}`).emit('new-message', {
+            message,
+            conversationId,
+          });
 
-      // Update conversation last message
-      await this.chatService.updateConversationLastMessage(
-        conversationId,
-        message
-      );
+          // Update conversation last message
+          await this.chatService.updateConversationLastMessage(
+            conversationId,
+            message
+          );
 
-      // Send delivery confirmation to sender
-      socket.emit('message-sent', {
-        messageId: message.id,
-        status: 'delivered',
-      });
+          // Send delivery confirmation to sender
+          socket.emit('message-sent', {
+            messageId: message.id,
+            status: 'delivered',
+          });
 
-      logger.info(
-        `Message sent in conversation ${conversationId} by user ${socket.userId}`
-      );
+          logger.info(
+            `Message sent in conversation ${conversationId} by user ${socket.userId}`
+          );
+
+          return message;
+        } finally {
+          // Remove from in-flight messages after a short delay to catch rapid duplicates
+          setTimeout(() => {
+            this.inFlightMessages.delete(messageKey);
+          }, 2000);
+        }
+      })();
+
+      this.inFlightMessages.set(messageKey, messagePromise);
+      await messagePromise;
     } catch (error: any) {
       logger.error('Error sending message:', error);
       socket.emit('error', { message: 'Failed to send message' });
