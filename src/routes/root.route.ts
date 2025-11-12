@@ -15,6 +15,7 @@ import { sessionRoutes } from './session.routes';
 import { notificationRoutes } from './notification.routes';
 import { agoraRoutes } from './agora.routes';
 import { reviewRoutes } from './review.routes';
+import { emailRoutes } from './email.routes';
 import { bibleRoutes } from './bible.routes';
 import { bibleUserRoutes } from './bibleUser.routes';
 import studyRoutes from '@/controllers/study.controller';
@@ -131,6 +132,11 @@ const createRootRoutes = () => {
 
   // Review routes
   rootRouter.use('/api/reviews', reviewRoutes);
+
+  // Email testing routes (development only)
+  if (process.env.NODE_ENV !== 'production') {
+    rootRouter.use('/api/email', emailRoutes);
+  }
 
   // Bible routes
   rootRouter.use('/api/bible', bibleRoutes);

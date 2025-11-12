@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { Logger } from '../common';
-import { getFileUrl, deleteFile } from '../middleware/upload.middleware';
+import { deleteFile, getFileUrl } from '../middleware/upload.middleware';
 import { FileUploadService } from '../core/fileUpload.service';
 import path from 'path';
 
@@ -33,14 +33,23 @@ export class UploadController {
         });
       }
 
-      const fileUrl = getFileUrl(req, req.file.filename, 'profileImage');
+      // Upload to Cloudinary
+      const filePath = path.join(req.file.destination, req.file.filename);
+      const uploadResult = await this.fileUploadService.uploadFile(filePath, {
+        folder: 'mentor-app/profile-images',
+        resource_type: 'image',
+      });
 
-      this.logger.info('Profile image uploaded successfully', {
+      // Delete local file after successful Cloudinary upload
+      deleteFile(filePath);
+
+      this.logger.info('Profile image uploaded successfully to Cloudinary', {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
         mimetype: req.file.mimetype,
-        url: fileUrl,
+        cloudinaryUrl: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
       });
 
       res.json({
@@ -50,7 +59,8 @@ export class UploadController {
           originalName: req.file.originalname,
           size: req.file.size,
           mimetype: req.file.mimetype,
-          url: fileUrl,
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
         },
         message: 'Profile image uploaded successfully',
       });

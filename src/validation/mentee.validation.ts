@@ -77,7 +77,7 @@ export const menteeProfileImageSchema = z.object({
 
 // Complete mentee onboarding
 export const completeMenteeOnboardingSchema = z.object({
-  userId: z.string().uuid('Invalid user ID'),
+  // userId comes from route params, not body
   bibleReadingFrequency: z
     .string()
     .min(1, 'Bible reading frequency is required'),
@@ -103,5 +103,5 @@ export const completeMenteeOnboardingSchema = z.object({
   spiritualGoals: z
     .array(z.string())
     .min(1, 'At least one spiritual goal is required'),
-  profileImage: z.string().min(1, 'Profile image is required').optional(),
+  profileImage: z.string().optional(), // Optional - can be empty string
 });

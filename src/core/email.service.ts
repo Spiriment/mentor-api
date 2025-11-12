@@ -21,14 +21,29 @@ export class EmailService {
 
   constructor(queueService: QueueService | null) {
     this.queueService = queueService;
+    // Configure transporter based on port
+    const isSecurePort = Config.email.port === 465;
+
     this.transporter = nodemailer.createTransport({
       host: Config.email.host,
       port: Config.email.port,
-      secure: Config.email.port === 465,
+      secure: isSecurePort, // true for 465, false for 587 (STARTTLS)
+      requireTLS: !isSecurePort, // Require TLS for port 587
       auth: {
         user: Config.email.user,
         pass: Config.email.password,
       },
+      // Connection settings - increased timeouts for slow connections
+      connectionTimeout: 60000, // 60 seconds
+      greetingTimeout: 30000, // 30 seconds
+      socketTimeout: 60000, // 60 seconds
+      // TLS options for STARTTLS (port 587)
+      tls: {
+        rejectUnauthorized: false, // Accept self-signed certificates
+      },
+      // Disable debug logging to reduce noise in logs
+      debug: false,
+      logger: false,
     });
 
     this.logger = new Logger({
@@ -104,7 +119,7 @@ export class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_FROM || Config.email.from,
       to: options.to,
       subject: options.subject,
       html: options.compiledContent,
@@ -113,12 +128,26 @@ export class EmailService {
         : defaultAttachments,
     };
 
-    await this.transporter.sendMail(mailOptions);
-    this.logger.info('Email sent successfully', {
-      to: options.to,
-      subject: options.subject,
-      hasLogo: defaultAttachments.length > 0,
-    });
+    try {
+      const info = await this.transporter.sendMail(mailOptions);
+      this.logger.info('Email sent successfully', {
+        to: options.to,
+        subject: options.subject,
+        hasLogo: defaultAttachments.length > 0,
+        messageId: info.messageId,
+      });
+    } catch (error: any) {
+      this.logger.error('Failed to send email', error, {
+        to: options.to,
+        subject: options.subject,
+        errorMessage: error.message,
+        errorCode: error.code,
+        errorStack: error.stack,
+        smtpHost: Config.email.host,
+        smtpPort: Config.email.port,
+      });
+      throw error;
+    }
   }
 
   public generateEmailContent(data: any, partialName: string): string {
@@ -196,16 +225,23 @@ export class EmailService {
 
       if (this.queueService) {
         await this.queueService.sendEmail(jobData);
+        this.logger.info('Dynamic email queued successfully', {
+          to: options.to,
+          subject: options.subject,
+          sectionsCount: options.data.sections.length,
+        });
+      } else {
+        // Send directly if no queue service (for development/testing)
+        await this.sendEmail(jobData);
+        this.logger.info('Dynamic email sent successfully', {
+          to: options.to,
+          subject: options.subject,
+          sectionsCount: options.data.sections.length,
+        });
       }
-
-      this.logger.info('Dynamic email queued successfully', {
-        to: options.to,
-        subject: options.subject,
-        sectionsCount: options.data.sections.length,
-      });
     } catch (error) {
       this.logger.error(
-        'Failed to queue dynamic email',
+        'Failed to send dynamic email',
         error instanceof Error ? error : new Error(String(error)),
         {
           to: options.to,
@@ -237,7 +273,11 @@ export class EmailService {
     };
 
     if (this.queueService) {
+      // Use queue if available
       await this.queueService.sendEmail(jobData);
+    } else {
+      // Send directly if no queue service (for development/testing)
+      await this.sendEmail(jobData);
     }
   }
 
