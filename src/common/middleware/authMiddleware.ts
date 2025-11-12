@@ -27,11 +27,13 @@ export const authMiddleware = (jwtService: JwtService) => {
       const decoded = jwtService.verify<UserPayload>(token);
       const stationUserRepository = AppDataSource.getRepository(User);
 
+      // User entity has role as a column (enum), not a relation, so don't load relations
       const user = await stationUserRepository.findOne({
         where: {
           id: decoded.userId,
         },
-        relations: ["role", "role.permissions"],
+        // Remove relations - User.role is a column, not a relation
+        // relations: ["role", "role.permissions"],
       });
 
       if (!user) {
@@ -46,7 +48,24 @@ export const authMiddleware = (jwtService: JwtService) => {
 
       next();
     } catch (error: any) {
-      next(new UnauthorizedError("Invalid token"));
+      // Log the actual error for debugging
+      console.error("Auth middleware error:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+      
+      // Provide more specific error messages
+      if (error.name === "TokenExpiredError" || error.message?.includes("expired")) {
+        next(new UnauthorizedError("Token has expired"));
+      } else if (error.name === "JsonWebTokenError" || error.message?.includes("jwt")) {
+        next(new UnauthorizedError("Invalid token format"));
+      } else if (error.message?.includes("User not found")) {
+        next(new UnauthorizedError("User not found"));
+      } else {
+        // Generic invalid token for other errors
+        next(new UnauthorizedError(`Invalid token: ${error.message || "Unknown error"}`));
+      }
     }
   };
 };

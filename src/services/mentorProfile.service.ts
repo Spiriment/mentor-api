@@ -128,6 +128,13 @@ export class MentorProfileService {
       Object.assign(profile, data);
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
+      
+      // Auto-approve mentor when onboarding is complete
+      // This allows mentors to be visible immediately after completing onboarding
+      // In production, you might want to add admin approval workflow
+      profile.isApproved = true;
+      profile.approvedAt = new Date();
+      profile.approvalNotes = 'Auto-approved upon onboarding completion';
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
       
@@ -136,7 +143,7 @@ export class MentorProfileService {
         isOnboardingComplete: true,
       });
       
-      this.logger.info(`Completed mentor onboarding for user ${userId}`);
+      this.logger.info(`Completed mentor onboarding for user ${userId} and auto-approved`);
 
       return completedProfile;
     } catch (error) {
