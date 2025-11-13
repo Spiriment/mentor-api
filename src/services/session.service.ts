@@ -327,9 +327,19 @@ export class SessionService {
       }
 
       if (options.upcoming) {
-        queryBuilder.andWhere('session.scheduledAt > :now', {
-          now: new Date(),
-        });
+        queryBuilder
+          .andWhere('session.scheduledAt > :now', {
+            now: new Date(),
+          })
+          .andWhere('session.status != :cancelled', {
+            cancelled: SESSION_STATUS.CANCELLED,
+          })
+          .andWhere('session.status != :completed', {
+            completed: SESSION_STATUS.COMPLETED,
+          })
+          .andWhere('session.status != :noShow', {
+            noShow: SESSION_STATUS.NO_SHOW,
+          });
       }
 
       queryBuilder
@@ -846,10 +856,25 @@ export class SessionService {
       return;
     }
 
-    const scheduledTime = new Date(session.scheduledAt);
+    // Ensure scheduledAt is a valid Date object
+    let scheduledTime: Date;
+    if (session.scheduledAt instanceof Date) {
+      scheduledTime = session.scheduledAt;
+    } else if (typeof session.scheduledAt === 'string') {
+      scheduledTime = new Date(session.scheduledAt);
+    } else {
+      scheduledTime = new Date(session.scheduledAt as any);
+    }
+
+    // Validate the date
+    if (isNaN(scheduledTime.getTime())) {
+      logger.warn(`Invalid scheduledAt date for session ${session.id}: ${session.scheduledAt}`);
+      scheduledTime = new Date(); // Fallback to current date
+    }
+
     const formattedTime = format(
       scheduledTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a'
+      "EEEE, MMMM d, yyyy 'at' h:mm a"
     );
     const menteeName = session.mentee
       ? `${session.mentee.firstName || ''} ${session.mentee.lastName || ''}`.trim() || session.mentee.email
@@ -890,10 +915,25 @@ export class SessionService {
       return;
     }
 
-    const scheduledTime = new Date(session.scheduledAt);
+    // Ensure scheduledAt is a valid Date object
+    let scheduledTime: Date;
+    if (session.scheduledAt instanceof Date) {
+      scheduledTime = session.scheduledAt;
+    } else if (typeof session.scheduledAt === 'string') {
+      scheduledTime = new Date(session.scheduledAt);
+    } else {
+      scheduledTime = new Date(session.scheduledAt as any);
+    }
+
+    // Validate the date
+    if (isNaN(scheduledTime.getTime())) {
+      logger.warn(`Invalid scheduledAt date for session ${session.id}: ${session.scheduledAt}`);
+      scheduledTime = new Date(); // Fallback to current date
+    }
+
     const formattedTime = format(
       scheduledTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a'
+      "EEEE, MMMM d, yyyy 'at' h:mm a"
     );
 
     // Send to mentee

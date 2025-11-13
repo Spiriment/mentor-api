@@ -357,10 +357,10 @@ export class ChatService {
 
     // Only update if there's data to update
     if (Object.keys(updateData).length > 0) {
-      await this.participantRepository.update(
-        { userId, conversationId },
-        updateData
-      );
+    await this.participantRepository.update(
+      { userId, conversationId },
+      updateData
+    );
     }
   }
 
