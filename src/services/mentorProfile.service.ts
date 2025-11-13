@@ -128,7 +128,7 @@ export class MentorProfileService {
       Object.assign(profile, data);
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
-      
+
       // Auto-approve mentor when onboarding is complete
       // This allows mentors to be visible immediately after completing onboarding
       // In production, you might want to add admin approval workflow

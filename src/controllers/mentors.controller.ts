@@ -105,22 +105,43 @@ export class MentorsController {
   ) => {
     try {
       const { mentorId } = req.params;
+      // Allow bypassing approval check for session-related queries
+      const requireApproval = req.query.requireApproval !== 'false';
 
       const mentorProfileRepository =
         AppDataSource.getRepository(MentorProfile);
 
-      const mentor = await mentorProfileRepository
+      // Try to find by MentorProfile ID first
+      let queryBuilder = mentorProfileRepository
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
-        .where('profile.id = :mentorId', { mentorId })
-        .andWhere('profile.isApproved = :isApproved', { isApproved: true })
-        .getOne();
+        .where('profile.id = :mentorId', { mentorId });
+      
+      if (requireApproval) {
+        queryBuilder = queryBuilder.andWhere('profile.isApproved = :isApproved', { isApproved: true });
+      }
+      
+      let mentor = await queryBuilder.getOne();
+
+      // If not found, try to find by userId (for sessions where mentorId is actually userId)
+      if (!mentor) {
+        queryBuilder = mentorProfileRepository
+          .createQueryBuilder('profile')
+          .leftJoinAndSelect('profile.user', 'user')
+          .where('profile.userId = :mentorId', { mentorId });
+        
+        if (requireApproval) {
+          queryBuilder = queryBuilder.andWhere('profile.isApproved = :isApproved', { isApproved: true });
+        }
+        
+        mentor = await queryBuilder.getOne();
+      }
 
       if (!mentor) {
         return res.status(404).json({
           success: false,
           error: {
-            message: 'Mentor not found or not approved',
+            message: requireApproval ? 'Mentor not found or not approved' : 'Mentor not found',
             code: 'MENTOR_NOT_FOUND',
           },
         });
