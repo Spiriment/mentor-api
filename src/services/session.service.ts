@@ -172,7 +172,7 @@ export class SessionService {
               sessionId: sessionWithRelations.id,
             });
           } else {
-            logger.error('Failed to create in-app notification', error);
+          logger.error('Failed to create in-app notification', error);
           }
         });
       }
@@ -256,7 +256,7 @@ export class SessionService {
                 sessionId: sessionWithRelations.id,
               });
             } else {
-              logger.error('Failed to create in-app notification for mentee', error);
+            logger.error('Failed to create in-app notification for mentee', error);
             }
           });
 
@@ -276,7 +276,7 @@ export class SessionService {
                 sessionId: sessionWithRelations.id,
               });
             } else {
-              logger.error('Failed to create in-app notification for mentor', error);
+            logger.error('Failed to create in-app notification for mentor', error);
             }
           });
         }
@@ -329,7 +329,7 @@ export class SessionService {
       if (options.upcoming) {
         queryBuilder
           .andWhere('session.scheduledAt > :now', {
-            now: new Date(),
+          now: new Date(),
           })
           .andWhere('session.status != :cancelled', {
             cancelled: SESSION_STATUS.CANCELLED,
@@ -339,7 +339,7 @@ export class SessionService {
           })
           .andWhere('session.status != :noShow', {
             noShow: SESSION_STATUS.NO_SHOW,
-          });
+        });
       }
 
       queryBuilder
