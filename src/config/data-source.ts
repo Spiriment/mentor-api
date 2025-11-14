@@ -64,6 +64,10 @@ export const AppDataSource = new DataSource({
     AppNotification,
     Review,
   ],
-  migrations: ['src/database/migrations/*.ts'],
+  migrations: [
+    Config.nodeEnv === 'development'
+      ? 'src/database/migrations/**/*.ts'
+      : 'database/migrations/**/*.js',
+  ],
   subscribers: [],
 });
