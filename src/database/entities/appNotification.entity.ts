@@ -7,7 +7,6 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { User } from './user.entity';
 
 export enum AppNotificationType {
   SESSION_REQUEST = 'session_request',
@@ -24,11 +23,7 @@ export class AppNotification {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
-  user!: User;
-
-  @Column()
+  @Column({ name: 'userId' })
   userId!: string;
 
   @Column({
@@ -64,4 +59,3 @@ export class AppNotification {
   @UpdateDateColumn()
   updatedAt!: Date;
 }
-
