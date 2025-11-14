@@ -66,14 +66,14 @@
     "uuid": "^13.0.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "cross-env": "^7.0.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/crypto-js": "^4.2.2",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/nodemailer": "^6.4.17",
-    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
