@@ -9,6 +9,7 @@ import { createAuthRoutes } from './auth.routes';
 import { menteeProfileRoutes } from './menteeProfile.routes';
 import { mentorProfileRoutes } from './mentorProfile.routes';
 import { mentorsRoutes } from './mentors.routes';
+import { mentorRoutes } from './mentor.routes';
 import { uploadRoutes } from './upload.routes';
 import { streakRoutes } from './streak.routes';
 import { sessionRoutes } from './session.routes';
@@ -110,6 +111,9 @@ const createRootRoutes = () => {
 
   // Mentors routes (for mentees to browse)
   rootRouter.use('/api/mentors', mentorsRoutes);
+
+  // Mentor routes (for mentors to access dashboard and mentees)
+  rootRouter.use('/api/mentor', mentorRoutes);
 
   // Upload routes
   rootRouter.use('/api/upload', uploadRoutes);

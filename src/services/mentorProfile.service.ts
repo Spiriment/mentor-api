@@ -246,4 +246,103 @@ export class MentorProfileService {
       throw error;
     }
   }
+
+  // Update mentor profile (multiple fields at once)
+  async updateProfile(
+    userId: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      country?: string;
+      christianExperience?: string;
+      christianJourney?: string;
+      scriptureTeaching?: string;
+      currentMentoring?: string;
+      churchAffiliation?: string;
+      leadershipRoles?: string;
+      maturityDefinition?: string;
+      menteeCapacity?: string;
+      mentorshipFormat?: string[];
+      menteeCalling?: string[];
+      profileImage?: string;
+    }
+  ): Promise<MentorProfile> {
+    try {
+      const profile = await this.getProfile(userId);
+
+      if (!profile) {
+        throw new Error('Mentor profile not found');
+      }
+
+      // Update user fields if provided
+      if (data.firstName || data.lastName || data.email || data.country) {
+        const user = await this.userRepository.findOne({
+          where: { id: userId },
+        });
+
+        if (!user) {
+          throw new Error('User not found');
+        }
+
+        if (data.firstName !== undefined) {
+          user.firstName = data.firstName;
+        }
+        if (data.lastName !== undefined) {
+          user.lastName = data.lastName;
+        }
+        if (data.email !== undefined) {
+          user.email = data.email.toLowerCase();
+        }
+        if (data.country !== undefined) {
+          user.country = data.country;
+        }
+
+        await this.userRepository.save(user);
+      }
+
+      // Update profile fields
+      if (data.christianExperience !== undefined) {
+        profile.christianExperience = data.christianExperience;
+      }
+      if (data.christianJourney !== undefined) {
+        profile.christianJourney = data.christianJourney;
+      }
+      if (data.scriptureTeaching !== undefined) {
+        profile.scriptureTeaching = data.scriptureTeaching;
+      }
+      if (data.currentMentoring !== undefined) {
+        profile.currentMentoring = data.currentMentoring;
+      }
+      if (data.churchAffiliation !== undefined) {
+        profile.churchAffiliation = data.churchAffiliation;
+      }
+      if (data.leadershipRoles !== undefined) {
+        profile.leadershipRoles = data.leadershipRoles;
+      }
+      if (data.maturityDefinition !== undefined) {
+        profile.maturityDefinition = data.maturityDefinition;
+      }
+      if (data.menteeCapacity !== undefined) {
+        profile.menteeCapacity = data.menteeCapacity;
+      }
+      if (data.mentorshipFormat !== undefined) {
+        profile.mentorshipFormat = data.mentorshipFormat;
+      }
+      if (data.menteeCalling !== undefined) {
+        profile.menteeCalling = data.menteeCalling;
+      }
+      if (data.profileImage !== undefined) {
+        profile.profileImage = data.profileImage;
+      }
+
+      const updatedProfile = await this.mentorProfileRepository.save(profile);
+      this.logger.info(`Updated mentor profile for user ${userId}`);
+
+      return updatedProfile;
+    } catch (error) {
+      this.logger.error('Error updating mentor profile', error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
 }

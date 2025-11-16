@@ -71,6 +71,25 @@ export const mentorProfileImageSchema = z.object({
   profileImage: z.string().min(1, 'Profile image is required'),
 });
 
+// Generic profile update schema (all fields optional)
+export const updateMentorProfileSchema = z.object({
+  firstName: z.string().min(1, 'First name is required').optional(),
+  lastName: z.string().min(1, 'Last name is required').optional(),
+  email: z.string().email('Invalid email address').optional(),
+  country: z.string().optional(),
+  christianExperience: z.string().optional(),
+  christianJourney: z.string().optional(),
+  scriptureTeaching: z.string().optional(),
+  currentMentoring: z.string().optional(),
+  churchAffiliation: z.string().optional(),
+  leadershipRoles: z.string().optional(),
+  maturityDefinition: z.string().optional(),
+  menteeCapacity: z.string().optional(),
+  mentorshipFormat: z.array(z.string()).optional(),
+  menteeCalling: z.array(z.string()).optional(),
+  profileImage: z.string().url('Invalid profile image URL').optional(),
+});
+
 // Complete mentor onboarding
 export const completeMentorOnboardingSchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
