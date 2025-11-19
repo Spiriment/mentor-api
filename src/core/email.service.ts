@@ -21,19 +21,59 @@ export class EmailService {
 
   constructor(queueService: QueueService | null) {
     this.queueService = queueService;
+
+    // Initialize logger first for error logging
+    this.logger = new Logger({
+      service: 'email-service',
+      level: process.env.LOG_LEVEL || 'info',
+    });
+
+    // Validate email configuration
+    if (
+      !Config.email.host ||
+      Config.email.host.trim() === '' ||
+      Config.email.host === 'mail'
+    ) {
+      const errorMsg = `Invalid SMTP_HOST configuration. Current value: "${
+        Config.email.host || 'undefined'
+      }". Please set SMTP_HOST in your .env file to a valid SMTP server (e.g., smtp.gmail.com, smtp.mailtrap.io, mail.yourdomain.com)`;
+      this.logger.error(
+        'Email service configuration error',
+        new Error(errorMsg)
+      );
+      throw new Error(errorMsg);
+    }
+
+    if (!Config.email.user || !Config.email.password) {
+      const errorMsg =
+        'SMTP_USER and SMTP_PASSWORD must be configured in .env file';
+      this.logger.error(
+        'Email service configuration error',
+        new Error(errorMsg)
+      );
+      throw new Error(errorMsg);
+    }
+
     this.transporter = nodemailer.createTransport({
       host: Config.email.host,
-      port: Config.email.port,
+      port: Config.email.port || 587,
       secure: Config.email.port === 465,
       auth: {
         user: Config.email.user,
         pass: Config.email.password,
       },
+      tls: {
+        // Disable certificate validation for shared hosting with mismatched certificates
+        // This is safe when connecting to your own mail server
+        rejectUnauthorized: false,
+      },
     });
 
-    this.logger = new Logger({
-      service: 'email-service',
-      level: process.env.LOG_LEVEL || 'info',
+    this.logger.info('Email service initialized successfully', {
+      host: Config.email.host,
+      port: Config.email.port || 587,
+      from: Config.email.from,
+      user: Config.email.user?.substring(0, 3) + '***', // Log partial email for security
     });
 
     this.baseLayout = fs.readFileSync(
@@ -88,18 +128,46 @@ export class EmailService {
   }
 
   public async sendEmail(options: EmailJobData): Promise<void> {
+    // Attach logo if not already attached
+    const logoPath = path.join(__dirname, '../mails/assets/logo.png');
+    const attachments = options.attachments || [];
+
+    // Add logo as attachment if it exists and not already included
+    if (fs.existsSync(logoPath)) {
+      const hasLogo = attachments.some(
+        (att: any) => att.filename === 'logo.png' || att.cid === 'logo'
+      );
+      if (!hasLogo) {
+        attachments.push({
+          filename: 'logo.png',
+          path: logoPath,
+          cid: 'logo', // Content ID for embedding in HTML
+        });
+      }
+    }
+
     const mailOptions = {
       from: process.env.SMTP_FROM,
       to: options.to,
       subject: options.subject,
       html: options.compiledContent,
-      attachments: options.attachments,
+      attachments,
     };
 
-    await this.transporter.sendMail(mailOptions);
-    this.logger.info('Email sent successfully', {
+    this.logger.info('📤 Attempting to send email', {
       to: options.to,
       subject: options.subject,
+      from: mailOptions.from,
+      hasAttachments: (mailOptions.attachments?.length || 0) > 0,
+      timestamp: new Date().toISOString(),
+    });
+
+    await this.transporter.sendMail(mailOptions);
+
+    this.logger.info('✅ Email sent successfully', {
+      to: options.to,
+      subject: options.subject,
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -212,6 +280,9 @@ export class EmailService {
 
     if (this.queueService) {
       await this.queueService.sendEmail(jobData);
+    } else {
+      // Send directly if no queue service (for mentor app)
+      await this.sendEmail(jobData);
     }
   }
 
@@ -223,7 +294,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Password Reset - Mentor App',
+      subject: 'Password Reset - Spiriment',
       partialName: 'password-reset',
       templateData: {
         title: 'Password Reset',
@@ -310,20 +381,45 @@ export class EmailService {
     verificationCode: string,
     isLogin: boolean = false
   ): Promise<void> {
-    // Send email with template
-    await this.sendEmailWithTemplate({
+    this.logger.info('📧 Sending email verification', {
       to,
-      subject: isLogin
-        ? 'Login Verification Code - Mentor App'
-        : 'Email Verification - Mentor App',
-      partialName: 'email-verification',
-      templateData: {
-        title: isLogin ? 'Login Verification' : 'Email Verification',
-        userName,
-        verificationCode,
-        isLogin,
-      },
+      userName,
+      isLogin,
+      verificationCodeLength: verificationCode.length,
+      timestamp: new Date().toISOString(),
     });
+
+    try {
+      // Send email with template
+      await this.sendEmailWithTemplate({
+        to,
+        subject: isLogin
+          ? 'Login Verification Code - Spiriment'
+          : 'Email Verification - Spiriment',
+        partialName: 'email-verification',
+        templateData: {
+          title: isLogin ? 'Login Verification' : 'Email Verification',
+          userName,
+          verificationCode,
+          isLogin,
+        },
+      });
+
+      this.logger.info('✅ Email verification sent successfully', {
+        to,
+        isLogin,
+      });
+    } catch (error) {
+      this.logger.error(
+        '❌ Failed to send email verification',
+        error instanceof Error ? error : new Error(String(error)),
+        {
+          to,
+          isLogin,
+        }
+      );
+      throw error;
+    }
 
     // Also log for development/testing
     this.logger.info(`🔐 OTP sent to ${to}: ${verificationCode}`, {

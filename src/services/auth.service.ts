@@ -554,19 +554,42 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        firstName: true,
         isEmailVerified: true,
         otpToken: true,
         otpTokenExpiry: true,
       },
     });
 
-    if (existingUser && existingUser.isEmailVerified) {
-      throw new AppError('Email already registered and verified', 409);
-    }
-
     const verificationToken = this.generateEmailVerificationToken();
     const tokenExpiry = addMinutes(new Date(), 10);
 
+    // If user exists and is verified, treat this as a login request
+    if (existingUser && existingUser.isEmailVerified) {
+      // Generate and send OTP for login
+      await this.UserRepository.update(existingUser.id, {
+        otpToken: verificationToken,
+        otpTokenExpiry: tokenExpiry,
+      });
+
+      // Send OTP email for login
+      await this.emailService.sendEmailVerificationEmail(
+        data.email,
+        existingUser.firstName || 'User',
+        verificationToken,
+        false
+      );
+
+      this.logger.info('Login OTP sent to existing user', { email: data.email });
+
+      return {
+        message: 'Verification code sent to your email',
+        isExistingUser: true,
+        isEmailVerified: true,
+      };
+    }
+
+    // New user or unverified user - registration flow
     if (existingUser && !existingUser.isEmailVerified) {
       // Update existing user with new OTP
       await this.UserRepository.update(existingUser.id, {
@@ -585,7 +608,7 @@ export class AuthService {
       await this.UserRepository.save(User);
     }
 
-    // Send OTP email
+    // Send OTP email for registration
     await this.emailService.sendEmailVerificationEmail(
       data.email,
       existingUser?.firstName || 'User',
@@ -593,10 +616,12 @@ export class AuthService {
       false
     );
 
-    this.logger.info('OTP sent successfully', { email: data.email });
+    this.logger.info('Registration OTP sent successfully', { email: data.email });
 
     return {
       message: 'Verification code sent to your email',
+      isExistingUser: false,
+      isEmailVerified: false,
     };
   };
 
@@ -609,6 +634,7 @@ export class AuthService {
         otpToken: true,
         otpTokenExpiry: true,
         isEmailVerified: true,
+        emailVerifiedAt: true,
       },
     });
 
@@ -628,21 +654,36 @@ export class AuthService {
       throw new AppError('Invalid verification code', 400);
     }
 
-    // Mark email as verified and clear OTP
-    await this.UserRepository.update(User.id, {
-      isEmailVerified: true,
-      emailVerifiedAt: new Date(),
-      otpToken: null as any,
-      otpTokenExpiry: null as any,
-    });
+    const isExistingVerifiedUser = User.isEmailVerified;
 
-    this.logger.info('OTP verified successfully', { email: data.email });
+    // If user is already verified, this is a login - just clear OTP
+    // If user is not verified, this is registration - mark as verified
+    if (isExistingVerifiedUser) {
+      // Login flow - just clear OTP
+      await this.UserRepository.update(User.id, {
+        otpToken: null as any,
+        otpTokenExpiry: null as any,
+      });
+      this.logger.info('Login OTP verified successfully', { email: data.email });
+    } else {
+      // Registration flow - mark email as verified and clear OTP
+      await this.UserRepository.update(User.id, {
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
+        otpToken: null as any,
+        otpTokenExpiry: null as any,
+      });
+      this.logger.info('Registration OTP verified successfully', { email: data.email });
+    }
 
     // Generate and return tokens
     const tokens = this.generateTokens(User);
     return {
       ...tokens,
-      message: 'Email verified successfully',
+      message: isExistingVerifiedUser 
+        ? 'Login successful' 
+        : 'Email verified successfully',
+      isExistingUser: isExistingVerifiedUser,
     };
   };
 
@@ -703,10 +744,11 @@ export class AuthService {
       throw new AppError('Email not verified', 400);
     }
 
-    // Update user role and mark onboarding as complete
+    // Update user role - do NOT mark onboarding as complete yet
+    // Onboarding will be marked complete after role-specific onboarding is finished
     await this.UserRepository.update(User.id, {
       role: data.role,
-      isOnboardingComplete: true,
+      isOnboardingComplete: false, // Keep false until role-specific onboarding is complete
     });
 
     // Get updated user for token generation

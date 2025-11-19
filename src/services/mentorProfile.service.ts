@@ -128,9 +128,14 @@ export class MentorProfileService {
       Object.assign(profile, data);
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
+      
+      // Auto-approve mentor when onboarding is complete
+      // This allows them to be immediately visible to mentees
+      profile.isApproved = true;
+      profile.approvedAt = new Date();
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
-      this.logger.info(`Completed mentor onboarding for user ${userId}`);
+      this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
 
       return completedProfile;
     } catch (error) {
@@ -262,7 +267,7 @@ export class MentorProfileService {
       churchAffiliation?: string;
       leadershipRoles?: string;
       maturityDefinition?: string;
-      menteeCapacity?: string;
+      menteeCapacity?: number;
       mentorshipFormat?: string[];
       menteeCalling?: string[];
       profileImage?: string;

@@ -61,27 +61,26 @@ export class ChatService {
     await queryRunner.startTransaction();
 
     try {
-      // Create conversation
-      const conversation = this.conversationRepository.create({
+      // Create conversation - use queryRunner.manager.create() when in a transaction
+      const conversation = queryRunner.manager.create(Conversation, {
         type: data.type || CONVERSATION_TYPE.MENTOR_MENTEE,
         title: data.title,
         description: data.description,
       });
 
-      const savedConversation = await queryRunner.manager.save(conversation);
+      const savedConversation = await queryRunner.manager.save(Conversation, conversation);
 
-      // Add participants
+      // Add participants - use queryRunner.manager.create() when in a transaction
       const participants = data.participantIds.map((userId) => {
-        const participant = this.participantRepository.create({
+        return queryRunner.manager.create(ConversationParticipant, {
           conversationId: savedConversation.id,
           userId,
           role: this.determineParticipantRole(userId, data.createdBy),
           status: PARTICIPANT_STATUS.ACTIVE,
         });
-        return participant;
       });
 
-      await queryRunner.manager.save(participants);
+      await queryRunner.manager.save(ConversationParticipant, participants);
 
       await queryRunner.commitTransaction();
 

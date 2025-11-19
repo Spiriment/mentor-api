@@ -326,32 +326,6 @@ export class MenteeProfileController {
     }
   };
 
-  updateAvailability = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const { userId } = req.params;
-      const { availability } = req.body;
-
-      const profile = await this.menteeProfileService.updateOnboardingStep(
-        userId,
-        'availability',
-        { availability }
-      );
-
-      res.json({
-        success: true,
-        data: profile,
-        message: 'Availability updated successfully',
-      });
-    } catch (error: any) {
-      this.logger.error('Error updating availability', error);
-      next(error);
-    }
-  };
-
   updateMentorExpectations = async (
     req: Request,
     res: Response,
