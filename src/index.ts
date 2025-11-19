@@ -14,7 +14,28 @@ import { WebSocketService } from './services/websocket.service';
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors());
+// Configure CORS to allow requests from any origin (for development)
+// In production, you should restrict this to specific origins
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: true,
+}));
+
+// Request logging middleware (for debugging)
+app.use((req, res, next) => {
+  logger.info('📥 Incoming Request', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    ip: req.ip || req.socket.remoteAddress,
+    userAgent: req.get('user-agent'),
+    timestamp: new Date().toISOString(),
+    hasBody: !!req.body,
+    bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : null,
+  });
+  next();
+});
+
 app.use(express.json({ limit: '52mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -51,10 +72,15 @@ async function startServer() {
 
     app.use(errorHandler(logger));
 
-    httpServer.listen(port, () => {
+    // Listen on all network interfaces (0.0.0.0) to allow connections from other devices
+    // This allows the app to connect via your computer's IP address (e.g., 192.168.0.192)
+    httpServer.listen(port, '0.0.0.0', () => {
       const totalStartupTime = Date.now() - startTime;
       logger.info(
-        `Server is running on port ${port} with WebSocket support (startup took ${totalStartupTime}ms)`
+        `Server is running on 0.0.0.0:${port} with WebSocket support (startup took ${totalStartupTime}ms)`
+      );
+      logger.info(
+        `Server accessible at: http://localhost:${port}/api or http://YOUR_IP:${port}/api`
       );
     });
   } catch (error: any) {

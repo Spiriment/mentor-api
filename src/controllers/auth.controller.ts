@@ -320,12 +320,28 @@ export class AuthController {
     next: NextFunction
   ) => {
     try {
-      const result = await this.authService.emailRegistration(req.body);
-      this.logger.info('Email registration initiated successfully', {
+      // Log incoming request details
+      this.logger.info('📧 Email registration request received', {
         email: req.body.email,
+        ip: req.ip || req.socket.remoteAddress,
+        userAgent: req.get('user-agent'),
+        timestamp: new Date().toISOString(),
       });
+
+      const result = await this.authService.emailRegistration(req.body);
+      
+      this.logger.info('✅ Email registration initiated successfully', {
+        email: req.body.email,
+        isExistingUser: result.isExistingUser,
+        isEmailVerified: result.isEmailVerified,
+      });
+      
       return sendSuccessResponse(res, result);
     } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('❌ Email registration error', errorObj, {
+        email: req.body.email,
+      });
       next(error);
     }
   };

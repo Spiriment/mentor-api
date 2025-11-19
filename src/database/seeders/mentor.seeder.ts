@@ -30,7 +30,7 @@ const mentors = [
         'Senior Pastor, Board Member of City Ministerial Alliance, Director of Leadership Development Program',
       maturityDefinition:
         "Spiritual maturity is evidenced by consistent fruit of the Spirit, faithful service to others, and a growing love for God's Word and His people. It's marked by humility, teachability, and a heart for discipleship.",
-      menteeCapacity: '5-8 mentees',
+      menteeCapacity: 6,
       mentorshipFormat: [
         'One-on-one meetings',
         'Group discipleship',
@@ -78,7 +78,7 @@ const mentors = [
         "Professor of Biblical Studies, Director of Women's Ministry, Board Member of Christian Education Association",
       maturityDefinition:
         "Maturity comes through consistent study of God's Word, active participation in Christian community, and a willingness to be corrected and grow. It's shown in how we handle trials and serve others.",
-      menteeCapacity: '6-10 mentees',
+      menteeCapacity: 8,
       mentorshipFormat: [
         'Academic mentoring',
         'Small group studies',
@@ -126,7 +126,7 @@ const mentors = [
         'Church Elder, Founder of Christian Business Network, Board Member of Church Planting Initiative',
       maturityDefinition:
         "Maturity is demonstrated through faithfulness in small things, integrity in business dealings, and a heart for kingdom expansion. It's about being the same person at church, work, and home.",
-      menteeCapacity: '4-6 mentees',
+      menteeCapacity: 5,
       mentorshipFormat: [
         'Business mentoring',
         'Church planting guidance',
@@ -174,7 +174,7 @@ const mentors = [
         'Youth Pastor, Worship Director, Coordinator of Young Adult Ministry',
       maturityDefinition:
         "Spiritual maturity in young people is shown through consistent quiet times, active service in the church, and a growing heart for evangelism. It's about moving from consumer to contributor in the body of Christ.",
-      menteeCapacity: '8-12 mentees',
+      menteeCapacity: 10,
       mentorshipFormat: [
         'Youth discipleship',
         'Worship team training',
@@ -222,7 +222,7 @@ const mentors = [
         'Missionary, Church Planter, Director of Missions Training, Board Member of International Missions Board',
       maturityDefinition:
         'Missions maturity is demonstrated through a heart for the lost, willingness to sacrifice comfort for the gospel, and ability to adapt to different cultures while maintaining biblical truth.',
-      menteeCapacity: '5-7 mentees',
+      menteeCapacity: 6,
       mentorshipFormat: [
         'Missions training',
         'Cross-cultural ministry',

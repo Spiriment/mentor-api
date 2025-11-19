@@ -88,9 +88,6 @@ export class MenteeProfileService {
         case 'mentorshipFormat':
           profile.mentorshipFormat = data.mentorshipFormat;
           break;
-        case 'availability':
-          profile.availability = data.availability;
-          break;
         case 'mentorExpectations':
           profile.mentorExpectations = data.mentorExpectations;
           break;
@@ -178,7 +175,6 @@ export class MenteeProfileService {
         'bibleTopics',
         'learningPreference',
         'mentorshipFormat',
-        'availability',
         'mentorExpectations',
         'spiritualGoals',
         'profileImage',

@@ -31,7 +31,8 @@ export const authMiddleware = (jwtService: JwtService) => {
         where: {
           id: decoded.userId,
         },
-        relations: ["role", "role.permissions"],
+        // Note: User entity has 'role' as a column (enum), not a relation
+        // No relations need to be loaded for authentication
       });
 
       if (!user) {

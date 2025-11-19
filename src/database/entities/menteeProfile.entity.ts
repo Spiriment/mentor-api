@@ -45,9 +45,6 @@ export class MenteeProfile extends BaseEntity {
   @Column({ name: 'mentorshipFormat', type: 'json', nullable: true })
   mentorshipFormat?: string[];
 
-  @Column({ name: 'availability', type: 'json', nullable: true })
-  availability?: string[];
-
   @Column({ name: 'mentorExpectations', type: 'json', nullable: true })
   mentorExpectations?: string[];
 

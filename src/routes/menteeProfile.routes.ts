@@ -10,7 +10,6 @@ import {
   menteeBibleTopicsSchema,
   menteeLearningPreferenceSchema,
   menteeMentorshipFormatSchema,
-  menteeAvailabilitySchema,
   menteeMentorExpectationsSchema,
   menteeSpiritualGoalsSchema,
   menteeProfileImageSchema,
@@ -89,12 +88,6 @@ router.put(
   '/:userId/mentorship-format',
   validate(menteeMentorshipFormatSchema),
   menteeProfileController.updateMentorshipFormat
-);
-
-router.put(
-  '/:userId/availability',
-  validate(menteeAvailabilitySchema),
-  menteeProfileController.updateAvailability
 );
 
 router.put(

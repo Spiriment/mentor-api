@@ -10,7 +10,7 @@ export class ChatController {
   // Get user's conversations
   static async getConversations(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { limit = 50, offset = 0 } = req.query;
 
       const conversations = await chatService.getUserConversations(
@@ -44,7 +44,7 @@ export class ChatController {
   // Get specific conversation with messages
   static async getConversation(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
       const { limit = 50, offset = 0, beforeMessageId } = req.query;
 
@@ -109,7 +109,15 @@ export class ChatController {
   // Create new conversation
   static async createConversation(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+          },
+        });
+      }
       const { participantIds, type, title, description } = req.body;
 
       if (
@@ -160,7 +168,7 @@ export class ChatController {
   // Send message (for REST API - WebSocket is preferred)
   static async sendMessage(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId, content, type, metadata } = req.body;
 
       if (!conversationId || !content) {
@@ -219,7 +227,7 @@ export class ChatController {
   // Mark conversation as read
   static async markConversationRead(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
       // Verify user is participant
@@ -257,7 +265,7 @@ export class ChatController {
   // Mark specific message as read
   static async markMessageRead(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
 
       await chatService.markMessageAsRead(messageId, userId);
@@ -281,7 +289,7 @@ export class ChatController {
   // Add reaction to message
   static async addReaction(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
       const { emoji } = req.body;
 
@@ -315,7 +323,7 @@ export class ChatController {
   // Remove reaction from message
   static async removeReaction(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { messageId } = req.params;
 
       await chatService.removeReactionFromMessage(messageId, userId);
@@ -339,7 +347,7 @@ export class ChatController {
   // Get conversation participants
   static async getConversationParticipants(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
       // Verify user is participant

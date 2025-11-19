@@ -42,8 +42,8 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'maturityDefinition', type: 'text', nullable: true })
   maturityDefinition?: string;
 
-  @Column({ name: 'menteeCapacity', nullable: true })
-  menteeCapacity?: string;
+  @Column({ name: 'menteeCapacity', type: 'int', nullable: true })
+  menteeCapacity?: number;
 
   @Column({ name: 'mentorshipFormat', type: 'json', nullable: true })
   mentorshipFormat?: string[];
