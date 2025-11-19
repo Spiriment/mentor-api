@@ -285,10 +285,13 @@ export class ChatService {
       updateData.typingAt = data.typingAt || new Date();
     }
 
-    await this.participantRepository.update(
-      { userId, conversationId },
-      updateData
-    );
+    // Only update if there's something to update
+    if (Object.keys(updateData).length > 0) {
+      await this.participantRepository.update(
+        { userId, conversationId },
+        updateData
+      );
+    }
   }
 
   // Reaction Management
