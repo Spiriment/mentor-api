@@ -106,7 +106,7 @@ export const completeMentorOnboardingSchema = z.object({
   maturityDefinition: z
     .string()
     .min(10, 'Maturity definition must be at least 10 characters'),
-  menteeCapacity: z.number().int().positive('Mentee capacity must be a positive number'),
+  menteeCapacity: z.coerce.number().int().positive('Mentee capacity must be a positive number'),
   mentorshipFormat: z
     .array(z.string())
     .min(1, 'At least one mentorship format is required'),
