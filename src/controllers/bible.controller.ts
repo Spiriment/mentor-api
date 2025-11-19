@@ -14,11 +14,39 @@ export class BibleController {
       const { book, chapter } = req.params as { book: string; chapter: string };
       const { lang } = req.query as { lang?: string };
       
+      // Reject if book is "user" - this should be handled by bibleUserRoutes
+      if (book === 'user') {
+        return res.status(404).json({
+          success: false,
+          error: { message: 'Route not found. Use /api/bible/user/* for user-specific endpoints.', code: 'ROUTE_NOT_FOUND' }
+        });
+      }
+      
+      // Validate book parameter
+      if (!book || typeof book !== 'string' || book.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: { message: 'Book parameter is required and must be a non-empty string', code: 'INVALID_BOOK' }
+        });
+      }
+      
+      // Validate and parse chapter parameter
+      const chapterNum = Number(chapter);
+      if (!chapter || chapter.trim().length === 0 || isNaN(chapterNum) || chapterNum <= 0 || !Number.isInteger(chapterNum)) {
+        return res.status(400).json({
+          success: false,
+          error: { 
+            message: `Chapter parameter is required and must be a positive integer. Received: ${chapter}`, 
+            code: 'INVALID_CHAPTER' 
+          }
+        });
+      }
+      
       // Validate and normalize language code
       const language: BibleLanguage = 
         lang === 'deu' || lang === 'nld' ? (lang as BibleLanguage) : 'eng';
       
-      const data = await this.bible.getChapter(book, Number(chapter), language);
+      const data = await this.bible.getChapter(book, chapterNum, language);
       return sendSuccessResponse(res, data);
     } catch (err) {
       next(err);

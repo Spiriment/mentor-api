@@ -497,6 +497,23 @@ export class AuthController {
       let currentStreak = user.currentStreak || 0;
       let longestStreak = user.longestStreak || 0;
 
+      // CRITICAL: Check if user already updated streak today - prevent duplicate updates
+      if (lastStreakDate === today) {
+        this.logger.info('Streak already updated for today - preventing duplicate update', {
+          userId: user.id,
+          lastStreakDate,
+          today,
+          currentStreak,
+        });
+        
+        return sendSuccessResponse(res, {
+          message: 'Streak already updated for today',
+          currentStreak,
+          longestStreak,
+          alreadyUpdated: true,
+        });
+      }
+
       // If user hasn't read today yet, increment streak
       if (lastStreakDate !== today) {
         this.logger.info('Updating streak for new day', {
@@ -523,21 +540,38 @@ export class AuthController {
           longestStreak = currentStreak;
         }
 
-        // Update weekly streak data
-        const weeklyData = user.weeklyStreakData
-          ? typeof user.weeklyStreakData === 'string'
-            ? JSON.parse(user.weeklyStreakData)
-            : user.weeklyStreakData
-          : [0, 0, 0, 0, 0, 0, 0];
+        // Update weekly streak data - preserve previous days
+        let weeklyData: (boolean | number)[] = [];
+        if (user.weeklyStreakData) {
+          if (typeof user.weeklyStreakData === 'string') {
+            try {
+              weeklyData = JSON.parse(user.weeklyStreakData);
+            } catch (e) {
+              weeklyData = new Array(7).fill(false);
+            }
+          } else if (Array.isArray(user.weeklyStreakData)) {
+            weeklyData = [...user.weeklyStreakData];
+          } else {
+            weeklyData = new Array(7).fill(false);
+          }
+        } else {
+          weeklyData = new Array(7).fill(false);
+        }
+        
+        // Ensure array has 7 elements
+        while (weeklyData.length < 7) {
+          weeklyData.push(false);
+        }
+        
         const todayIndex = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
-        weeklyData[todayIndex] = 1; // Mark today as read
+        weeklyData[todayIndex] = true; // Mark today as read (use true for consistency)
 
-        // Update user in database
+        // Update user in database - store as JSON string for consistency
         await this.userRepository.update(user.id, {
           currentStreak,
           longestStreak,
           lastStreakDate: today,
-          weeklyStreakData: JSON.stringify(weeklyData),
+          weeklyStreakData: weeklyData, // TypeORM will handle JSON serialization
         } as any);
 
         this.logger.info('Streak updated successfully', {

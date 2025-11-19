@@ -127,6 +127,12 @@ export class MenteeProfileService {
       profile.onboardingStep = 'completed';
 
       const completedProfile = await this.menteeProfileRepository.save(profile);
+      
+      // Also update the User table to mark onboarding as complete
+      await this.userRepository.update(userId, {
+        isOnboardingComplete: true,
+      });
+      
       this.logger.info(`Completed mentee onboarding for user ${userId}`);
 
       return completedProfile;

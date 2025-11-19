@@ -124,9 +124,9 @@ const createRootRoutes = () => {
   // Session routes
   rootRouter.use('/api/sessions', sessionRoutes);
 
-  // Bible routes
-  rootRouter.use('/api/bible', bibleRoutes);
+  // Bible routes - register user routes FIRST to avoid matching /:book/:chapter
   rootRouter.use('/api/bible/user', bibleUserRoutes);
+  rootRouter.use('/api/bible', bibleRoutes);
 
   // Study routes
   rootRouter.use('/api/study', studyRoutes);

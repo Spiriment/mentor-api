@@ -135,6 +135,12 @@ export class MentorProfileService {
       profile.approvedAt = new Date();
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
+      
+      // Also update the User table to mark onboarding as complete
+      await this.userRepository.update(userId, {
+        isOnboardingComplete: true,
+      });
+      
       this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
 
       return completedProfile;

@@ -142,6 +142,7 @@ export class SessionController {
         limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
         upcoming: req.query.upcoming === 'true',
+        past: req.query.past === 'true',
       };
 
       const result = await this.sessionService.getUserSessions(
@@ -371,6 +372,33 @@ export class SessionController {
 
       if (!Object.values(SESSION_STATUS).includes(status)) {
         throw new AppError('Invalid session status', StatusCodes.BAD_REQUEST);
+      }
+
+      // If trying to start a session (set to IN_PROGRESS), validate the scheduled time
+      if (status === SESSION_STATUS.IN_PROGRESS) {
+        // Get the session to check scheduled time
+        const existingSession = await this.sessionService.getSessionById(
+          sessionId,
+          user.id
+        );
+
+        if (!existingSession) {
+          throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+        }
+
+        // Check if current time is before scheduled time
+        const now = new Date();
+        const scheduledAt = new Date(existingSession.scheduledAt);
+
+        if (now < scheduledAt) {
+          const timeUntilSession = Math.floor(
+            (scheduledAt.getTime() - now.getTime()) / 1000 / 60
+          );
+          throw new AppError(
+            `Session cannot be joined yet. The session is scheduled to start in ${timeUntilSession} minute(s).`,
+            StatusCodes.FORBIDDEN
+          );
+        }
       }
 
       const updateData: UpdateSessionDTO = { status };

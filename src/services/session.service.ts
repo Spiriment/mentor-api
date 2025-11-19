@@ -194,6 +194,7 @@ export class SessionService {
       limit?: number;
       offset?: number;
       upcoming?: boolean;
+      past?: boolean;
     } = {}
   ): Promise<{ sessions: Session[]; total: number }> {
     try {
@@ -218,10 +219,29 @@ export class SessionService {
         queryBuilder.andWhere('session.scheduledAt > :now', {
           now: new Date(),
         });
+        // Exclude cancelled and completed sessions from upcoming
+        queryBuilder.andWhere('session.status != :cancelledStatus', {
+          cancelledStatus: SESSION_STATUS.CANCELLED,
+        });
+        queryBuilder.andWhere('session.status != :completedStatus', {
+          completedStatus: SESSION_STATUS.COMPLETED,
+        });
       }
 
+      if (options.past) {
+        queryBuilder.andWhere('session.scheduledAt < :now', {
+          now: new Date(),
+        });
+        // Exclude cancelled sessions from past (but include completed and other statuses)
+        queryBuilder.andWhere('session.status != :cancelledStatus', {
+          cancelledStatus: SESSION_STATUS.CANCELLED,
+        });
+      }
+
+      // Order by scheduledAt - DESC for past (newest first), ASC for upcoming (oldest first)
+      const orderDirection = options.past ? 'DESC' : 'ASC';
       queryBuilder
-        .orderBy('session.scheduledAt', 'ASC')
+        .orderBy('session.scheduledAt', orderDirection)
         .skip(options.offset || 0)
         .take(options.limit || 20);
 
