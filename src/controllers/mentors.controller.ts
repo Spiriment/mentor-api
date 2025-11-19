@@ -105,22 +105,32 @@ export class MentorsController {
   ) => {
     try {
       const { mentorId } = req.params;
+      const { requireApproval } = req.query;
+      const skipApprovalCheck = requireApproval === 'false';
 
       const mentorProfileRepository =
         AppDataSource.getRepository(MentorProfile);
 
-      const mentor = await mentorProfileRepository
+      // Build query - try profile.id first, then userId as fallback
+      let query = mentorProfileRepository
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
-        .where('profile.id = :mentorId', { mentorId })
-        .andWhere('profile.isApproved = :isApproved', { isApproved: true })
-        .getOne();
+        .where('(profile.id = :mentorId OR profile.userId = :mentorId)', { mentorId });
+
+      // Only require approval if not explicitly skipped
+      if (!skipApprovalCheck) {
+        query = query.andWhere('profile.isApproved = :isApproved', { isApproved: true });
+      }
+
+      const mentor = await query.getOne();
 
       if (!mentor) {
         return res.status(404).json({
           success: false,
           error: {
-            message: 'Mentor not found or not approved',
+            message: skipApprovalCheck 
+              ? 'Mentor not found' 
+              : 'Mentor not found or not approved',
             code: 'MENTOR_NOT_FOUND',
           },
         });

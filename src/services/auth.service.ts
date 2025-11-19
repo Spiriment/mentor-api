@@ -631,9 +631,13 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isEmailVerified: true,
+        isOnboardingComplete: true,
         otpToken: true,
         otpTokenExpiry: true,
-        isEmailVerified: true,
         emailVerifiedAt: true,
       },
     });
@@ -676,15 +680,63 @@ export class AuthService {
       this.logger.info('Registration OTP verified successfully', { email: data.email });
     }
 
+    // Check profile table for onboarding completion status (in case User table is not updated)
+    let isOnboardingComplete = User.isOnboardingComplete || false;
+    if (User.role && !isOnboardingComplete) {
+      try {
+        if (User.role === 'mentee') {
+          const MenteeProfile = await this.UserRepository.manager.getRepository('MenteeProfile').findOne({
+            where: { userId: User.id },
+            select: ['isOnboardingComplete'],
+          });
+          if (MenteeProfile?.isOnboardingComplete) {
+            isOnboardingComplete = true;
+            // Update User table to sync
+            await this.UserRepository.update(User.id, { isOnboardingComplete: true });
+          }
+        } else if (User.role === 'mentor') {
+          const MentorProfile = await this.UserRepository.manager.getRepository('MentorProfile').findOne({
+            where: { userId: User.id },
+            select: ['isOnboardingComplete'],
+          });
+          if (MentorProfile?.isOnboardingComplete) {
+            isOnboardingComplete = true;
+            // Update User table to sync
+            await this.UserRepository.update(User.id, { isOnboardingComplete: true });
+          }
+        }
+      } catch (profileError) {
+        this.logger.warn('Error checking profile onboarding status', { error: profileError });
+        // Continue with User table value if profile check fails
+      }
+    }
+
     // Generate and return tokens
     const tokens = this.generateTokens(User);
-    return {
+    
+    // Return user data for existing users (login flow) so frontend knows role and onboarding status
+    const response: any = {
       ...tokens,
       message: isExistingVerifiedUser 
         ? 'Login successful' 
         : 'Email verified successfully',
       isExistingUser: isExistingVerifiedUser,
     };
+    
+    // Include user data for existing verified users (login flow)
+    if (isExistingVerifiedUser) {
+      response.user = {
+        id: User.id,
+        email: User.email,
+        firstName: User.firstName || '',
+        lastName: User.lastName || '',
+        role: User.role || '',
+        isVerified: User.isEmailVerified || false,
+        isOnboardingComplete: isOnboardingComplete,
+      };
+    }
+    
+    return response;
   };
 
   updateUserProfile = async (data: UpdateProfileDTO): Promise<any> => {

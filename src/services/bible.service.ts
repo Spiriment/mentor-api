@@ -127,32 +127,39 @@ export class BibleService {
   }
 
   /**
-   * Get Bible Brain Bible ID for a language
+   * Get Bible Brain FilesetId for a language
+   * Uses the correct DBP4 API endpoints:
+   * - GET /api/bibles to get available Bibles
+   * - GET /api/bibles/filesets to get text filesets
+   * 
    * Default Bible versions:
    * - English: ASV (American Standard Version) or KJV
    * - German: Luther 2017
    * - Dutch: NBV (Nieuwe Bijbelvertaling)
    */
-  private async getBibleBrainBibleId(
+  private async getBibleBrainFilesetId(
     language: BibleLanguage = 'eng'
   ): Promise<string> {
-    const cacheKey = `bible_id:${language}`;
+    const cacheKey = `fileset_id:${language}`;
     const cached = this.getCache<string>(cacheKey);
     if (cached) return cached;
 
     try {
-      // Get available Bibles for the language
+      // Step 1: Get available Bibles using correct endpoint
+      // Language code needs to be uppercase (ENG, DEU, NLD)
+      const languageCode = language.toUpperCase();
       const response = await axios.get(
-        `${this.bibleBrainBaseUrl}/library/language`,
+        `${this.bibleBrainBaseUrl}/api/bibles`,
         {
           params: {
             key: this.bibleBrainApiKey,
-            language_code: language,
-            v: 4,
+            language_family_code: languageCode,
           },
         }
       );
 
+      const bibles = response.data?.data || response.data || [];
+      
       // Prefer specific Bible versions
       const preferredBibles: Record<BibleLanguage, string[]> = {
         eng: ['ASV', 'KJV', 'WEB'], // English
@@ -160,40 +167,68 @@ export class BibleService {
         nld: ['NBV', 'NBG'], // Dutch - Nieuwe Bijbelvertaling, NBG
       };
 
-      const bibles = response.data?.data || [];
       const preferred = preferredBibles[language] || [];
 
       // Find preferred Bible or use first available
       let bibleId = bibles.find((b: any) =>
-        preferred.some((p) => b.id?.includes(p))
+        preferred.some((p) => b.id?.includes(p) || b.abbreviation?.includes(p))
       )?.id;
 
       if (!bibleId && bibles.length > 0) {
         bibleId = bibles[0].id;
       }
 
-      if (bibleId) {
-        this.setCache(cacheKey, bibleId, 7 * 24 * 60 * 60 * 1000); // Cache for 7 days
-        return bibleId;
+      if (!bibleId) {
+        throw new Error(`No Bible found for language: ${language}`);
       }
 
-      throw new Error(`No Bible found for language: ${language}`);
+      // Step 2: Get filesets for this Bible to find text fileset
+      const filesetsResponse = await axios.get(
+        `${this.bibleBrainBaseUrl}/api/bibles/filesets`,
+        {
+          params: {
+            key: this.bibleBrainApiKey,
+            bible_id: bibleId,
+            type: 'text', // We want text filesets
+          },
+        }
+      );
+
+      const filesets = filesetsResponse.data?.data || filesetsResponse.data || [];
+      
+      // Find a complete text fileset (6 characters = text only, or starts with C for Complete)
+      // Text filesets are usually 6 characters (LLLVVV) or start with the BibleId
+      const textFileset = filesets.find((f: any) => {
+        const filesetId = f.id || f.fileset_id || '';
+        // Text filesets are 6 characters or start with BibleId and have no media type suffix
+        return filesetId.length === 6 || 
+               (filesetId.startsWith(bibleId.substring(0, 6)) && filesetId.length <= 10);
+      });
+
+      const filesetId = textFileset?.id || textFileset?.fileset_id || filesets[0]?.id || filesets[0]?.fileset_id;
+
+      if (filesetId) {
+        this.setCache(cacheKey, filesetId, 7 * 24 * 60 * 60 * 1000); // Cache for 7 days
+        return filesetId;
+      }
+
+      throw new Error(`No text fileset found for Bible: ${bibleId}`);
     } catch (error) {
-      console.error(`Error getting Bible ID for ${language}:`, error);
-      // Fallback to default IDs
+      console.error(`Error getting FilesetId for ${language}:`, error);
+      // Fallback to default FilesetIds (6-character text filesets)
       const fallbackIds: Record<BibleLanguage, string> = {
-        eng: 'ENGASV', // Fallback
-        deu: 'DEULUT', // Fallback
-        nld: 'NLDNBV', // Fallback
+        eng: 'ENGASV', // English ASV text
+        deu: 'DEULUT', // German Luther text
+        nld: 'NLDNBV', // Dutch NBV text
       };
       return fallbackIds[language] || 'ENGASV';
     }
   }
 
   /**
-   * Fetch chapter from Bible Brain API
-   * Note: Bible Brain API structure may need adjustment based on actual API response
-   * This implementation attempts to use the DBP4 API structure
+   * Fetch chapter from Bible Brain API using DBP4 endpoints
+   * Uses correct API structure:
+   * - GET /api/text/verse with fileset_id, book_id, chapter_id
    */
   private async getChapterFromBibleBrain(
     book: string,
@@ -201,97 +236,77 @@ export class BibleService {
     language: BibleLanguage = 'eng'
   ) {
     try {
-      const bibleId = await this.getBibleBrainBibleId(language);
+      // Get the filesetId for this language
+      const filesetId = await this.getBibleBrainFilesetId(language);
       const bookCode = BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
 
-      // Try to get Bible books - API structure may vary
-      // Option 1: Try /library/book endpoint
-      let books: any[] = [];
+      // Get book information - need to find the book_id
+      // First, try to get books from the fileset
+      let bookId: string | number | null = null;
+      
       try {
+        // Try to get books for this fileset
         const booksResponse = await axios.get(
-          `${this.bibleBrainBaseUrl}/library/book`,
+          `${this.bibleBrainBaseUrl}/api/bibles/books`,
           {
             params: {
               key: this.bibleBrainApiKey,
-              dam_id: bibleId,
-              v: 4,
+              fileset_id: filesetId,
             },
           }
         );
-        books = booksResponse.data?.data || booksResponse.data || [];
-      } catch (error) {
-        console.warn('Error fetching books, trying alternative endpoint:', error);
-        // Try alternative endpoint structure
-        try {
-          const altResponse = await axios.get(
-            `${this.bibleBrainBaseUrl}/bibles/${bibleId}/books`,
-            {
-              params: {
-                key: this.bibleBrainApiKey,
-                v: 4,
-              },
-            }
-          );
-          books = altResponse.data?.data || altResponse.data || [];
-        } catch (altError) {
-          console.error('Alternative book endpoint also failed:', altError);
+
+        const books = booksResponse.data?.data || booksResponse.data || [];
+        
+        // Find the book by code or name
+        const bookData = books.find(
+          (b: any) =>
+            b.book_code === bookCode ||
+            b.code === bookCode ||
+            b.abbr === bookCode ||
+            b.id === bookCode ||
+            b.name?.toLowerCase() === book.toLowerCase() ||
+            b.name?.toLowerCase().includes(book.toLowerCase())
+        );
+
+        if (bookData) {
+          bookId = bookData.book_id || bookData.id || bookData.num || bookData.book_code;
         }
+      } catch (error) {
+        console.warn('Error fetching books, will try with book code directly:', error);
+        // If we can't get books list, try using the book code as book_id
+        bookId = bookCode;
       }
 
-      const bookData = books.find(
-        (b: any) =>
-          b.book_code === bookCode ||
-          b.code === bookCode ||
-          b.abbr === bookCode ||
-          b.name?.toLowerCase().includes(book.toLowerCase())
-      );
-
-      if (!bookData) {
+      if (!bookId) {
         throw new Error(`Book not found: ${book} (code: ${bookCode})`);
       }
 
-      const bookId = bookData.book_id || bookData.id || bookData.num;
-
-      // Get verses for the chapter
-      // Try multiple possible endpoint structures
-      let verses: any[] = [];
-      try {
-        const versesResponse = await axios.get(
-          `${this.bibleBrainBaseUrl}/library/verse`,
-          {
-            params: {
-              key: this.bibleBrainApiKey,
-              dam_id: bibleId,
-              book_id: bookId,
-              chapter_id: chapter.toString(),
-              v: 4,
-            },
-          }
-        );
-        verses = versesResponse.data?.data || versesResponse.data || [];
-      } catch (error) {
-        console.warn('Error fetching verses, trying alternative endpoint:', error);
-        // Try alternative structure
-        try {
-          const altResponse = await axios.get(
-            `${this.bibleBrainBaseUrl}/bibles/${bibleId}/books/${bookId}/chapters/${chapter}/verses`,
-            {
-              params: {
-                key: this.bibleBrainApiKey,
-                v: 4,
-              },
-            }
-          );
-          verses = altResponse.data?.data || altResponse.data || [];
-        } catch (altError) {
-          console.error('Alternative verse endpoint also failed:', altError);
-          throw altError;
+      // Get verses for the chapter using the correct DBP4 endpoint
+      // GET /api/text/verse?key=...&fileset_id=...&book_id=...&chapter_id=...&verse_start=1&verse_end=999
+      const versesResponse = await axios.get(
+        `${this.bibleBrainBaseUrl}/api/text/verse`,
+        {
+          params: {
+            key: this.bibleBrainApiKey,
+            fileset_id: filesetId,
+            book_id: bookId,
+            chapter_id: chapter.toString(),
+            verse_start: 1,
+            verse_end: 999, // Get all verses in the chapter
+          },
         }
+      );
+
+      const verses = versesResponse.data?.data || versesResponse.data || [];
+      
+      if (!verses || verses.length === 0) {
+        throw new Error(`No verses found for ${book} ${chapter}`);
       }
 
       // Format response similar to bible-api.com format for consistency
-      const formattedVerses = verses.map((verse: any, index: number) => {
-        const verseNum = verse.verse_id || verse.id || verse.verse || (index + 1);
+      const formattedVerses = verses.map((verse: any) => {
+        const verseNum = verse.verse_id || verse.verse || verse.id || 0;
         const verseText = verse.verse_text || verse.text || verse.content || '';
         return {
           book_id: bookId,
@@ -302,12 +317,15 @@ export class BibleService {
         };
       });
 
+      // Sort verses by verse number
+      formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+
       return {
         reference: `${book} ${chapter}`,
         verses: formattedVerses,
         text: formattedVerses.map((v: any) => `${v.verse} ${v.text}`).join(' '),
-        translation: bibleId,
-        translation_name: bibleId,
+        translation: filesetId,
+        translation_name: filesetId,
         translation_note: `Bible Brain - ${language.toUpperCase()}`,
       };
     } catch (error: any) {

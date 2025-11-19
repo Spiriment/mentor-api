@@ -28,9 +28,28 @@ export class StreakService {
       const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
       const lastStreakDate = user.lastStreakDate?.toISOString().split('T')[0];
 
-      // Initialize weekly streak data if not exists
-      if (!user.weeklyStreakData) {
-        user.weeklyStreakData = new Array(7).fill(false);
+      // Initialize weekly streak data if not exists - preserve previous data
+      let weeklyStreakData: boolean[] = [];
+      if (user.weeklyStreakData) {
+        if (typeof user.weeklyStreakData === 'string') {
+          try {
+            const parsed = JSON.parse(user.weeklyStreakData);
+            weeklyStreakData = Array.isArray(parsed) ? parsed.map((v: any) => Boolean(v)) : new Array(7).fill(false);
+          } catch (e) {
+            weeklyStreakData = new Array(7).fill(false);
+          }
+        } else if (Array.isArray(user.weeklyStreakData)) {
+          weeklyStreakData = user.weeklyStreakData.map((v: any) => Boolean(v));
+        } else {
+          weeklyStreakData = new Array(7).fill(false);
+        }
+      } else {
+        weeklyStreakData = new Array(7).fill(false);
+      }
+      
+      // Ensure array has 7 elements
+      while (weeklyStreakData.length < 7) {
+        weeklyStreakData.push(false);
       }
 
       // Check if user already has streak for today
@@ -38,7 +57,7 @@ export class StreakService {
         return {
           currentStreak: user.currentStreak,
           longestStreak: user.longestStreak,
-          weeklyStreakData: user.weeklyStreakData,
+          weeklyStreakData: weeklyStreakData,
         };
       }
 
@@ -70,8 +89,8 @@ export class StreakService {
       // Update longest streak if current streak is higher
       const newLongestStreak = Math.max(user.longestStreak, newCurrentStreak);
 
-      // Update weekly streak data
-      const newWeeklyStreakData = [...user.weeklyStreakData];
+      // Update weekly streak data - preserve previous days
+      const newWeeklyStreakData = [...weeklyStreakData];
       newWeeklyStreakData[dayOfWeek] = true;
 
       // Update user in database
