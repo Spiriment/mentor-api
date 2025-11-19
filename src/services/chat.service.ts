@@ -1,4 +1,4 @@
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { logger } from '@/config/int-services';
 import {
   User,
@@ -10,6 +10,8 @@ import {
   MESSAGE_STATUS,
   PARTICIPANT_ROLE,
   PARTICIPANT_STATUS,
+  MentorProfile,
+  MenteeProfile,
 } from '@/database/entities';
 
 export interface CreateConversationData {
@@ -117,15 +119,23 @@ export class ChatService {
     limit = 50,
     offset = 0
   ): Promise<Conversation[]> {
+    // First, find conversation IDs where the user is a participant
+    const userParticipantQuery = this.participantRepository
+      .createQueryBuilder('participant')
+      .select('participant.conversationId')
+      .where('participant.userId = :userId', { userId })
+      .andWhere('participant.status = :status', {
+        status: PARTICIPANT_STATUS.ACTIVE,
+      });
+
+    // Then, get all conversations with ALL their participants
     const queryBuilder = this.conversationRepository
       .createQueryBuilder('conversation')
       .leftJoinAndSelect('conversation.participants', 'participant')
       .leftJoinAndSelect('participant.user', 'user')
       .leftJoinAndSelect('conversation.messages', 'message')
-      .where('participant.userId = :userId', { userId })
-      .andWhere('participant.status = :status', {
-        status: PARTICIPANT_STATUS.ACTIVE,
-      })
+      .where('conversation.id IN (' + userParticipantQuery.getQuery() + ')')
+      .setParameters(userParticipantQuery.getParameters())
       .andWhere('conversation.status = :conversationStatus', {
         conversationStatus: 'active',
       })
@@ -134,7 +144,72 @@ export class ChatService {
       .limit(limit)
       .offset(offset);
 
-    return await queryBuilder.getMany();
+    const conversations = await queryBuilder.getMany();
+
+    // Collect all user IDs and their roles
+    const userIds = new Set<string>();
+    const userRoleMap = new Map<string, 'mentor' | 'mentee'>();
+    
+    for (const conversation of conversations) {
+      if (conversation.participants) {
+        for (const participant of conversation.participants) {
+          if (participant.user) {
+            userIds.add(participant.user.id);
+            if (participant.user.role) {
+              userRoleMap.set(participant.user.id, participant.user.role as 'mentor' | 'mentee');
+            }
+          }
+        }
+      }
+    }
+
+    // Batch load all profile images
+    const userIdsArray = Array.from(userIds);
+    if (userIdsArray.length > 0) {
+      const mentorUserIds = userIdsArray.filter(id => userRoleMap.get(id) === 'mentor');
+      const menteeUserIds = userIdsArray.filter(id => userRoleMap.get(id) === 'mentee');
+
+      const [mentorProfiles, menteeProfiles] = await Promise.all([
+        mentorUserIds.length > 0
+          ? this.dataSource.getRepository(MentorProfile).find({
+              where: { userId: In(mentorUserIds) },
+              select: ['userId', 'profileImage'],
+            })
+          : [],
+        menteeUserIds.length > 0
+          ? this.dataSource.getRepository(MenteeProfile).find({
+              where: { userId: In(menteeUserIds) },
+              select: ['userId', 'profileImage'],
+            })
+          : [],
+      ]);
+
+      // Create maps for quick lookup
+      const mentorProfileMap = new Map(
+        mentorProfiles.map(p => [p.userId, p.profileImage])
+      );
+      const menteeProfileMap = new Map(
+        menteeProfiles.map(p => [p.userId, p.profileImage])
+      );
+
+      // Enrich participants with profile images
+      for (const conversation of conversations) {
+        if (conversation.participants) {
+          for (const participant of conversation.participants) {
+            if (participant.user) {
+              const profileImage =
+                mentorProfileMap.get(participant.user.id) ||
+                menteeProfileMap.get(participant.user.id);
+              if (profileImage) {
+                (participant.user as any).profileImage = profileImage;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return conversations;
   }
 
   async isUserParticipant(
