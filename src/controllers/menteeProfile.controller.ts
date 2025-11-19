@@ -31,9 +31,33 @@ export class MenteeProfileController {
         });
       }
 
+      // Format full profile data similar to mentor profile
+      const formattedMentee = {
+        id: profile.id,
+        userId: profile.userId,
+        firstName: profile.user.firstName,
+        lastName: profile.user.lastName,
+        email: profile.user.email,
+        profileImage: profile.profileImage,
+        country: profile.user.country,
+        bibleReadingFrequency: profile.bibleReadingFrequency,
+        scriptureConfidence: profile.scriptureConfidence,
+        currentMentorship: profile.currentMentorship,
+        spiritualGrowthAreas: profile.spiritualGrowthAreas,
+        christianExperience: profile.christianExperience,
+        bibleTopics: profile.bibleTopics,
+        learningPreference: profile.learningPreference,
+        mentorshipFormat: profile.mentorshipFormat,
+        mentorExpectations: profile.mentorExpectations,
+        spiritualGoals: profile.spiritualGoals,
+        currentBook: profile.currentBook,
+        currentChapter: profile.currentChapter,
+      };
+
       res.json({
         success: true,
-        data: profile,
+        data: formattedMentee,
+        message: 'Mentee profile retrieved successfully',
       });
     } catch (error: any) {
       this.logger.error('Error getting mentee profile', error);
