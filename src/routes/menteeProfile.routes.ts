@@ -108,4 +108,10 @@ router.put(
   menteeProfileController.updateProfileImage
 );
 
+// Update current book and chapter (for Bible reading tracking)
+router.put(
+  '/:userId/current-book',
+  menteeProfileController.updateCurrentBook
+);
+
 export { router as menteeProfileRoutes };

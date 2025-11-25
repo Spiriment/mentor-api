@@ -84,6 +84,24 @@ const REVERSE_BOOK_MAP: Record<string, string> = Object.fromEntries(
   Object.entries(BOOK_NAME_MAP).map(([key, value]) => [value, key])
 );
 
+// Book code to numeric ID mapping (Bible Brain API uses numeric IDs 1-66)
+const BOOK_CODE_TO_ID: Record<string, number> = {
+  'GEN': 1, 'EXO': 2, 'LEV': 3, 'NUM': 4, 'DEU': 5,
+  'JOS': 6, 'JDG': 7, 'RUT': 8, '1SA': 9, '2SA': 10,
+  '1KI': 11, '2KI': 12, '1CH': 13, '2CH': 14, 'EZR': 15,
+  'NEH': 16, 'EST': 17, 'JOB': 18, 'PSA': 19, 'PRO': 20,
+  'ECC': 21, 'SNG': 22, 'ISA': 23, 'JER': 24, 'LAM': 25,
+  'EZK': 26, 'DAN': 27, 'HOS': 28, 'JOL': 29, 'AMO': 30,
+  'OBA': 31, 'JON': 32, 'MIC': 33, 'NAM': 34, 'HAB': 35,
+  'ZEP': 36, 'HAG': 37, 'ZEC': 38, 'MAL': 39,
+  'MAT': 40, 'MRK': 41, 'LUK': 42, 'JHN': 43, 'ACT': 44,
+  'ROM': 45, '1CO': 46, '2CO': 47, 'GAL': 48, 'EPH': 49,
+  'PHP': 50, 'COL': 51, '1TH': 52, '2TH': 53, '1TI': 54,
+  '2TI': 55, 'TIT': 56, 'PHM': 57, 'HEB': 58, 'JAS': 59,
+  '1PE': 60, '2PE': 61, '1JN': 62, '2JN': 63, '3JN': 64,
+  'JUD': 65, 'REV': 66,
+};
+
 export class BibleService {
   private cache: Map<string, CacheEntry<any>> = new Map();
   private maxEntries: number;
@@ -127,53 +145,104 @@ export class BibleService {
   }
 
   /**
-   * Get Bible Brain FilesetId for a language
-   * Uses the correct DBP4 API endpoints:
-   * - GET /api/bibles to get available Bibles
-   * - GET /api/bibles/filesets to get text filesets
+   * Get Bible Brain Bible ID (dam_id) for a language along with the full response
+   * Uses the correct DBP4 API v4 endpoint:
+   * - GET /api/languages with language_code and v:4
    *
    * Default Bible versions:
    * - English: ASV (American Standard Version) or KJV
-   * - German: Luther 2017
+   * - German: Luther 2017 (DEULUT)
    * - Dutch: NBV (Nieuwe Bijbelvertaling)
    */
-  private async getBibleBrainFilesetId(
+  private async getBibleBrainDamIdWithResponse(
     language: BibleLanguage = 'eng'
-  ): Promise<string> {
-    const cacheKey = `fileset_id:${language}`;
-    const cached = this.getCache<string>(cacheKey);
+  ): Promise<{ damId: string; languageResponse: any }> {
+    const cacheKey = `dam_id:${language}`;
+    const cached = this.getCache<{ damId: string; languageResponse: any }>(cacheKey);
     if (cached) return cached;
 
     try {
-      // Step 1: Get available Bibles using correct endpoint
-      // Language code needs to be uppercase (ENG, DEU, NLD)
-      const languageCode = language.toUpperCase();
-      const response = await axios.get(`${this.bibleBrainBaseUrl}/api/bibles`, {
+      // Use the v4 API endpoint: GET /api/languages
+      const response = await axios.get(`${this.bibleBrainBaseUrl}/api/languages`, {
         params: {
           key: this.bibleBrainApiKey,
-          language_family_code: languageCode,
+          language_code: language, // Use lowercase: eng, deu, nld
+          v: 4,
         },
       });
 
       // Handle different response formats from Bible Brain API
-      let bibles: any[] = [];
+      let languages: any[] = [];
       if (Array.isArray(response.data?.data)) {
-        bibles = response.data.data;
+        languages = response.data.data;
       } else if (Array.isArray(response.data)) {
-        bibles = response.data;
+        languages = response.data;
       } else if (
         response.data?.data &&
         typeof response.data.data === 'object'
       ) {
-        bibles = Object.values(response.data.data);
+        languages = Object.values(response.data.data);
       }
 
-      if (bibles.length === 0) {
+      // Log response structure for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Bible Brain] /api/languages response for ${language}:`, {
+          hasData: !!response.data,
+          dataType: typeof response.data,
+          isArray: Array.isArray(response.data),
+          dataKeys: response.data ? Object.keys(response.data) : [],
+          languagesCount: languages.length,
+          firstLanguage: languages[0] ? {
+            dam_id: languages[0].dam_id,
+            id: languages[0].id,
+            name: languages[0].name,
+            abbreviation: languages[0].abbreviation,
+          } : null,
+        });
+      }
+
+      if (languages.length === 0) {
         console.warn(
-          `No bibles found for language ${language}, response:`,
-          response.data
+          `No languages found for ${language}, response:`,
+          JSON.stringify(response.data).substring(0, 500)
         );
       }
+
+      // Log response structure for debugging (first time only)
+      if (languages.length > 0 && !this.cache.has(`debug_logged:${language}`)) {
+        const sample = languages[0];
+        console.log(`[Bible Brain Debug] /api/languages response structure for ${language}:`, {
+          totalItems: languages.length,
+          sampleItem: {
+            dam_id: sample.dam_id,
+            id: sample.id,
+            name: sample.name,
+            abbreviation: sample.abbreviation,
+            hasBibles: !!sample.bibles,
+            hasFilesets: !!sample.filesets,
+            biblesCount: Array.isArray(sample.bibles) ? sample.bibles.length : 0,
+            filesetsCount: Array.isArray(sample.filesets) ? sample.filesets.length : 0,
+            filesetsSample: Array.isArray(sample.filesets) && sample.filesets.length > 0 ? {
+              id: sample.filesets[0].id,
+              type: sample.filesets[0].type,
+              allKeys: Object.keys(sample.filesets[0]),
+            } : null,
+            allKeys: Object.keys(sample),
+          },
+        });
+        this.cache.set(`debug_logged:${language}`, true, 60 * 60 * 1000); // Log once per hour
+      }
+
+      // The language response contains bibles and filesets arrays
+      // We need to get the Bible ID (dam_id) from the bibles array
+      const languageEntry = languages[0]; // Get the first language entry
+      
+      let damId: string | null = null;
+      let selectedBible: any = null;
+
+      // Check if language entry has bibles array
+      if (languageEntry?.bibles && Array.isArray(languageEntry.bibles) && languageEntry.bibles.length > 0) {
+        const bibles = languageEntry.bibles;
 
       // Prefer specific Bible versions
       const preferredBibles: Record<BibleLanguage, string[]> = {
@@ -184,111 +253,187 @@ export class BibleService {
 
       const preferred = preferredBibles[language] || [];
 
-      // Find preferred Bible or use first available
-      let bibleId = bibles.find((b: any) =>
+        // Find preferred Bible
+        selectedBible = bibles.find((b: any) =>
         preferred.some(
-          (p) =>
-            b.id?.includes(p) ||
-            b.abbreviation?.includes(p) ||
-            b.name?.toUpperCase().includes(p) ||
-            b.id?.toUpperCase().includes(p)
-        )
-      )?.id;
+            (p) => {
+              const damIdStr = String(b.dam_id || b.id || '');
+              const abbrevStr = String(b.abbreviation || '');
+              const nameStr = String(b.name || '');
+              return (
+                damIdStr.includes(p) ||
+                abbrevStr.includes(p) ||
+                nameStr.toUpperCase().includes(p) ||
+                damIdStr.toUpperCase().includes(p)
+              );
+            }
+          )
+        ) || bibles[0];
 
-      if (!bibleId && bibles.length > 0) {
-        bibleId = bibles[0].id;
+        damId = selectedBible?.dam_id || selectedBible?.id;
+        if (damId && typeof damId !== 'string') {
+          damId = String(damId);
+        }
       }
 
-      if (!bibleId) {
+      // Fallback: if no bibles array, use language id (but this is not ideal)
+      if (!damId && languages.length > 0) {
+        damId = languages[0].dam_id || String(languages[0].id || '');
+      }
+
+      if (!damId) {
         console.error(
-          `No Bible found for language: ${language}, available bibles:`,
-          bibles
+          `No Bible ID (dam_id) found for language: ${language}`,
+          `Available items: ${languages.length}`,
+          `Sample item keys:`,
+          languages[0] ? Object.keys(languages[0]) : 'no items'
         );
-        throw new Error(`No Bible found for language: ${language}`);
+        // Don't throw - use fallback instead
+        console.warn(`Using fallback Bible ID for ${language}`);
+      } else if (process.env.NODE_ENV === 'development') {
+        console.log(`[Bible Brain] Found dam_id for ${language}: ${damId}`);
       }
 
-      // Step 2: Get filesets for this Bible to find text fileset
-      const filesetsResponse = await axios.get(
-        `${this.bibleBrainBaseUrl}/api/bibles/filesets`,
-        {
-          params: {
-            key: this.bibleBrainApiKey,
-            bible_id: bibleId,
-            type: 'text', // We want text filesets
-          },
-        }
-      );
-
-      // Handle different response formats
-      let filesets: any[] = [];
-      if (Array.isArray(filesetsResponse.data?.data)) {
-        filesets = filesetsResponse.data.data;
-      } else if (Array.isArray(filesetsResponse.data)) {
-        filesets = filesetsResponse.data;
-      } else if (
-        filesetsResponse.data?.data &&
-        typeof filesetsResponse.data.data === 'object'
-      ) {
-        filesets = Object.values(filesetsResponse.data.data);
+      // Cache the dam_id for 7 days (even if it's a fallback)
+      if (damId) {
+        // Return both damId and the language response (which contains filesets and bibles)
+        // Use the language entry that has the bibles/filesets arrays
+        const languageResponse = languageEntry || languages[0];
+        const result = { damId, languageResponse };
+        this.setCache(cacheKey, result, 7 * 24 * 60 * 60 * 1000);
+        return result;
       }
-
-      if (filesets.length === 0) {
-        console.warn(
-          `No filesets found for Bible ${bibleId}, response:`,
-          filesetsResponse.data
-        );
-      }
-
-      // Find a complete text fileset
-      // Text filesets are usually 6 characters (LLLVVV format) or match the Bible ID pattern
-      const textFileset = filesets.find((f: any) => {
-        const filesetId = f.id || f.fileset_id || '';
-        const filesetType = f.type || f.media_type || '';
-
-        // Prefer text type filesets
-        if (filesetType && filesetType.toLowerCase() === 'text') {
-          return true;
-        }
-
-        // Text filesets are typically 6 characters (language code + version code)
-        // Or they match the Bible ID pattern
-        return (
-          filesetId.length === 6 ||
-          (filesetId.startsWith(bibleId.substring(0, 6)) &&
-            filesetId.length <= 10) ||
-          !filesetType ||
-          filesetType.toLowerCase().includes('text')
-        );
-      });
-
-      const filesetId =
-        textFileset?.id ||
-        textFileset?.fileset_id ||
-        filesets[0]?.id ||
-        filesets[0]?.fileset_id;
-
-      if (filesetId) {
-        this.setCache(cacheKey, filesetId, 7 * 24 * 60 * 60 * 1000); // Cache for 7 days
-        return filesetId;
-      }
-
-      throw new Error(`No text fileset found for Bible: ${bibleId}`);
+      
+      // If we still don't have a dam_id, use fallback
+      throw new Error(`No Bible ID found for language: ${language}`);
     } catch (error) {
-      console.error(`Error getting FilesetId for ${language}:`, error);
-      // Fallback to default FilesetIds (6-character text filesets)
+      console.error(`Error getting Bible ID (dam_id) for ${language}:`, error);
+      // Fallback to default Bible IDs
       const fallbackIds: Record<BibleLanguage, string> = {
-        eng: 'ENGASV', // English ASV text
-        deu: 'DEULUT', // German Luther text
-        nld: 'NLDNBV', // Dutch NBV text
+        eng: 'ENGASV', // English ASV
+        deu: 'DEULUT', // German Luther
+        nld: 'NLDNBV', // Dutch NBV
       };
-      return fallbackIds[language] || 'ENGASV';
+      return { 
+        damId: fallbackIds[language] || 'ENGASV',
+        languageResponse: null 
+      };
     }
   }
 
   /**
-   * Fetch chapter from Bible Brain API using DBP4 endpoints
-   * Uses correct API structure:
-   * - GET /api/text/verse with fileset_id, book_id, chapter_id
+   * Get Bible Brain Bible ID (dam_id) for a language (backward compatibility)
+   */
+  private async getBibleBrainDamId(
+    language: BibleLanguage = 'eng'
+  ): Promise<string> {
+    const { damId } = await this.getBibleBrainDamIdWithResponse(language);
+    return damId;
+  }
+
+  /**
+   * Determine if a book is in the Old Testament or New Testament
+   */
+  private isOldTestament(bookCode: string): boolean {
+    const newTestamentBooks = [
+      'MAT', 'MRK', 'LUK', 'JHN', 'ACT', 'ROM', '1CO', '2CO', 'GAL', 'EPH',
+      'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM', 'HEB', 'JAS',
+      '1PE', '2PE', '1JN', '2JN', '3JN', 'JUD', 'REV'
+    ];
+    return !newTestamentBooks.includes(bookCode.toUpperCase());
+  }
+
+  /**
+   * Get the fileset ID from the Bible Brain API response
+   * The /api/languages response includes a filesets array - we should use that
+   */
+  private async getFilesetId(
+    damId: string,
+    language: BibleLanguage,
+    isOldTestament: boolean,
+    languageResponse?: any
+  ): Promise<string> {
+    const cacheKey = `fileset_id:${damId}:${isOldTestament ? 'OT' : 'NT'}`;
+    const cached = this.getCache<string>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      // First, try to get fileset from the language response if provided
+      if (languageResponse?.filesets && Array.isArray(languageResponse.filesets)) {
+        console.log(`[Bible Brain] Found ${languageResponse.filesets.length} filesets in language response for ${language}`);
+        
+        // Look for text filesets
+        const textFilesets = languageResponse.filesets.filter((f: any) => {
+          const type = String(f.type || f.media_type || '').toLowerCase();
+          const id = String(f.id || f.fileset_id || '').toUpperCase();
+          // Text filesets typically have type 'text' or contain 'ET' in the ID
+          return type === 'text' || type.includes('text') || id.includes('ET') || type === '';
+        });
+
+        if (textFilesets.length > 0) {
+          console.log(`[Bible Brain] Found ${textFilesets.length} text filesets for ${language}`);
+          
+          // Prefer NT or OT based on what we need
+          const testament = isOldTestament ? 'O' : 'N';
+          const preferredFileset = textFilesets.find((f: any) => {
+            const id = String(f.id || f.fileset_id || '').toUpperCase();
+            // Check if fileset ID contains the testament indicator
+            return id.includes(testament) || id.includes('L12');
+          }) || textFilesets[0];
+
+          const filesetId = preferredFileset.id || preferredFileset.fileset_id || preferredFileset.dam_id;
+      if (filesetId) {
+            console.log(`[Bible Brain] Using fileset ID: ${filesetId} for ${language} ${isOldTestament ? 'OT' : 'NT'}`);
+            this.setCache(cacheKey, String(filesetId), 7 * 24 * 60 * 60 * 1000);
+            return String(filesetId);
+          }
+        } else {
+          console.warn(`[Bible Brain] No text filesets found in language response for ${language}`);
+        }
+      } else {
+        console.warn(`[Bible Brain] No filesets array in language response for ${language}`);
+      }
+
+      // Last resort: Use the pattern from support message (only for German)
+      if (language === 'deu') {
+        const testament = isOldTestament ? 'O' : 'N';
+        const constructedFilesetId = `DEUL12${testament}_ET`;
+        console.warn(`[Bible Brain] Using constructed fileset ID for German: ${constructedFilesetId}`);
+        this.setCache(cacheKey, constructedFilesetId, 7 * 24 * 60 * 60 * 1000);
+        return constructedFilesetId;
+      }
+
+      // For other languages, return a placeholder that will trigger the fallback mechanism
+      const languagePrefix: Record<BibleLanguage, string> = {
+        eng: 'ENG',
+        deu: 'DEU',
+        nld: 'NLD',
+      };
+      const prefix = languagePrefix[language] || 'ENG';
+      const testament = isOldTestament ? 'O' : 'N';
+      const constructedFilesetId = `${prefix}L12${testament}_ET`;
+      console.warn(`[Bible Brain] Using constructed fileset ID for ${language}: ${constructedFilesetId}`);
+      return constructedFilesetId;
+    } catch (error) {
+      console.error(`Error getting fileset ID for ${language}:`, error);
+      // Return a placeholder that will trigger the fallback mechanism
+      const languagePrefix: Record<BibleLanguage, string> = {
+        eng: 'ENG',
+        deu: 'DEU',
+        nld: 'NLD',
+      };
+      const prefix = languagePrefix[language] || 'ENG';
+      const testament = isOldTestament ? 'O' : 'N';
+      return `${prefix}L12${testament}_ET`;
+    }
+  }
+
+  /**
+   * Fetch chapter from Bible Brain API using DBP4 v4 endpoints
+   * Uses correct API v4 structure:
+   * 1. GET /api/languages to get Bible ID (dam_id)
+   * 2. GET /api/bibles with dam_id to get books
+   * 3. GET /api/bibles/filesets/{fileset_id}/{book_id}/{chapter_id} to get verses
    */
   private async getChapterFromBibleBrain(
     book: string,
@@ -296,75 +441,64 @@ export class BibleService {
     language: BibleLanguage = 'eng'
   ) {
     try {
-      // Get the filesetId for this language
-      const filesetId = await this.getBibleBrainFilesetId(language);
+      // Step 1: Get the Bible ID (dam_id) and language response for this language
+      const { damId, languageResponse } = await this.getBibleBrainDamIdWithResponse(language);
+      
+      // Step 2: Get the book code (e.g., ROM, MAT, JHN)
       const bookCode =
         BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
 
-      // Get book information - need to find the book_id
-      // First, try to get books from the fileset
-      let bookId: string | number | null = null;
+      // Step 3: Convert book code to numeric ID (Bible Brain API uses numeric IDs)
+      // Try numeric ID first, fallback to book code if mapping doesn't exist
+      const bookId = BOOK_CODE_TO_ID[bookCode] || bookCode;
 
+      // Step 3: Determine if this is Old Testament or New Testament
+      const isOT = this.isOldTestament(bookCode);
+      
+      // Step 4: Get the fileset ID based on language and testament
+      let filesetId = await this.getFilesetId(damId, language, isOT, languageResponse);
+
+      // Step 5: Get verses for the chapter using v4 endpoint
+      // Try the fileset endpoint first
+      let versesResponse;
       try {
-        // Try to get books for this fileset
-        const booksResponse = await axios.get(
-          `${this.bibleBrainBaseUrl}/api/bibles/books`,
+        // GET /api/bibles/filesets/{fileset_id}/{book_id}/{chapter_id}?key=...&v=4
+        versesResponse = await axios.get(
+          `${this.bibleBrainBaseUrl}/api/bibles/filesets/${filesetId}/${bookId}/${chapter}`,
           {
             params: {
               key: this.bibleBrainApiKey,
-              fileset_id: filesetId,
+              v: 4,
             },
           }
         );
-
-        const books = booksResponse.data?.data || booksResponse.data || [];
-
-        // Find the book by code or name
-        const bookData = books.find(
-          (b: any) =>
-            b.book_code === bookCode ||
-            b.code === bookCode ||
-            b.abbr === bookCode ||
-            b.id === bookCode ||
-            b.name?.toLowerCase() === book.toLowerCase() ||
-            b.name?.toLowerCase().includes(book.toLowerCase())
-        );
-
-        if (bookData) {
-          bookId =
-            bookData.book_id ||
-            bookData.id ||
-            bookData.num ||
-            bookData.book_code;
-        }
-      } catch (error) {
+      } catch (filesetError: any) {
+        // If fileset endpoint fails, try using dam_id directly
+        // Some Bibles might use dam_id instead of fileset_id
+        if (filesetError.response?.status === 404) {
         console.warn(
-          'Error fetching books, will try with book code directly:',
-          error
-        );
-        // If we can't get books list, try using the book code as book_id
-        bookId = bookCode;
-      }
-
-      if (!bookId) {
-        throw new Error(`Book not found: ${book} (code: ${bookCode})`);
-      }
-
-      // Get verses for the chapter using the correct DBP4 endpoint
-      // GET /api/text/verse?key=...&fileset_id=...&book_id=...&chapter_id=...&verse_start=1&verse_end=999
-      const versesResponse = await axios.get(
-        `${this.bibleBrainBaseUrl}/api/text/verse`,
+            `Fileset ${filesetId} not found for ${language}, trying with dam_id ${damId} directly`
+          );
+          try {
+            versesResponse = await axios.get(
+              `${this.bibleBrainBaseUrl}/api/bibles/${damId}/books/${bookId}/chapters/${chapter}/verses`,
         {
           params: {
             key: this.bibleBrainApiKey,
-            fileset_id: filesetId,
-            book_id: bookId,
-            chapter_id: chapter.toString(),
-            verse_start: 1,
-            verse_end: 999, // Get all verses in the chapter
+                  v: 4,
           },
         }
       );
+            // Update filesetId to damId for response
+            filesetId = damId;
+          } catch (damIdError: any) {
+            // If that also fails, throw the original error
+            throw filesetError;
+          }
+        } else {
+          throw filesetError;
+        }
+      }
 
       // Bible Brain API v4 returns data in different formats
       // Check both response.data.data (array) and response.data (object with data property)
@@ -504,21 +638,40 @@ export class BibleService {
         );
         this.setCache(key, data, this.defaultTtlMs);
         return data;
-      } catch (error) {
-        console.warn('Bible Brain failed, trying bible-api.com:', error);
-        // Fall through to bible-api.com
+      } catch (error: any) {
+        console.error(`Bible Brain failed for ${language}, error:`, {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+          url: error.config?.url,
+        });
+        // For non-English languages, don't fall back to English - throw the error
+        if (language !== 'eng') {
+          throw new Error(
+            `Failed to fetch ${book} ${chapter} in ${language}: ${error.message || 'Unknown error'}`
+          );
+        }
+        // For English, fall through to bible-api.com
+        console.warn('Bible Brain failed for English, trying bible-api.com');
       }
     }
 
     // Fallback to bible-api.com (English only)
-    try {
-      const data = await this.getChapterFromBibleApi(book, chapter);
-      this.setCache(key, data, this.defaultTtlMs);
-      return data;
-    } catch (error) {
-      console.error('Both Bible APIs failed:', error);
+    if (language === 'eng') {
+      try {
+        const data = await this.getChapterFromBibleApi(book, chapter);
+        this.setCache(key, data, this.defaultTtlMs);
+        return data;
+      } catch (error) {
+        console.error('Both Bible APIs failed:', error);
+        throw new Error(
+          `Failed to fetch chapter: ${book} ${chapter} in ${language}`
+        );
+      }
+    } else {
+      // For non-English languages, if we get here, Bible Brain failed and we shouldn't fall back
       throw new Error(
-        `Failed to fetch chapter: ${book} ${chapter} in ${language}`
+        `Failed to fetch chapter: ${book} ${chapter} in ${language}. Bible Brain API unavailable.`
       );
     }
   }
