@@ -226,6 +226,18 @@ export class ChatService {
     return !!participant;
   }
 
+  async getConversationParticipants(
+    conversationId: string
+  ): Promise<ConversationParticipant[]> {
+    return await this.participantRepository.find({
+      where: {
+        conversationId,
+        status: PARTICIPANT_STATUS.ACTIVE,
+      },
+      relations: ['user'],
+    });
+  }
+
   // Message Management
   async createMessage(data: CreateMessageData): Promise<Message> {
     const message = this.messageRepository.create({
@@ -292,6 +304,16 @@ export class ChatService {
       {
         status: MESSAGE_STATUS.READ,
         readAt: new Date(),
+      }
+    );
+  }
+
+  async markMessageAsDelivered(messageId: string): Promise<void> {
+    await this.messageRepository.update(
+      { id: messageId },
+      {
+        status: MESSAGE_STATUS.DELIVERED,
+        deliveredAt: new Date(),
       }
     );
   }

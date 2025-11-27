@@ -3,12 +3,14 @@ import { DataSource } from "typeorm";
 import { logger, redis } from "@/config/int-services";
 import { RedisClient } from "@/common";
 import { SessionReminderService } from "@/services/sessionReminder.service";
+import { StreakNotificationService } from "@/services/streakNotification.service";
 import { EmailService } from "./email.service";
 
 export class CronService {
   private dataSource: DataSource;
   private tasks: Map<string, cron.ScheduledTask> = new Map();
   private sessionReminderService: SessionReminderService | null = null;
+  private streakNotificationService: StreakNotificationService | null = null;
 
   constructor(dataSource: DataSource) {
     this.dataSource = dataSource;
@@ -47,6 +49,31 @@ export class CronService {
 
       this.tasks.set("session-15min-reminder", sessionReminderTask);
       logger.info("Session 15-minute reminder cron job scheduled");
+
+      // Initialize streak notification service
+      this.streakNotificationService = new StreakNotificationService();
+
+      // Schedule streak reminder job - runs twice daily at 8 PM user time (approximately)
+      // We run at 12:00 PM UTC and 8:00 PM UTC to cover most timezones
+      const streakReminderTask = cron.schedule(
+        "0 12,20 * * *", // At 12:00 PM and 8:00 PM UTC daily
+        async () => {
+          try {
+            await this.streakNotificationService?.sendStreakReminders();
+          } catch (error) {
+            logger.error(
+              "Error in streak reminder cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("streak-reminder", streakReminderTask);
+      logger.info("Streak reminder cron job scheduled (twice daily)");
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -104,6 +131,8 @@ export class CronService {
         return "0 * * * * (Every hour)";
       case "session-15min-reminder":
         return "* * * * * (Every minute)";
+      case "streak-reminder":
+        return "0 12,20 * * * (Twice daily at 12 PM and 8 PM UTC)";
       default:
         return "Unknown";
     }
@@ -181,6 +210,15 @@ export class CronService {
             return true;
           } else {
             logger.error(`Session reminder service not initialized`);
+            return false;
+          }
+        case "streak-reminder":
+          if (this.streakNotificationService) {
+            await this.streakNotificationService.sendStreakReminders();
+            logger.info(`Force run completed for task: ${taskName}`);
+            return true;
+          } else {
+            logger.error(`Streak notification service not initialized`);
             return false;
           }
         default:

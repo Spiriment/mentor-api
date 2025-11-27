@@ -432,7 +432,12 @@ export class BibleService {
           const type = String(f?.type || '').toLowerCase();
           const id = String(f?.id || '').toUpperCase();
           // Text filesets have type 'text' or 'text_plain' or contain 'ET' in the ID
-          return type === 'text' || type === 'text_plain' || type.includes('text') || id.includes('ET');
+          return (
+            type === 'text' ||
+            type === 'text_plain' ||
+            type.includes('text') ||
+            id.includes('ET')
+          );
         });
 
         return hasText;
@@ -475,7 +480,8 @@ export class BibleService {
         }
 
         // Use filtered list if available, otherwise use all bibles as fallback
-        const candidateBibles = biblesWithText.length > 0 ? biblesWithText : bibles;
+        const candidateBibles =
+          biblesWithText.length > 0 ? biblesWithText : bibles;
 
         // Find preferred Bible from candidates
         // For Dutch, the Bible ID is in the 'abbr' field (e.g., 'NLDNBV', 'NLDHSV')
@@ -589,8 +595,14 @@ export class BibleService {
           const priorityKeys = ['dbp-prod', 'dbp-text', 'text', 'dbp-vid'];
 
           for (const key of priorityKeys) {
-            if (selectedBible.filesets[key] && Array.isArray(selectedBible.filesets[key])) {
-              bibleFilesets = [...bibleFilesets, ...selectedBible.filesets[key]];
+            if (
+              selectedBible.filesets[key] &&
+              Array.isArray(selectedBible.filesets[key])
+            ) {
+              bibleFilesets = [
+                ...bibleFilesets,
+                ...selectedBible.filesets[key],
+              ];
             }
           }
 
@@ -623,8 +635,12 @@ export class BibleService {
             languageResponse.filesets = bibleFilesets;
           } else {
             // Merge with existing filesets (avoid duplicates)
-            const existingIds = new Set(languageResponse.filesets.map((f: any) => f.id));
-            const newFilesets = bibleFilesets.filter((f: any) => !existingIds.has(f.id));
+            const existingIds = new Set(
+              languageResponse.filesets.map((f: any) => f.id)
+            );
+            const newFilesets = bibleFilesets.filter(
+              (f: any) => !existingIds.has(f.id)
+            );
             languageResponse.filesets = [
               ...languageResponse.filesets,
               ...newFilesets,

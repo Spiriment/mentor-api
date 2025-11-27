@@ -6,27 +6,46 @@ export class AddMentorProfileColumns1734740500000
   name = 'AddMentorProfileColumns1734740500000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Add all missing columns to mentor_profiles table
-    await queryRunner.query(`
-            ALTER TABLE \`mentor_profiles\` 
-            ADD COLUMN \`christianExperience\` varchar(255) NULL,
-            ADD COLUMN \`christianJourney\` text NULL,
-            ADD COLUMN \`scriptureTeaching\` varchar(255) NULL,
-            ADD COLUMN \`currentMentoring\` varchar(255) NULL,
-            ADD COLUMN \`churchAffiliation\` varchar(255) NULL,
-            ADD COLUMN \`leadershipRoles\` varchar(255) NULL,
-            ADD COLUMN \`maturityDefinition\` text NULL,
-            ADD COLUMN \`menteeCapacity\` varchar(255) NULL,
-            ADD COLUMN \`mentorshipFormat\` json NULL,
-            ADD COLUMN \`menteeCalling\` json NULL,
-            ADD COLUMN \`videoIntroduction\` varchar(255) NULL,
-            ADD COLUMN \`profileImage\` varchar(255) NULL,
-            ADD COLUMN \`isOnboardingComplete\` boolean DEFAULT false,
-            ADD COLUMN \`onboardingStep\` varchar(255) DEFAULT 'christianExperience',
-            ADD COLUMN \`isApproved\` boolean DEFAULT false,
-            ADD COLUMN \`approvalNotes\` text NULL,
-            ADD COLUMN \`approvedAt\` datetime NULL
-        `);
+    // Helper function to check if column exists
+    const columnExists = async (tableName: string, columnName: string): Promise<boolean> => {
+      const result = await queryRunner.query(
+        `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+         AND TABLE_NAME = '${tableName}' 
+         AND COLUMN_NAME = '${columnName}'`
+      );
+      return result[0].count > 0;
+    };
+
+    // Add columns only if they don't exist
+    const columnsToAdd = [
+      { name: 'christianExperience', type: 'varchar(255) NULL' },
+      { name: 'christianJourney', type: 'text NULL' },
+      { name: 'scriptureTeaching', type: 'varchar(255) NULL' },
+      { name: 'currentMentoring', type: 'varchar(255) NULL' },
+      { name: 'churchAffiliation', type: 'varchar(255) NULL' },
+      { name: 'leadershipRoles', type: 'varchar(255) NULL' },
+      { name: 'maturityDefinition', type: 'text NULL' },
+      { name: 'menteeCapacity', type: 'varchar(255) NULL' },
+      { name: 'mentorshipFormat', type: 'json NULL' },
+      { name: 'menteeCalling', type: 'json NULL' },
+      { name: 'videoIntroduction', type: 'varchar(255) NULL' },
+      { name: 'profileImage', type: 'varchar(255) NULL' },
+      { name: 'isOnboardingComplete', type: 'boolean DEFAULT false' },
+      { name: 'onboardingStep', type: "varchar(255) DEFAULT 'christianExperience'" },
+      { name: 'isApproved', type: 'boolean DEFAULT false' },
+      { name: 'approvalNotes', type: 'text NULL' },
+      { name: 'approvedAt', type: 'datetime NULL' },
+    ];
+
+    for (const column of columnsToAdd) {
+      const exists = await columnExists('mentor_profiles', column.name);
+      if (!exists) {
+        await queryRunner.query(
+          `ALTER TABLE \`mentor_profiles\` ADD COLUMN \`${column.name}\` ${column.type}`
+        );
+      }
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

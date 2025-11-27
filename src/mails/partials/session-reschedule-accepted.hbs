@@ -1,0 +1,33 @@
+<h2>✅ Session Reschedule Accepted!</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>Great news! {{mentorName}} has accepted your request to reschedule your mentorship session.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Mentor:</strong> {{mentorName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Previous Time:</strong> {{previousScheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>New Session Time:</strong> {{newScheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+  {{#if sessionType}}
+    <p style='margin: 0;'><strong>Session Type:</strong> {{sessionType}}</p>
+  {{/if}}
+</div>
+
+{{#if location}}
+  <div style='background-color: #F8F9FA; padding: 14px; margin: 20px 0; border-radius: 6px;'>
+    <p style='margin: 0; color: #162419;'><strong>📍 Location:</strong> {{location}}</p>
+  </div>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>View Session Details</a>
+</p>
+
+<p>Your session has been successfully rescheduled. You'll receive a reminder before the session starts.</p>
+
+<div style='background-color: #EBEEEC; padding: 16px; margin: 24px 0; border-radius: 6px;'>
+  <p style='margin: 0; font-size: 14px; color: #162419;'>
+    <strong>💡 Tip:</strong> Add this session to your calendar and make sure you're prepared with any questions or topics you'd like to discuss with {{mentorName}}.
+  </p>
+</div>

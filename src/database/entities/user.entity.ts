@@ -95,4 +95,13 @@ export class User extends BaseEntity {
 
   @Column({ name: 'weeklyStreakData', type: 'json', nullable: true })
   weeklyStreakData?: boolean[];
+
+  @Column({ name: 'timezone', default: 'UTC' })
+  timezone!: string;
+
+  @Column({ name: 'streakFreezeCount', default: 0 })
+  streakFreezeCount!: number;
+
+  @Column({ name: 'monthlyStreakData', type: 'json', nullable: true })
+  monthlyStreakData?: { [key: string]: number[] }; // { 'YYYY-MM': [1,2,3,5,10,...] }
 }

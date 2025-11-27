@@ -99,6 +99,18 @@ export class AuthController {
     }
   };
 
+  googleSignIn = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tokens = await this.authService.googleSignIn(req.body);
+      this.logger.info('Google Sign-In successful', {
+        email: req.body.email || 'unknown',
+      });
+      return sendSuccessResponse(res, tokens);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   sendVerificationEmail = async (
     req: Request,
     res: Response,
@@ -476,9 +488,18 @@ export class AuthController {
   };
 
   // Update streak when user reads for minimum time
+  // ⚠️ DEPRECATED: This endpoint is deprecated. Use /api/auth/streak/increment instead.
+  // This endpoint will be removed in a future version.
+  // The new endpoint provides: timezone support, streak freezes, monthly tracking, and better date handling.
   updateStreak = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user; // Set by auth middleware
+
+      // Log deprecation warning
+      this.logger.warn('DEPRECATED: /auth/update-streak endpoint used. Migrate to /auth/streak/increment', {
+        userId: user?.id,
+        userAgent: req.get('user-agent'),
+      });
 
       if (!user) {
         throw new AppError(
