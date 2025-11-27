@@ -19,6 +19,7 @@ import studyRoutes from '@/controllers/study.controller';
 import chatRoutes from '@/routes/chat.routes';
 import appNotificationRoutes from './appNotification.routes';
 import sessionReviewRoutes from './sessionReview.routes';
+import groupSessionRoutes from './groupSession.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -141,6 +142,9 @@ const createRootRoutes = () => {
 
   // Session review routes
   rootRouter.use('/api/session-reviews', sessionReviewRoutes);
+
+  // Group session routes
+  rootRouter.use('/api/sessions/group', groupSessionRoutes);
 
   // Serve uploaded files statically
   rootRouter.use('/uploads', (req, res, next) => {
