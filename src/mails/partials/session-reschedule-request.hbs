@@ -1,0 +1,39 @@
+<h2>📅 Session Reschedule Request from {{menteeName}}</h2>
+
+<p>Hello {{mentorName}},</p>
+
+<p>{{menteeName}} has requested to reschedule your upcoming mentorship session.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Mentee:</strong> {{menteeName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Current Session Time:</strong> {{currentScheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Proposed New Time:</strong> {{newScheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+  {{#if sessionType}}
+    <p style='margin: 0;'><strong>Session Type:</strong> {{sessionType}}</p>
+  {{/if}}
+</div>
+
+{{#if reason}}
+  <h3>Reason for Reschedule:</h3>
+  <div style='background-color: #F8F9FA; padding: 14px; margin: 20px 0; border-radius: 6px; border-left: 3px solid #3A5A40;'>
+    <p style='margin: 0; color: #162419;'>{{reason}}</p>
+  </div>
+{{/if}}
+
+{{#if message}}
+  <h3>Additional Message:</h3>
+  <p style='background-color: #F8F9FA; padding: 14px; margin: 16px 0; border-radius: 6px;'>{{message}}</p>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>Review Request in App</a>
+</p>
+
+<p>Please review this reschedule request in the Spiriment app. You can accept the new time or keep the original session time.</p>
+
+<div style='background-color: #EBEEEC; padding: 16px; margin: 24px 0; border-radius: 6px;'>
+  <p style='margin: 0; font-size: 14px; color: #162419;'>
+    <strong>💡 Note:</strong> If you accept the reschedule, your mentee will be notified immediately. If you prefer the original time, you can decline the request.
+  </p>
+</div>

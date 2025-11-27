@@ -67,6 +67,9 @@ export class EmailService {
         // This is safe when connecting to your own mail server
         rejectUnauthorized: false,
       },
+      connectionTimeout: 10000, // 10 seconds connection timeout
+      greetingTimeout: 10000, // 10 seconds greeting timeout
+      socketTimeout: 10000, // 10 seconds socket timeout
     });
 
     this.logger.info('Email service initialized successfully', {
@@ -162,6 +165,7 @@ export class EmailService {
       timestamp: new Date().toISOString(),
     });
 
+    try {
     await this.transporter.sendMail(mailOptions);
 
     this.logger.info('✅ Email sent successfully', {
@@ -169,6 +173,16 @@ export class EmailService {
       subject: options.subject,
       timestamp: new Date().toISOString(),
     });
+    } catch (error: any) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('❌ Failed to send email', errorObj, {
+        to: options.to,
+        subject: options.subject,
+        errorCode: error.code,
+        timestamp: new Date().toISOString(),
+      });
+      throw error; // Re-throw to let caller handle
+    }
   }
 
   public generateEmailContent(data: any, partialName: string): string {
@@ -483,6 +497,203 @@ export class EmailService {
         email: to,
         password,
         link: 'https://aptfuel.com',
+      },
+    });
+  }
+
+  public async sendSessionRequestEmail(
+    to: string,
+    mentorName: string,
+    menteeName: string,
+    scheduledTime: string,
+    duration: number,
+    description?: string,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `New Session Request from ${menteeName} - Spiriment`,
+      partialName: 'session-request',
+      templateData: {
+        title: 'New Session Request',
+        mentorName,
+        menteeName,
+        scheduledTime,
+        duration,
+        description,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionAcceptedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Accepted by ${mentorName} - Spiriment`,
+      partialName: 'session-accepted',
+      templateData: {
+        title: 'Session Accepted',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        duration,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionDeclinedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    reason?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Request Update - Spiriment`,
+      partialName: 'session-declined',
+      templateData: {
+        title: 'Session Request Update',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        reason,
+        appUrl: appUrl || 'spiriment://mentors',
+      },
+    });
+  }
+
+  public async sendSessionReminderEmail(
+    to: string,
+    userName: string,
+    partnerName: string,
+    scheduledTime: string,
+    duration: number,
+    timeUntil: string,
+    role: 'mentor' | 'mentee',
+    description?: string,
+    sessionType?: string,
+    location?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `⏰ Session Reminder: Your session starts in ${timeUntil} - Spiriment`,
+      partialName: 'session-reminder',
+      templateData: {
+        title: `Session Reminder - ${timeUntil}`,
+        userName,
+        partnerName,
+        scheduledTime,
+        duration,
+        timeUntil,
+        role,
+        description,
+        sessionType,
+        location,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleRequestEmail(
+    to: string,
+    mentorName: string,
+    menteeName: string,
+    currentScheduledTime: string,
+    newScheduledTime: string,
+    duration: number,
+    reason?: string,
+    message?: string,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `📅 Session Reschedule Request from ${menteeName} - Spiriment`,
+      partialName: 'session-reschedule-request',
+      templateData: {
+        title: 'Session Reschedule Request',
+        mentorName,
+        menteeName,
+        currentScheduledTime,
+        newScheduledTime,
+        duration,
+        reason,
+        message,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleAcceptedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    previousScheduledTime: string,
+    newScheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    location?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `✅ Session Rescheduled - ${mentorName} Accepted - Spiriment`,
+      partialName: 'session-reschedule-accepted',
+      templateData: {
+        title: 'Session Rescheduled',
+        menteeName,
+        mentorName,
+        previousScheduledTime,
+        newScheduledTime,
+        duration,
+        sessionType,
+        location,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleDeclinedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    location?: string,
+    reason?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Time Confirmed - ${mentorName} - Spiriment`,
+      partialName: 'session-reschedule-declined',
+      templateData: {
+        title: 'Session Time Confirmed',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        duration,
+        sessionType,
+        location,
+        reason,
+        appUrl: appUrl || 'spiriment://sessions',
       },
     });
   }

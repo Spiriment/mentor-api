@@ -53,6 +53,39 @@ router.patch(
   sessionController.updateSessionStatus
 );
 
+// Accept/Decline session (mentor only)
+router.post(
+  '/:sessionId/accept',
+  requireRole(['mentor']),
+  sessionController.acceptSession
+);
+
+router.post(
+  '/:sessionId/decline',
+  requireRole(['mentor']),
+  sessionController.declineSession
+);
+
+// Reschedule session (mentee only)
+router.post(
+  '/:sessionId/reschedule',
+  requireRole(['mentee']),
+  sessionController.rescheduleSession
+);
+
+// Accept/Decline reschedule (mentor only)
+router.post(
+  '/:sessionId/reschedule/accept',
+  requireRole(['mentor']),
+  sessionController.acceptReschedule
+);
+
+router.post(
+  '/:sessionId/reschedule/decline',
+  requireRole(['mentor']),
+  sessionController.declineReschedule
+);
+
 // Availability management
 router.post(
   '/availability',

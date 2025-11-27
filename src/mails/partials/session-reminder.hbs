@@ -1,0 +1,35 @@
+<h2>⏰ Session Reminder: Your session starts in {{timeUntil}}!</h2>
+
+<p>Hello {{userName}},</p>
+
+<p>This is a friendly reminder that your mentorship session is starting soon.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Time:</strong> {{scheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>With:</strong> {{partnerName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+  {{#if sessionType}}
+    <p style='margin: 0 0 10px 0;'><strong>Session Type:</strong> {{sessionType}}</p>
+  {{/if}}
+  {{#if description}}
+    <p style='margin: 0;'><strong>Description:</strong> {{description}}</p>
+  {{/if}}
+</div>
+
+{{#if location}}
+  <div style='background-color: #F8F9FA; padding: 14px; margin: 20px 0; border-radius: 6px;'>
+    <p style='margin: 0; color: #162419;'><strong>📍 Location:</strong> {{location}}</p>
+  </div>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>Open Spiriment App</a>
+</p>
+
+<p>Please ensure you're ready to join the session on time. Your {{role}} is looking forward to connecting with you!</p>
+
+<div style='background-color: #EBEEEC; padding: 16px; margin: 24px 0; border-radius: 6px;'>
+  <p style='margin: 0; font-size: 14px; color: #162419;'>
+    <strong>💡 Tip:</strong> Make sure you have a stable internet connection and find a quiet space for your session.
+  </p>
+</div>

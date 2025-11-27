@@ -25,18 +25,35 @@ export class SessionReminderService {
 
       // Find sessions that start in approximately 15 minutes
       // We check for sessions between 14 and 16 minutes from now to account for cron timing
+      const startTime = addMinutes(now, 14);
+      const endTime = addMinutes(now, 16);
+      
+      // Use QueryBuilder with explicit select to avoid selecting columns that might not exist
       const sessions = await this.sessionRepository
         .createQueryBuilder('session')
+        .select([
+          'session.id',
+          'session.mentorId',
+          'session.menteeId',
+          'session.status',
+          'session.type',
+          'session.duration',
+          'session.scheduledAt',
+          'session.title',
+          'session.description',
+          'session.location',
+          'session.reminders',
+        ])
         .leftJoinAndSelect('session.mentor', 'mentor')
         .leftJoinAndSelect('session.mentee', 'mentee')
         .where('session.status IN (:...statuses)', {
           statuses: [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED],
         })
         .andWhere('session.scheduledAt >= :startTime', {
-          startTime: addMinutes(now, 14),
+          startTime: startTime,
         })
         .andWhere('session.scheduledAt <= :endTime', {
-          endTime: addMinutes(now, 16),
+          endTime: endTime,
         })
         .getMany();
 
@@ -104,25 +121,30 @@ export class SessionReminderService {
         }`.trim() || session.mentee.email
       : 'Your mentee';
 
-    const message =
-      `You have a mentorship session scheduled in 15 minutes!\n\n` +
-      `Session Details:\n` +
-      `- Time: ${formattedTime}\n` +
-      `- With: ${menteeName}\n` +
-      `- Duration: ${session.duration} minutes\n` +
-      `${
-        session.description ? `- Description: ${session.description}\n` : ''
-      }` +
-      `${session.location ? `- Location: ${session.location}\n` : ''}\n` +
-      `\nPlease open the Mentor App to start your session and connect with ${menteeName} via chat or call.`;
+    const mentorName = `${mentor.firstName || ''} ${mentor.lastName || ''}`.trim() || mentor.email;
 
-    await this.emailService.sendNotificationEmail({
-      to: mentor.email,
-      subject: `⏰ Session Reminder: Your session starts in 15 minutes`,
-      message,
-      userName: mentor.firstName || mentor.email,
-      // No actionUrl - users should open the app instead
-    });
+    // Format session type for display
+    const sessionTypeMap: Record<string, string> = {
+      one_on_one: 'One-on-One',
+      group: 'Group Session',
+      video_call: 'Video Call',
+      phone_call: 'Phone Call',
+      in_person: 'In-Person',
+    };
+    const sessionType = sessionTypeMap[session.type] || session.type;
+
+    await this.emailService.sendSessionReminderEmail(
+      mentor.email,
+      mentorName,
+      menteeName,
+      formattedTime,
+      session.duration,
+      '15 minutes',
+      'mentee',
+      session.description,
+      sessionType,
+      session.location
+    );
 
     logger.info(
       `15-minute reminder email sent to mentor ${mentor.email} for session ${session.id}`
@@ -150,25 +172,30 @@ export class SessionReminderService {
         }`.trim() || session.mentor.email
       : 'Your mentor';
 
-    const message =
-      `You have a mentorship session scheduled in 15 minutes!\n\n` +
-      `Session Details:\n` +
-      `- Time: ${formattedTime}\n` +
-      `- With: ${mentorName}\n` +
-      `- Duration: ${session.duration} minutes\n` +
-      `${
-        session.description ? `- Description: ${session.description}\n` : ''
-      }` +
-      `${session.location ? `- Location: ${session.location}\n` : ''}\n` +
-      `\nPlease open the Mentor App to start your session and connect with ${mentorName} via chat or call.`;
+    const menteeName = `${mentee.firstName || ''} ${mentee.lastName || ''}`.trim() || mentee.email;
 
-    await this.emailService.sendNotificationEmail({
-      to: mentee.email,
-      subject: `⏰ Session Reminder: Your session starts in 15 minutes`,
-      message,
-      userName: mentee.firstName || mentee.email,
-      // No actionUrl - users should open the app instead
-    });
+    // Format session type for display
+    const sessionTypeMap: Record<string, string> = {
+      one_on_one: 'One-on-One',
+      group: 'Group Session',
+      video_call: 'Video Call',
+      phone_call: 'Phone Call',
+      in_person: 'In-Person',
+    };
+    const sessionType = sessionTypeMap[session.type] || session.type;
+
+    await this.emailService.sendSessionReminderEmail(
+      mentee.email,
+      menteeName,
+      mentorName,
+      formattedTime,
+      session.duration,
+      '15 minutes',
+      'mentor',
+      session.description,
+      sessionType,
+      session.location
+    );
 
     logger.info(
       `15-minute reminder email sent to mentee ${mentee.email} for session ${session.id}`

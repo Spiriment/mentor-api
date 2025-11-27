@@ -113,4 +113,87 @@ export class StreakController {
       next(error);
     }
   };
+
+  /**
+   * Get monthly streak data for a specific month
+   * GET /api/auth/streak/monthly/:year/:month
+   */
+  getMonthlyStreakData = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const user = req.user; // Set by auth middleware
+
+      if (!user) {
+        this.logger.error('getMonthlyStreakData: User not authenticated', undefined, {
+          hasUser: !!req.user,
+          userId: (req.user as any)?.id,
+        });
+        return res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+            code: 'UNAUTHORIZED',
+          },
+        });
+      }
+
+      if (!user.id) {
+        this.logger.error('getMonthlyStreakData: User ID is missing', undefined, {
+          user: JSON.stringify(user),
+        });
+        return res.status(401).json({
+          success: false,
+          error: {
+            message: 'User ID is missing',
+            code: 'UNAUTHORIZED',
+          },
+        });
+      }
+
+      const year = parseInt(req.params.year);
+      const month = parseInt(req.params.month);
+
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Invalid year or month parameter',
+            code: 'INVALID_PARAMS',
+          },
+        });
+      }
+
+      this.logger.info('Getting monthly streak data', {
+        userId: user.id,
+        year,
+        month,
+      });
+
+      const streakDays = await this.streakService.getMonthlyStreakData(
+        user.id,
+        year,
+        month
+      );
+
+      return sendSuccessResponse(res, {
+        year,
+        month,
+        streakDays,
+      });
+    } catch (error: any) {
+      this.logger.error(
+        'Error getting monthly streak data',
+        error instanceof Error ? error : new Error(String(error)),
+        {
+          userId: (req.user as any)?.id,
+          year: req.params.year,
+          month: req.params.month,
+        }
+      );
+      next(error);
+    }
+  };
 }

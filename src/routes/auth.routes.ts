@@ -19,6 +19,7 @@ import {
   selectRoleSchema,
   sendLoginOtpSchema,
   verifyLoginOtpSchema,
+  googleSignInSchema,
 } from '../validation/auth.validation';
 import { updateProfileSchema as updateUserProfileSchema } from '../validation/profile.validation';
 import { validate } from '@/middleware/validation';
@@ -61,6 +62,11 @@ const createAuthRoutes = (
     '/verify-login-otp',
     validate(verifyLoginOtpSchema),
     authController.verifyLoginOtp
+  );
+  router.post(
+    '/google',
+    validate(googleSignInSchema),
+    authController.googleSignIn
   );
   router.post(
     '/send-verification-email',
@@ -143,6 +149,8 @@ const createAuthRoutes = (
   // Protected profile routes (require authentication)
   router.get('/me', authenticateToken, authController.getCurrentUserProfile);
 
+  // ⚠️ DEPRECATED: Use /api/auth/streak/increment instead
+  // This endpoint will be removed in a future version
   router.post('/update-streak', authenticateToken, authController.updateStreak);
 
   router.put(

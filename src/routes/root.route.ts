@@ -17,6 +17,8 @@ import { bibleRoutes } from './bible.routes';
 import { bibleUserRoutes } from './bibleUser.routes';
 import studyRoutes from '@/controllers/study.controller';
 import chatRoutes from '@/routes/chat.routes';
+import appNotificationRoutes from './appNotification.routes';
+import sessionReviewRoutes from './sessionReview.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -133,6 +135,12 @@ const createRootRoutes = () => {
 
   // Chat routes
   rootRouter.use('/api/chat', chatRoutes);
+
+  // Notification routes
+  rootRouter.use('/api/notifications', appNotificationRoutes);
+
+  // Session review routes
+  rootRouter.use('/api/session-reviews', sessionReviewRoutes);
 
   // Serve uploaded files statically
   rootRouter.use('/uploads', (req, res, next) => {

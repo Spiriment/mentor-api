@@ -106,7 +106,7 @@ export class WebSocketService {
     });
   }
 
-  private handleConnection(socket: AuthenticatedSocket) {
+  private async handleConnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
     const user = socket.user!;
 
@@ -115,6 +115,9 @@ export class WebSocketService {
 
     // Join user to their personal room for notifications
     socket.join(`user:${userId}`);
+
+    // Broadcast user online status to all their conversations
+    await this.broadcastUserOnlineStatus(userId, true);
 
     logger.info(`User ${user.email} connected (socket: ${socket.id})`);
 
@@ -241,6 +244,13 @@ export class WebSocketService {
         metadata,
       });
 
+      // Send confirmation to sender immediately (single tick - sent)
+      socket.emit('message-sent', {
+        messageId: message.id,
+        status: 'sent',
+        sentAt: message.sentAt,
+      });
+
       // Broadcast message to conversation participants
       this.io.to(`conversation:${conversationId}`).emit('new-message', {
         message,
@@ -253,11 +263,29 @@ export class WebSocketService {
         message
       );
 
-      // Send delivery confirmation to sender
-      socket.emit('message-sent', {
-        messageId: message.id,
-        status: 'delivered',
-      });
+      // Check if recipient is online and mark as delivered (double tick)
+      const participants = await this.chatService.getConversationParticipants(conversationId);
+      const recipientOnline = participants.some(
+        (p) => p.userId !== socket.userId && p.isOnline
+      );
+
+      if (recipientOnline) {
+        // Mark as delivered
+        await this.chatService.markMessageAsDelivered(message.id);
+
+        // Notify sender that message was delivered (double tick)
+        socket.emit('message-delivered', {
+          messageId: message.id,
+          status: 'delivered',
+          deliveredAt: new Date(),
+        });
+
+        // Also broadcast to conversation
+        this.io.to(`conversation:${conversationId}`).emit('message-delivered', {
+          messageId: message.id,
+          deliveredAt: new Date(),
+        });
+      }
 
       logger.info(
         `Message sent in conversation ${conversationId} by user ${socket.userId}`
@@ -376,11 +404,50 @@ export class WebSocketService {
     }
   }
 
-  private handleDisconnection(socket: AuthenticatedSocket) {
+  private async handleDisconnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
     this.connectedUsers.delete(userId);
 
+    // Update lastSeen and broadcast offline status
+    await this.broadcastUserOnlineStatus(userId, false);
+
     logger.info(`User ${userId} disconnected (socket: ${socket.id})`);
+  }
+
+  /**
+   * Broadcast user's online/offline status to all their conversations
+   */
+  private async broadcastUserOnlineStatus(userId: string, isOnline: boolean) {
+    try {
+      const now = new Date();
+
+      // Get all conversations this user is part of
+      const conversations = await this.chatService.getUserConversations(userId);
+
+      // Update status in all conversations
+      for (const conversation of conversations) {
+        await this.chatService.updateParticipantStatus(
+          userId,
+          conversation.id,
+          {
+            isOnline,
+            lastSeen: isOnline ? now : now, // Update lastSeen on both connect and disconnect
+          }
+        );
+
+        // Broadcast to conversation participants
+        this.io.to(`conversation:${conversation.id}`).emit('user-status-changed', {
+          userId,
+          isOnline,
+          lastSeen: now,
+          conversationId: conversation.id,
+        });
+      }
+
+      logger.info(`User ${userId} status broadcasted: ${isOnline ? 'online' : 'offline'}`);
+    } catch (error: any) {
+      logger.error('Error broadcasting user status:', error);
+    }
   }
 
   // Public methods for external use
