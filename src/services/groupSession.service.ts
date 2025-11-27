@@ -208,17 +208,17 @@ export class GroupSessionService {
           participantId: participant.id,
         });
       } catch (error) {
-        logger.error(`Failed to send email invitation to ${mentee.email}:`, error);
+        logger.error(`Failed to send email invitation to ${mentee.email}:`, error instanceof Error ? error : new Error(String(error)));
       }
 
       // Send in-app notification
       try {
-        await notificationService.create({
+        await notificationService.createNotification({
           userId: mentee.id,
           type: AppNotificationType.GROUP_SESSION_INVITATION,
           title: 'Group Session Invitation',
           message: `${mentor.firstName} ${mentor.lastName} has invited you to "${groupSession.title}"`,
-          metadata: {
+          data: {
             groupSessionId: groupSession.id,
             participantId: participant.id,
             mentorId: mentor.id,
@@ -226,7 +226,7 @@ export class GroupSessionService {
           },
         });
       } catch (error) {
-        logger.error(`Failed to send app notification to ${mentee.id}:`, error);
+        logger.error(`Failed to send app notification to ${mentee.id}:`, error instanceof Error ? error : new Error(String(error)));
       }
     }
   }
@@ -280,12 +280,12 @@ export class GroupSessionService {
           sessionTitle: participant.groupSession.title,
         });
 
-        await notificationService.create({
+        await notificationService.createNotification({
           userId: mentor.id,
           type: AppNotificationType.GROUP_SESSION_RESPONSE,
           title: 'Group Session Accepted',
           message: `${mentee.firstName} ${mentee.lastName} accepted your group session invitation`,
-          metadata: {
+          data: {
             groupSessionId: participant.groupSession.id,
             menteeId: mentee.id,
             accepted: true,
@@ -301,12 +301,12 @@ export class GroupSessionService {
           declineReason: data.declineReason,
         });
 
-        await notificationService.create({
+        await notificationService.createNotification({
           userId: mentor.id,
           type: AppNotificationType.GROUP_SESSION_RESPONSE,
           title: 'Group Session Declined',
           message: `${mentee.firstName} ${mentee.lastName} declined your group session invitation`,
-          metadata: {
+          data: {
             groupSessionId: participant.groupSession.id,
             menteeId: mentee.id,
             accepted: false,
@@ -542,23 +542,23 @@ export class GroupSessionService {
             cancellationReason: groupSession.cancellationReason,
           });
         } catch (error) {
-          logger.error(`Failed to send cancellation email to ${mentee.email}:`, error);
+          logger.error(`Failed to send cancellation email to ${mentee.email}:`, error instanceof Error ? error : new Error(String(error)));
         }
 
         // Send in-app notification
         try {
-          await notificationService.create({
+          await notificationService.createNotification({
             userId: mentee.id,
             type: AppNotificationType.GROUP_SESSION_CANCELLED,
             title: 'Group Session Cancelled',
             message: `The group session "${groupSession.title}" has been cancelled`,
-            metadata: {
+            data: {
               groupSessionId: groupSession.id,
               cancellationReason: groupSession.cancellationReason,
             },
           });
         } catch (error) {
-          logger.error(`Failed to send cancellation notification to ${mentee.id}:`, error);
+          logger.error(`Failed to send cancellation notification to ${mentee.id}:`, error instanceof Error ? error : new Error(String(error)));
         }
       }
     }
