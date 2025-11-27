@@ -697,4 +697,134 @@ export class EmailService {
       },
     });
   }
+
+  // Group Session Email Methods
+
+  public async sendGroupSessionInvitation(props: {
+    to: string;
+    menteeName: string;
+    mentorName: string;
+    sessionTitle: string;
+    sessionDescription: string;
+    scheduledAt: Date;
+    duration: number;
+    groupSessionId: string;
+    participantId: string;
+  }): Promise<void> {
+    const { format } = await import('date-fns');
+    const scheduledTime = format(props.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
+
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Group Session Invitation - ${props.sessionTitle} - Spiriment`,
+      partialName: 'group-session-invitation',
+      templateData: {
+        title: 'Group Session Invitation',
+        menteeName: props.menteeName,
+        mentorName: props.mentorName,
+        sessionTitle: props.sessionTitle,
+        sessionDescription: props.sessionDescription,
+        scheduledTime,
+        duration: props.duration,
+        groupSessionId: props.groupSessionId,
+        participantId: props.participantId,
+        acceptUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=true`,
+        declineUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=false`,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionAcceptance(props: {
+    to: string;
+    mentorName: string;
+    menteeName: string;
+    sessionTitle: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `${props.menteeName} Accepted Your Group Session - Spiriment`,
+      partialName: 'group-session-acceptance',
+      templateData: {
+        title: 'Group Session Accepted',
+        mentorName: props.mentorName,
+        menteeName: props.menteeName,
+        sessionTitle: props.sessionTitle,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionDecline(props: {
+    to: string;
+    mentorName: string;
+    menteeName: string;
+    sessionTitle: string;
+    declineReason?: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `${props.menteeName} Declined Your Group Session - Spiriment`,
+      partialName: 'group-session-decline',
+      templateData: {
+        title: 'Group Session Declined',
+        mentorName: props.mentorName,
+        menteeName: props.menteeName,
+        sessionTitle: props.sessionTitle,
+        declineReason: props.declineReason,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionReminder(props: {
+    to: string;
+    userName: string;
+    sessionTitle: string;
+    scheduledAt: Date;
+    duration: number;
+    mentorName: string;
+    timeUntilSession: string;
+  }): Promise<void> {
+    const { format } = await import('date-fns');
+    const scheduledTime = format(props.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
+
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Reminder: Group Session "${props.sessionTitle}" ${props.timeUntilSession} - Spiriment`,
+      partialName: 'group-session-reminder',
+      templateData: {
+        title: 'Group Session Reminder',
+        userName: props.userName,
+        sessionTitle: props.sessionTitle,
+        scheduledTime,
+        duration: props.duration,
+        mentorName: props.mentorName,
+        timeUntilSession: props.timeUntilSession,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionCancellation(props: {
+    to: string;
+    menteeName: string;
+    mentorName: string;
+    sessionTitle: string;
+    cancellationReason?: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Group Session Cancelled - ${props.sessionTitle} - Spiriment`,
+      partialName: 'group-session-cancellation',
+      templateData: {
+        title: 'Group Session Cancelled',
+        menteeName: props.menteeName,
+        mentorName: props.mentorName,
+        sessionTitle: props.sessionTitle,
+        cancellationReason: props.cancellationReason,
+        appUrl: 'spiriment://sessions',
+      },
+    });
+  }
 }

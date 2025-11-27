@@ -12,17 +12,25 @@ import { User } from './user.entity';
 import { Session } from './session.entity';
 
 @Entity('session_reviews')
-@Index(['sessionId'], { unique: true }) // One review per session
+@Index(['sessionId'], { unique: true, where: 'sessionId IS NOT NULL' }) // One review per regular session
+@Index(['groupSessionId', 'menteeId'], { unique: true, where: 'groupSessionId IS NOT NULL' }) // One review per mentee per group session
 export class SessionReview {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @ManyToOne(() => Session, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'sessionId' })
-  session!: Session;
+  session?: Session;
 
-  @Column()
-  sessionId!: string;
+  @Column({ nullable: true })
+  sessionId?: string;
+
+  @ManyToOne('GroupSession', { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'groupSessionId' })
+  groupSession?: any;
+
+  @Column({ nullable: true })
+  groupSessionId?: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'menteeId' })
