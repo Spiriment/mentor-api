@@ -105,4 +105,10 @@ router.get(
   sessionController.getAvailableSlots
 );
 
+router.delete(
+  '/availability/:availabilityId',
+  requireRole(['mentor']),
+  sessionController.deleteAvailability
+);
+
 export { router as sessionRoutes };
