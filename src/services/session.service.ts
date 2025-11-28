@@ -11,6 +11,7 @@ import {
   AVAILABILITY_STATUS,
 } from '@/database/entities/mentorAvailability.entity';
 import { User } from '@/database/entities/user.entity';
+import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
@@ -334,6 +335,36 @@ export class SessionService {
 
       const [sessions, total] = await queryBuilder.getManyAndCount();
 
+      // If user is a mentor, enrich mentee data with profile images
+      if (userRole === 'mentor' && sessions.length > 0) {
+        const menteeIds = sessions
+          .map((s) => s.menteeId)
+          .filter((id): id is string => id !== null && id !== undefined);
+
+        if (menteeIds.length > 0) {
+          const menteeProfiles = await AppDataSource.getRepository(
+            MenteeProfile
+          ).find({
+            where: { userId: In(menteeIds) },
+            select: ['userId', 'profileImage'],
+          });
+
+          const profileImageMap = new Map(
+            menteeProfiles.map((p) => [p.userId, p.profileImage])
+          );
+
+          // Attach profile images to mentee objects
+          for (const session of sessions) {
+            if (session.mentee && session.menteeId) {
+              const profileImage = profileImageMap.get(session.menteeId);
+              if (profileImage) {
+                (session.mentee as any).profileImage = profileImage;
+              }
+            }
+          }
+        }
+      }
+
       return { sessions, total };
     } catch (error: any) {
       // If error is due to missing column, try to run migration or use fallback
@@ -468,44 +499,174 @@ export class SessionService {
     try {
       const dayOfWeek = requestedTime.getDay() as DAY_OF_WEEK;
       const timeString = requestedTime.toTimeString().slice(0, 8); // HH:MM:SS format
+      const requestedDate = new Date(requestedTime);
+      requestedDate.setHours(0, 0, 0, 0);
 
-      // Check recurring availability
-      const availability = await this.availabilityRepository.findOne({
+      // First, check for specific date availability (one-time availability)
+      // Format date as YYYY-MM-DD for comparison
+      const requestedDateString = requestedDate.toISOString().split('T')[0];
+
+      logger.info('Checking mentor availability', {
+        mentorId,
+        requestedTime: requestedTime.toISOString(),
+        dayOfWeek,
+        timeString,
+        requestedDateString,
+      });
+
+      // Check all availability records for this mentor
+      const allAvailabilities = await this.availabilityRepository.find({
         where: {
           mentorId,
-          dayOfWeek,
           status: AVAILABILITY_STATUS.AVAILABLE,
-          isRecurring: true,
         },
       });
 
+      logger.info('Found availability records', {
+        mentorId,
+        count: allAvailabilities.length,
+        availabilities: allAvailabilities.map((a) => ({
+          id: a.id,
+          dayOfWeek: a.dayOfWeek,
+          isRecurring: a.isRecurring,
+          specificDate: a.specificDate,
+          startTime: a.startTime,
+          endTime: a.endTime,
+        })),
+      });
+
+      let availability = await this.availabilityRepository
+        .createQueryBuilder('availability')
+        .where('availability.mentorId = :mentorId', { mentorId })
+        .andWhere('availability.status = :status', {
+          status: AVAILABILITY_STATUS.AVAILABLE,
+        })
+        .andWhere('availability.isRecurring = :isRecurring', {
+          isRecurring: false,
+        })
+        .andWhere('DATE(availability.specificDate) = :requestedDate', {
+          requestedDate: requestedDateString,
+        })
+        .getOne();
+
+      logger.info('Specific date availability check', {
+        mentorId,
+        requestedDateString,
+        found: !!availability,
+        availabilityId: availability?.id,
+      });
+
+      // If no specific date availability, check for recurring availability
       if (!availability) {
-        return false;
+        availability = await this.availabilityRepository.findOne({
+          where: {
+            mentorId,
+            dayOfWeek,
+            status: AVAILABILITY_STATUS.AVAILABLE,
+            isRecurring: true,
+          },
+        });
+
+        logger.info('Recurring availability check', {
+          mentorId,
+          dayOfWeek,
+          found: !!availability,
+          availabilityId: availability?.id,
+        });
       }
 
-      // Check if requested time is within available hours
-      if (
-        timeString < availability.startTime ||
-        timeString > availability.endTime
-      ) {
+      if (!availability) {
+        logger.warn('No availability found for mentor', {
+          mentorId,
+          requestedTime: requestedTime.toISOString(),
+          dayOfWeek,
+          requestedDateString,
+        });
         return false;
-      }
-
-      // Check for breaks
-      if (availability.breaks) {
-        for (const breakPeriod of availability.breaks) {
-          if (
-            timeString >= breakPeriod.startTime &&
-            timeString <= breakPeriod.endTime
-          ) {
-            return false;
-          }
-        }
       }
 
       // Calculate requested session end time
       const duration = requestedDuration || SESSION_DURATION.ONE_HOUR;
       const requestedEndTime = addMinutes(requestedTime, duration);
+      const requestedEndTimeString = requestedEndTime
+        .toTimeString()
+        .slice(0, 8); // HH:MM:SS format
+
+      logger.info('Found availability, checking time range', {
+        mentorId,
+        availabilityId: availability.id,
+        availabilityStartTime: availability.startTime,
+        availabilityEndTime: availability.endTime,
+        requestedStartTimeString: timeString,
+        requestedEndTimeString,
+        duration,
+      });
+
+      // Check if requested session START time is within available hours
+      if (timeString < availability.startTime) {
+        logger.warn('Requested start time before available hours', {
+          mentorId,
+          requestedTimeString: timeString,
+          availabilityStartTime: availability.startTime,
+        });
+        return false;
+      }
+
+      // Check if requested session END time is within available hours
+      if (requestedEndTimeString > availability.endTime) {
+        logger.warn('Requested end time after available hours', {
+          mentorId,
+          requestedEndTimeString,
+          availabilityEndTime: availability.endTime,
+        });
+        return false;
+      }
+
+      // Check for breaks - check if session overlaps with any break period
+      if (availability.breaks) {
+        for (const breakPeriod of availability.breaks) {
+          // Check if session start time is within break
+          if (
+            timeString >= breakPeriod.startTime &&
+            timeString <= breakPeriod.endTime
+          ) {
+            logger.warn('Session start time conflicts with break', {
+              mentorId,
+              requestedTimeString: timeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
+            return false;
+          }
+          // Check if session end time is within break
+          if (
+            requestedEndTimeString >= breakPeriod.startTime &&
+            requestedEndTimeString <= breakPeriod.endTime
+          ) {
+            logger.warn('Session end time conflicts with break', {
+              mentorId,
+              requestedEndTimeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
+            return false;
+          }
+          // Check if session spans across a break
+          if (
+            timeString < breakPeriod.startTime &&
+            requestedEndTimeString > breakPeriod.endTime
+          ) {
+            logger.warn('Session spans across break period', {
+              mentorId,
+              requestedTimeString: timeString,
+              requestedEndTimeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
+            return false;
+          }
+        }
+      }
 
       // Check for overlapping sessions (scheduled or confirmed) using time ranges
       const activeStatuses = [
