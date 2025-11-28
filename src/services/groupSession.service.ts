@@ -129,6 +129,55 @@ export class GroupSessionService {
         );
       }
 
+      // Check for mentor conflicts with existing sessions and group sessions
+      const sessionEndTime = new Date(new Date(data.scheduledAt).getTime() + (data.duration || 60) * 60 * 1000);
+
+      // Check regular sessions
+      const conflictingSessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .where('session.mentorId = :mentorId', { mentorId: data.mentorId })
+        .andWhere('session.status IN (:...statuses)', {
+          statuses: ['scheduled', 'confirmed', 'in_progress']
+        })
+        .andWhere(
+          '(session.scheduledAt < :sessionEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :sessionStart)',
+          {
+            sessionStart: data.scheduledAt,
+            sessionEnd: sessionEndTime,
+          }
+        )
+        .getMany();
+
+      if (conflictingSessions.length > 0) {
+        throw new AppError(
+          'Mentor has a conflicting session at this time',
+          StatusCodes.CONFLICT
+        );
+      }
+
+      // Check other group sessions
+      const conflictingGroupSessions = await this.groupSessionRepository
+        .createQueryBuilder('gs')
+        .where('gs.mentorId = :mentorId', { mentorId: data.mentorId })
+        .andWhere('gs.status IN (:...statuses)', {
+          statuses: ['invites_sent', 'confirmed', 'in_progress']
+        })
+        .andWhere(
+          '(gs.scheduledAt < :sessionEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :sessionStart)',
+          {
+            sessionStart: data.scheduledAt,
+            sessionEnd: sessionEndTime,
+          }
+        )
+        .getMany();
+
+      if (conflictingGroupSessions.length > 0) {
+        throw new AppError(
+          'Mentor has a conflicting group session at this time',
+          StatusCodes.CONFLICT
+        );
+      }
+
       // Create group session
       const groupSession = this.groupSessionRepository.create({
         mentorId: data.mentorId,
