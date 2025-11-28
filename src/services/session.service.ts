@@ -15,10 +15,13 @@ import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
-import { toZonedTime } from 'date-fns-tz';
 import { format, addMinutes } from 'date-fns';
 import { Between, In } from 'typeorm';
-import { getEmailService, formatSessionTime, formatSessionType } from './emailHelper';
+import {
+  getEmailService,
+  formatSessionTime,
+  formatSessionType,
+} from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 
@@ -101,67 +104,77 @@ export class SessionService {
       }
 
       // Use a transaction to prevent race conditions
-      const savedSession = await AppDataSource.transaction(async (transactionalEntityManager) => {
-        const sessionRepository = transactionalEntityManager.getRepository(Session);
+      const savedSession = await AppDataSource.transaction(
+        async (transactionalEntityManager) => {
+          const sessionRepository =
+            transactionalEntityManager.getRepository(Session);
 
-        // Check if mentor is available at the requested time with duration overlap checking
-        const duration = data.duration || SESSION_DURATION.ONE_HOUR;
-        const isAvailable = await this.isMentorAvailable(
-          data.mentorId,
-          data.scheduledAt,
-          duration
-        );
-        if (!isAvailable) {
-          throw new AppError(
-            'Mentor is not available at the requested time',
-            StatusCodes.CONFLICT
+          // Check if mentor is available at the requested time with duration overlap checking
+          const duration = data.duration || SESSION_DURATION.ONE_HOUR;
+          const isAvailable = await this.isMentorAvailable(
+            data.mentorId,
+            data.scheduledAt,
+            duration
           );
+          if (!isAvailable) {
+            throw new AppError(
+              'Mentor is not available at the requested time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Double-check for overlapping sessions within the transaction (prevents race condition)
+          const requestedEndTime = addMinutes(data.scheduledAt, duration);
+          const activeStatuses = [
+            SESSION_STATUS.SCHEDULED,
+            SESSION_STATUS.CONFIRMED,
+            SESSION_STATUS.IN_PROGRESS,
+          ];
+
+          const overlappingSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.mentorId = :mentorId', { mentorId: data.mentorId })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: data.scheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (overlappingSessions.length > 0) {
+            throw new AppError(
+              'Mentor is not available at the requested time (time slot conflict)',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Create session within transaction
+          const session = sessionRepository.create({
+            mentorId: data.mentorId,
+            menteeId: data.menteeId,
+            scheduledAt: data.scheduledAt,
+            timezone: mentee.timezone || 'UTC', // Use mentee's timezone
+            type: data.type || SESSION_TYPE.ONE_ON_ONE,
+            duration: duration,
+            title: data.title,
+            description: data.description,
+            meetingLink: data.meetingLink,
+            meetingId: data.meetingId,
+            meetingPassword: data.meetingPassword,
+            location: data.location,
+            isRecurring: data.isRecurring || false,
+            recurringPattern: data.recurringPattern,
+            status: SESSION_STATUS.SCHEDULED,
+          });
+
+          return await sessionRepository.save(session);
         }
-
-        // Double-check for overlapping sessions within the transaction (prevents race condition)
-        const requestedEndTime = addMinutes(data.scheduledAt, duration);
-        const activeStatuses = [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS];
-        
-        const overlappingSessions = await sessionRepository
-          .createQueryBuilder('session')
-          .where('session.mentorId = :mentorId', { mentorId: data.mentorId })
-          .andWhere('session.status IN (:...statuses)', { statuses: activeStatuses })
-          .andWhere(
-            '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
-            {
-              requestedStart: data.scheduledAt,
-              requestedEnd: requestedEndTime,
-            }
-          )
-          .getMany();
-
-        if (overlappingSessions.length > 0) {
-          throw new AppError(
-            'Mentor is not available at the requested time (time slot conflict)',
-            StatusCodes.CONFLICT
-          );
-        }
-
-        // Create session within transaction
-        const session = sessionRepository.create({
-          mentorId: data.mentorId,
-          menteeId: data.menteeId,
-          scheduledAt: data.scheduledAt,
-          type: data.type || SESSION_TYPE.ONE_ON_ONE,
-          duration: duration,
-          title: data.title,
-          description: data.description,
-          meetingLink: data.meetingLink,
-          meetingId: data.meetingId,
-          meetingPassword: data.meetingPassword,
-          location: data.location,
-          isRecurring: data.isRecurring || false,
-          recurringPattern: data.recurringPattern,
-          status: SESSION_STATUS.SCHEDULED,
-        });
-
-        return await sessionRepository.save(session);
-      });
+      );
 
       logger.info('Session created successfully', {
         sessionId: savedSession.id,
@@ -495,8 +508,12 @@ export class SessionService {
       const requestedEndTime = addMinutes(requestedTime, duration);
 
       // Check for overlapping sessions (scheduled or confirmed) using time ranges
-      const activeStatuses = [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS];
-      
+      const activeStatuses = [
+        SESSION_STATUS.SCHEDULED,
+        SESSION_STATUS.CONFIRMED,
+        SESSION_STATUS.IN_PROGRESS,
+      ];
+
       const existingSessions = await this.sessionRepository.find({
         where: {
           mentorId,
@@ -509,7 +526,14 @@ export class SessionService {
         const existingStart = new Date(existingSession.scheduledAt);
         const existingEnd = addMinutes(existingStart, existingSession.duration);
 
-        if (this.doTimeRangesOverlap(requestedTime, requestedEndTime, existingStart, existingEnd)) {
+        if (
+          this.doTimeRangesOverlap(
+            requestedTime,
+            requestedEndTime,
+            existingStart,
+            existingEnd
+          )
+        ) {
           return false;
         }
       }
@@ -557,8 +581,9 @@ export class SessionService {
         existingAvailability.notes = data.notes;
         existingAvailability.status = AVAILABILITY_STATUS.AVAILABLE;
 
-        const updatedAvailability =
-          await this.availabilityRepository.save(existingAvailability);
+        const updatedAvailability = await this.availabilityRepository.save(
+          existingAvailability
+        );
 
         logger.info('Mentor availability updated successfully', {
           availabilityId: updatedAvailability.id,
@@ -704,7 +729,11 @@ export class SessionService {
         const slotEndTime = addMinutes(sessionDateTime, slotDuration);
 
         // Check for existing sessions (scheduled or confirmed) that overlap with this slot
-        const activeStatuses = [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS];
+        const activeStatuses = [
+          SESSION_STATUS.SCHEDULED,
+          SESSION_STATUS.CONFIRMED,
+          SESSION_STATUS.IN_PROGRESS,
+        ];
         const overlappingSessions = await this.sessionRepository.find({
           where: {
             mentorId,
@@ -715,9 +744,19 @@ export class SessionService {
         let hasOverlap = false;
         for (const existingSession of overlappingSessions) {
           const existingStart = new Date(existingSession.scheduledAt);
-          const existingEnd = addMinutes(existingStart, existingSession.duration);
+          const existingEnd = addMinutes(
+            existingStart,
+            existingSession.duration
+          );
 
-          if (this.doTimeRangesOverlap(sessionDateTime, slotEndTime, existingStart, existingEnd)) {
+          if (
+            this.doTimeRangesOverlap(
+              sessionDateTime,
+              slotEndTime,
+              existingStart,
+              existingEnd
+            )
+          ) {
             hasOverlap = true;
             break;
           }
@@ -893,7 +932,11 @@ export class SessionService {
           userId: session.menteeId,
           type: AppNotificationType.SESSION_DECLINED,
           title: '❌ Session Declined',
-          message: `${session.mentor.firstName} ${session.mentor.lastName} declined your session on ${scheduledTimeFormatted}${reason ? `: ${reason}` : ''}`,
+          message: `${session.mentor.firstName} ${
+            session.mentor.lastName
+          } declined your session on ${scheduledTimeFormatted}${
+            reason ? `: ${reason}` : ''
+          }`,
           data: {
             sessionId: session.id,
             mentorId: session.mentorId,
@@ -938,7 +981,10 @@ export class SessionService {
       }
 
       // Cannot reschedule completed or cancelled sessions
-      if (session.status === SESSION_STATUS.COMPLETED || session.status === SESSION_STATUS.CANCELLED) {
+      if (
+        session.status === SESSION_STATUS.COMPLETED ||
+        session.status === SESSION_STATUS.CANCELLED
+      ) {
         throw new AppError(
           `Cannot reschedule a ${session.status} session`,
           StatusCodes.BAD_REQUEST
@@ -962,8 +1008,12 @@ export class SessionService {
 
       // Check for overlapping sessions at the new time (excluding current session)
       const requestedEndTime = addMinutes(newScheduledAtDate, session.duration);
-      const activeStatuses = [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS];
-      
+      const activeStatuses = [
+        SESSION_STATUS.SCHEDULED,
+        SESSION_STATUS.CONFIRMED,
+        SESSION_STATUS.IN_PROGRESS,
+      ];
+
       const overlappingSessions = await this.sessionRepository.find({
         where: {
           mentorId: session.mentorId,
@@ -981,7 +1031,14 @@ export class SessionService {
         const existingStart = new Date(existingSession.scheduledAt);
         const existingEnd = addMinutes(existingStart, existingSession.duration);
 
-        if (this.doTimeRangesOverlap(newScheduledAtDate, requestedEndTime, existingStart, existingEnd)) {
+        if (
+          this.doTimeRangesOverlap(
+            newScheduledAtDate,
+            requestedEndTime,
+            existingStart,
+            existingEnd
+          )
+        ) {
           throw new AppError(
             'The requested reschedule time conflicts with another session',
             StatusCodes.CONFLICT
@@ -1026,7 +1083,10 @@ export class SessionService {
           sessionType
         );
       } catch (emailError: any) {
-        logger.error('Failed to send session reschedule request email', emailError);
+        logger.error(
+          'Failed to send session reschedule request email',
+          emailError
+        );
       }
 
       // Create in-app notification for mentor
@@ -1089,7 +1149,7 @@ export class SessionService {
 
       const previousTime = session.scheduledAt;
       const requestedNewTime = session.requestedScheduledAt;
-      
+
       if (!requestedNewTime) {
         throw new AppError(
           'No requested reschedule time found',
@@ -1101,77 +1161,96 @@ export class SessionService {
       const newTimeFormatted = formatSessionTime(requestedNewTime);
 
       // Use a transaction to prevent race conditions when accepting reschedule
-      const updatedSession = await AppDataSource.transaction(async (transactionalEntityManager) => {
-        const sessionRepository = transactionalEntityManager.getRepository(Session);
+      const updatedSession = await AppDataSource.transaction(
+        async (transactionalEntityManager) => {
+          const sessionRepository =
+            transactionalEntityManager.getRepository(Session);
 
-        // Re-fetch session within transaction to get latest state
-        const currentSession = await sessionRepository.findOne({
-          where: { id: sessionId },
-          relations: ['mentor', 'mentee'],
-        });
+          // Re-fetch session within transaction to get latest state
+          const currentSession = await sessionRepository.findOne({
+            where: { id: sessionId },
+            relations: ['mentor', 'mentee'],
+          });
 
-        if (!currentSession) {
-          throw new AppError('Session not found', StatusCodes.NOT_FOUND);
-        }
+          if (!currentSession) {
+            throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+          }
 
-        // Verify reschedule request still exists
-        if (!currentSession.rescheduleRequestedAt || !currentSession.requestedScheduledAt) {
-          throw new AppError(
-            'No pending reschedule request for this session',
-            StatusCodes.BAD_REQUEST
+          // Verify reschedule request still exists
+          if (
+            !currentSession.rescheduleRequestedAt ||
+            !currentSession.requestedScheduledAt
+          ) {
+            throw new AppError(
+              'No pending reschedule request for this session',
+              StatusCodes.BAD_REQUEST
+            );
+          }
+
+          // Validate mentor availability at the new time (may have changed since request)
+          const isAvailable = await this.isMentorAvailable(
+            currentSession.mentorId,
+            currentSession.requestedScheduledAt,
+            currentSession.duration
           );
-        }
 
-        // Validate mentor availability at the new time (may have changed since request)
-        const isAvailable = await this.isMentorAvailable(
-          currentSession.mentorId,
-          currentSession.requestedScheduledAt,
-          currentSession.duration
-        );
+          if (!isAvailable) {
+            throw new AppError(
+              'Mentor is no longer available at the requested reschedule time',
+              StatusCodes.CONFLICT
+            );
+          }
 
-        if (!isAvailable) {
-          throw new AppError(
-            'Mentor is no longer available at the requested reschedule time',
-            StatusCodes.CONFLICT
+          // Double-check for overlapping sessions within transaction (excluding current session)
+          const requestedEndTime = addMinutes(
+            currentSession.requestedScheduledAt,
+            currentSession.duration
           );
+          const activeStatuses = [
+            SESSION_STATUS.SCHEDULED,
+            SESSION_STATUS.CONFIRMED,
+            SESSION_STATUS.IN_PROGRESS,
+          ];
+
+          const overlappingSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.mentorId = :mentorId', {
+              mentorId: currentSession.mentorId,
+            })
+            .andWhere('session.id != :sessionId', {
+              sessionId: currentSession.id,
+            })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: currentSession.requestedScheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (overlappingSessions.length > 0) {
+            throw new AppError(
+              'The requested reschedule time conflicts with another session',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Update session with new time within transaction
+          currentSession.scheduledAt = currentSession.requestedScheduledAt;
+          currentSession.status = SESSION_STATUS.CONFIRMED;
+          currentSession.rescheduleRequestedAt = undefined;
+          currentSession.requestedScheduledAt = undefined;
+          currentSession.previousScheduledAt = undefined;
+          currentSession.rescheduleReason = undefined;
+          currentSession.rescheduleMessage = undefined;
+
+          return await sessionRepository.save(currentSession);
         }
-
-        // Double-check for overlapping sessions within transaction (excluding current session)
-        const requestedEndTime = addMinutes(currentSession.requestedScheduledAt, currentSession.duration);
-        const activeStatuses = [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS];
-        
-        const overlappingSessions = await sessionRepository
-          .createQueryBuilder('session')
-          .where('session.mentorId = :mentorId', { mentorId: currentSession.mentorId })
-          .andWhere('session.id != :sessionId', { sessionId: currentSession.id })
-          .andWhere('session.status IN (:...statuses)', { statuses: activeStatuses })
-          .andWhere(
-            '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
-            {
-              requestedStart: currentSession.requestedScheduledAt,
-              requestedEnd: requestedEndTime,
-            }
-          )
-          .getMany();
-
-        if (overlappingSessions.length > 0) {
-          throw new AppError(
-            'The requested reschedule time conflicts with another session',
-            StatusCodes.CONFLICT
-          );
-        }
-
-        // Update session with new time within transaction
-        currentSession.scheduledAt = currentSession.requestedScheduledAt;
-        currentSession.status = SESSION_STATUS.CONFIRMED;
-        currentSession.rescheduleRequestedAt = undefined;
-        currentSession.requestedScheduledAt = undefined;
-        currentSession.previousScheduledAt = undefined;
-        currentSession.rescheduleReason = undefined;
-        currentSession.rescheduleMessage = undefined;
-
-        return await sessionRepository.save(currentSession);
-      });
+      );
 
       // Re-fetch session with relations for notifications
       const finalSession = await this.sessionRepository.findOne({
@@ -1180,7 +1259,10 @@ export class SessionService {
       });
 
       if (!finalSession) {
-        throw new AppError('Session not found after update', StatusCodes.NOT_FOUND);
+        throw new AppError(
+          'Session not found after update',
+          StatusCodes.NOT_FOUND
+        );
       }
 
       logger.info('Session reschedule accepted by mentor', {
@@ -1205,7 +1287,10 @@ export class SessionService {
           finalSession.location
         );
       } catch (emailError: any) {
-        logger.error('Failed to send session reschedule accepted email', emailError);
+        logger.error(
+          'Failed to send session reschedule accepted email',
+          emailError
+        );
       }
 
       // Create in-app notification for mentee
@@ -1298,7 +1383,10 @@ export class SessionService {
           reason
         );
       } catch (emailError: any) {
-        logger.error('Failed to send session reschedule declined email', emailError);
+        logger.error(
+          'Failed to send session reschedule declined email',
+          emailError
+        );
       }
 
       // Create in-app notification for mentee
@@ -1308,7 +1396,11 @@ export class SessionService {
           userId: session.menteeId,
           type: AppNotificationType.RESCHEDULE_DECLINED,
           title: '❌ Reschedule Declined',
-          message: `${session.mentor.firstName} ${session.mentor.lastName} declined your reschedule request. Original time: ${scheduledTimeFormatted}${reason ? `. Reason: ${reason}` : ''}`,
+          message: `${session.mentor.firstName} ${
+            session.mentor.lastName
+          } declined your reschedule request. Original time: ${scheduledTimeFormatted}${
+            reason ? `. Reason: ${reason}` : ''
+          }`,
           data: {
             sessionId: session.id,
             mentorId: session.mentorId,

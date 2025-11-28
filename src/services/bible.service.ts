@@ -8,6 +8,35 @@ type CacheEntry<T> = {
 // Supported languages: English (eng), German (deu), Dutch (nld)
 export type BibleLanguage = 'eng' | 'deu' | 'nld';
 
+// English Bible translations (Dam IDs from Bible Brain API)
+export type BibleTranslation = 'KJV' | 'NIV' | 'NKJV' | 'NLT' | 'ESV' | 'NASB' | 'CSB' | 'WEB' | 'ASV';
+
+// Mapping of translation codes to Bible Brain Dam IDs
+const TRANSLATION_DAM_IDS: Record<BibleTranslation, string> = {
+  KJV: 'ENGESVN2DA', // King James Version
+  NIV: 'ENGNIVN2ET', // New International Version
+  NKJV: 'ENGNKJN2ET', // New King James Version
+  NLT: 'ENGNLTN2ET', // New Living Translation
+  ESV: 'ENGESVN2ET', // English Standard Version
+  NASB: 'ENGNASN2ET', // New American Standard Bible
+  CSB: 'ENGCSBN2ET', // Christian Standard Bible
+  WEB: 'ENGWEBN2ET', // World English Bible
+  ASV: 'ENGASV', // American Standard Version (fallback)
+};
+
+// Translation names for display
+const TRANSLATION_NAMES: Record<BibleTranslation, string> = {
+  KJV: 'King James Version',
+  NIV: 'New International Version',
+  NKJV: 'New King James Version',
+  NLT: 'New Living Translation',
+  ESV: 'English Standard Version',
+  NASB: 'New American Standard Bible',
+  CSB: 'Christian Standard Bible',
+  WEB: 'World English Bible',
+  ASV: 'American Standard Version',
+};
+
 // Book name mapping between bible-api.com format and Bible Brain format
 const BOOK_NAME_MAP: Record<string, string> = {
   // Common books
@@ -1239,16 +1268,34 @@ export class BibleService {
   }
 
   /**
-   * Fetch a chapter with language support and fallback
+   * Fetch a chapter with language and translation support
    */
   async getChapter(
     book: string,
     chapter: number,
-    language: BibleLanguage = 'eng'
+    language: BibleLanguage = 'eng',
+    translation?: BibleTranslation
   ) {
-    const key = `chapter:${book}:${chapter}:${language}`;
+    const translationKey = translation || 'default';
+    const key = `chapter:${book}:${chapter}:${language}:${translationKey}`;
     const cached = this.getCache<any>(key);
     if (cached) return cached;
+
+    // If a specific English translation is requested, use it directly
+    if (language === 'eng' && translation && TRANSLATION_DAM_IDS[translation]) {
+      try {
+        const data = await this.getChapterWithTranslation(
+          book,
+          chapter,
+          translation
+        );
+        this.setCache(key, data, this.defaultTtlMs);
+        return data;
+      } catch (error: any) {
+        console.error(`Failed to fetch ${translation} translation:`, error);
+        // Fall through to default behavior
+      }
+    }
 
     // Try Bible Brain first (supports multiple languages)
     if (language !== 'eng' || this.bibleBrainApiKey) {
@@ -1296,6 +1343,68 @@ export class BibleService {
       // For non-English languages, if we get here, Bible Brain failed and we shouldn't fall back
       throw new Error(
         `Failed to fetch chapter: ${book} ${chapter} in ${language}. Bible Brain API unavailable.`
+      );
+    }
+  }
+
+  /**
+   * Fetch chapter with specific English translation
+   */
+  private async getChapterWithTranslation(
+    book: string,
+    chapter: number,
+    translation: BibleTranslation
+  ) {
+    const damId = TRANSLATION_DAM_IDS[translation];
+    const bookCode = BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
+
+    try {
+      // Try to get verses using the dam_id directly
+      const versesResponse = await axios.get(
+        `${this.bibleBrainBaseUrl}/api/bibles/filesets/${damId}/${bookCode}/${chapter}`,
+        {
+          params: {
+            key: this.bibleBrainApiKey,
+            v: 4,
+          },
+        }
+      );
+
+      let verses: any[] = [];
+      if (Array.isArray(versesResponse.data?.data)) {
+        verses = versesResponse.data.data;
+      } else if (Array.isArray(versesResponse.data)) {
+        verses = versesResponse.data;
+      }
+
+      if (!verses || verses.length === 0) {
+        throw new Error(`No verses found for ${book} ${chapter} in ${translation}`);
+      }
+
+      const formattedVerses = verses
+        .map((verse: any) => ({
+          book_id: bookCode,
+          book_name: book,
+          chapter: chapter,
+          verse: verse.verse_id || verse.verse || verse.verse_num || 0,
+          text: verse.verse_text || verse.text || '',
+        }))
+        .filter((v: any) => v.verse > 0 && v.text);
+
+      formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+
+      return {
+        reference: `${book} ${chapter}`,
+        verses: formattedVerses,
+        text: formattedVerses.map((v: any) => `${v.verse} ${v.text}`).join(' '),
+        translation: translation,
+        translation_id: damId,
+        translation_name: TRANSLATION_NAMES[translation],
+      };
+    } catch (error: any) {
+      console.error(`Error fetching ${translation}:`, error);
+      throw new Error(
+        `Failed to fetch ${book} ${chapter} in ${translation}: ${error.message}`
       );
     }
   }
@@ -1375,5 +1484,23 @@ export class BibleService {
       nld: 'Nederlands (Dutch)',
     };
     return names[language] || language;
+  }
+
+  /**
+   * Get available English Bible translations
+   */
+  getAvailableTranslations(): Array<{ code: BibleTranslation; name: string; damId: string }> {
+    return Object.entries(TRANSLATION_NAMES).map(([code, name]) => ({
+      code: code as BibleTranslation,
+      name,
+      damId: TRANSLATION_DAM_IDS[code as BibleTranslation],
+    }));
+  }
+
+  /**
+   * Get translation name
+   */
+  getTranslationName(translation: BibleTranslation): string {
+    return TRANSLATION_NAMES[translation] || translation;
   }
 }

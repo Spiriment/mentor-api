@@ -11,6 +11,9 @@ const bibleRoutes = Router();
 // GET /api/bible/languages - Get available languages
 bibleRoutes.get('/languages', bibleController.getAvailableLanguages);
 
+// GET /api/bible/translations - Get available English Bible translations
+bibleRoutes.get('/translations', bibleController.getAvailableTranslations);
+
 // GET /api/bible/passage?reference=John%203:16-18&lang=eng|deu|nld - Get passage with optional language
 bibleRoutes.get('/passage', bibleController.getPassage);
 
@@ -18,19 +21,19 @@ bibleRoutes.get('/passage', bibleController.getPassage);
 bibleRoutes.use('/:book/:chapter', (req, res, next) => {
   const { book } = req.params;
   // Reject reserved words that should be handled by other routes
-  if (book === 'user' || book === 'languages' || book === 'passage') {
+  if (book === 'user' || book === 'languages' || book === 'passage' || book === 'translations') {
     return res.status(404).json({
       success: false,
-      error: { 
-        message: `Route not found. "${book}" is a reserved path.`, 
-        code: 'ROUTE_NOT_FOUND' 
+      error: {
+        message: `Route not found. "${book}" is a reserved path.`,
+        code: 'ROUTE_NOT_FOUND'
       }
     });
   }
   next();
 });
 
-// GET /api/bible/:book/:chapter?lang=eng|deu|nld - Get chapter with optional language
+// GET /api/bible/:book/:chapter?lang=eng|deu|nld&translation=KJV|NIV|NKJV|NLT|ESV - Get chapter with optional language and translation
 // This must be LAST to avoid matching /user/* routes
 bibleRoutes.get('/:book/:chapter', bibleController.getChapter);
 

@@ -76,6 +76,9 @@ export class Session {
   @Column({ type: 'datetime' })
   scheduledAt!: Date;
 
+  @Column({ default: 'UTC' })
+  timezone!: string;
+
   @Column({ type: 'datetime', nullable: true })
   startedAt?: Date;
 
