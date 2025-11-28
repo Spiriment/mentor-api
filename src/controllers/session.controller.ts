@@ -663,4 +663,41 @@ export class SessionController {
       next(error);
     }
   };
+
+  /**
+   * Delete mentor availability
+   * DELETE /api/sessions/availability/:availabilityId
+   */
+  deleteAvailability = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can delete availability',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { availabilityId } = req.params;
+
+      await this.sessionService.deleteAvailability(availabilityId, user.id);
+
+      this.logger.info('Availability deleted successfully', {
+        availabilityId,
+        mentorId: user.id,
+      });
+
+      return sendSuccessResponse(res, {
+        message: 'Availability deleted successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error deleting availability', error);
+      next(error);
+    }
+  };
 }
