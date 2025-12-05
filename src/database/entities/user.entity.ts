@@ -104,4 +104,23 @@ export class User extends BaseEntity {
 
   @Column({ name: 'monthlyStreakData', type: 'json', nullable: true })
   monthlyStreakData?: { [key: string]: number[] }; // { 'YYYY-MM': [1,2,3,5,10,...] }
+
+  // Push notification token for mobile devices
+  @Column({ name: 'pushToken', nullable: true })
+  pushToken?: string;
+
+  // Track last activity for re-engagement emails
+  @Column({ name: 'lastActiveAt', nullable: true })
+  lastActiveAt?: Date;
+
+  // Track re-engagement email sending to avoid duplicates
+  @Column({ name: 'lastReengagementEmailSentAt', nullable: true })
+  lastReengagementEmailSentAt?: Date;
+
+  @Column({ name: 'reengagementEmailsSent', type: 'json', nullable: true })
+  reengagementEmailsSent?: {
+    day3?: Date;
+    day7?: Date;
+    day30?: Date;
+  };
 }

@@ -17,6 +17,7 @@ import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
 import { format, addMinutes } from 'date-fns';
+import { toZonedTime, format as formatTz } from 'date-fns-tz';
 import { Between, In } from 'typeorm';
 import {
   getEmailService,
@@ -497,29 +498,48 @@ export class SessionService {
     requestedDuration?: SESSION_DURATION
   ): Promise<boolean> {
     try {
-      const dayOfWeek = requestedTime.getDay() as DAY_OF_WEEK;
-      const timeString = requestedTime.toTimeString().slice(0, 8); // HH:MM:SS format
-      const requestedDate = new Date(requestedTime);
-      requestedDate.setHours(0, 0, 0, 0);
-
-      // First, check for specific date availability (one-time availability)
-      // Format date as YYYY-MM-DD for comparison
-      const requestedDateString = requestedDate.toISOString().split('T')[0];
-
-      logger.info('Checking mentor availability', {
-        mentorId,
-        requestedTime: requestedTime.toISOString(),
-        dayOfWeek,
-        timeString,
-        requestedDateString,
-      });
-
-      // Check all availability records for this mentor
+      // Get all availability records to determine mentor's timezone
+      // We'll use the first availability's timezone, or default to UTC
       const allAvailabilities = await this.availabilityRepository.find({
         where: {
           mentorId,
           status: AVAILABILITY_STATUS.AVAILABLE,
         },
+      });
+
+      // Get mentor's timezone from availability records (use first one found, or default to UTC)
+      const mentorTimezone =
+        allAvailabilities.length > 0 && allAvailabilities[0].timezone
+          ? allAvailabilities[0].timezone
+          : 'UTC';
+
+      // Convert requested UTC time to mentor's timezone
+      const requestedTimeInMentorTz = toZonedTime(
+        requestedTime,
+        mentorTimezone
+      );
+
+      // Extract day of week and time in mentor's timezone
+      const dayOfWeek = requestedTimeInMentorTz.getDay() as DAY_OF_WEEK;
+      const timeString = formatTz(requestedTimeInMentorTz, 'HH:mm:ss', {
+        timeZone: mentorTimezone,
+      });
+
+      // Get date string in mentor's timezone (YYYY-MM-DD)
+      const requestedDateString = formatTz(
+        requestedTimeInMentorTz,
+        'yyyy-MM-dd',
+        { timeZone: mentorTimezone }
+      );
+
+      logger.info('Checking mentor availability', {
+        mentorId,
+        requestedTime: requestedTime.toISOString(),
+        mentorTimezone,
+        requestedTimeInMentorTz: requestedTimeInMentorTz.toISOString(),
+        dayOfWeek,
+        timeString,
+        requestedDateString,
       });
 
       logger.info('Found availability records', {
@@ -585,12 +605,18 @@ export class SessionService {
         return false;
       }
 
-      // Calculate requested session end time
+      // Calculate requested session end time in mentor's timezone
       const duration = requestedDuration || SESSION_DURATION.ONE_HOUR;
       const requestedEndTime = addMinutes(requestedTime, duration);
-      const requestedEndTimeString = requestedEndTime
-        .toTimeString()
-        .slice(0, 8); // HH:MM:SS format
+      const requestedEndTimeInMentorTz = toZonedTime(
+        requestedEndTime,
+        mentorTimezone
+      );
+      const requestedEndTimeString = formatTz(
+        requestedEndTimeInMentorTz,
+        'HH:mm:ss',
+        { timeZone: mentorTimezone }
+      );
 
       logger.info('Found availability, checking time range', {
         mentorId,

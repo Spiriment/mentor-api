@@ -18,6 +18,7 @@ import { In, LessThan, MoreThan } from 'typeorm';
 import { getEmailService } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
+import { pushNotificationService } from './pushNotification.service';
 
 export interface CreateGroupSessionDTO {
   mentorId: string;
@@ -276,6 +277,30 @@ export class GroupSessionService {
         });
       } catch (error) {
         logger.error(`Failed to send app notification to ${mentee.id}:`, error instanceof Error ? error : new Error(String(error)));
+      }
+
+      // Send push notification
+      try {
+        if (mentee.pushToken) {
+          const mentorName = `${mentor.firstName} ${mentor.lastName}`;
+          await pushNotificationService.sendToUser({
+            userId: mentee.id,
+            pushToken: mentee.pushToken,
+            title: '📅 Group Session Invitation',
+            body: `${mentorName} has invited you to join "${groupSession.title}"`,
+            data: {
+              type: 'group_session_invitation',
+              groupSessionId: groupSession.id,
+              participantId: participant.id,
+              mentorId: mentor.id,
+              scheduledAt: groupSession.scheduledAt.toISOString(),
+            },
+            channelId: 'session-reminders',
+          });
+          logger.info(`Push notification sent to mentee ${mentee.id} for group session invitation`);
+        }
+      } catch (error) {
+        logger.error(`Failed to send push notification to ${mentee.id}:`, error instanceof Error ? error : new Error(String(error)));
       }
     }
   }

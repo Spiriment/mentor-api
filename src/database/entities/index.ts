@@ -16,6 +16,7 @@ export * from './sessionReview.entity';
 export * from './mentorAvailability.entity';
 export * from './groupSession.entity';
 export * from './groupSessionParticipant.entity';
+export * from './mentorshipRequest.entity';
 export * from './bibleBookmark.entity';
 export * from './bibleHighlight.entity';
 export * from './bibleReflection.entity';

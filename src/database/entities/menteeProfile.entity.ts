@@ -36,6 +36,12 @@ export class MenteeProfile extends BaseEntity {
   @Column({ name: 'christianExperience', nullable: true })
   christianExperience?: string;
 
+  @Column({ name: 'churchDenomination', nullable: true })
+  churchDenomination?: string;
+
+  @Column({ name: 'churchName', nullable: true })
+  churchName?: string;
+
   @Column({ name: 'bibleTopics', type: 'json', nullable: true })
   bibleTopics?: string[];
 

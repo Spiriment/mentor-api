@@ -3,6 +3,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
+import { pushNotificationService } from './pushNotification.service';
 import { addMinutes, format } from 'date-fns';
 
 export class SessionReminderService {
@@ -12,6 +13,90 @@ export class SessionReminderService {
 
   constructor(emailService: EmailService) {
     this.emailService = emailService;
+  }
+
+  /**
+   * Send 1-hour reminders for upcoming sessions
+   * This method is called by the cron job
+   */
+  async send1HourReminders(): Promise<void> {
+    try {
+      const now = new Date();
+
+      // Find sessions that start in approximately 1 hour
+      // We check for sessions between 59 and 61 minutes from now to account for cron timing
+      const startTime = addMinutes(now, 59);
+      const endTime = addMinutes(now, 61);
+
+      const sessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .select([
+          'session.id',
+          'session.mentorId',
+          'session.menteeId',
+          'session.status',
+          'session.type',
+          'session.duration',
+          'session.scheduledAt',
+          'session.title',
+          'session.description',
+          'session.location',
+          'session.reminders',
+        ])
+        .leftJoinAndSelect('session.mentor', 'mentor')
+        .leftJoinAndSelect('session.mentee', 'mentee')
+        .where('session.status IN (:...statuses)', {
+          statuses: [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED],
+        })
+        .andWhere('session.scheduledAt >= :startTime', {
+          startTime: startTime,
+        })
+        .andWhere('session.scheduledAt <= :endTime', {
+          endTime: endTime,
+        })
+        .getMany();
+
+      logger.info(`Found ${sessions.length} sessions starting in ~1 hour`);
+
+      for (const session of sessions) {
+        // Check if 1-hour reminder already sent
+        if (session.reminders?.sent1h) {
+          logger.debug(
+            `1-hour reminder already sent for session ${session.id}`
+          );
+          continue;
+        }
+
+        try {
+          // Send reminder to mentor
+          if (session.mentor) {
+            await this.sendReminderToMentor(session, '1 hour');
+          }
+
+          // Send reminder to mentee
+          if (session.mentee) {
+            await this.sendReminderToMentee(session, '1 hour');
+          }
+
+          // Update session reminders field
+          await this.updateSessionReminders(session.id, {
+            sent1h: true,
+          });
+
+          logger.info(`1-hour reminder sent for session ${session.id}`);
+        } catch (error) {
+          logger.error(
+            `Error sending 1-hour reminder for session ${session.id}:`,
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      }
+    } catch (error) {
+      logger.error(
+        'Error in send1HourReminders:',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
   }
 
   /**
@@ -71,12 +156,12 @@ export class SessionReminderService {
         try {
           // Send reminder to mentor
           if (session.mentor) {
-            await this.sendReminderToMentor(session);
+            await this.sendReminderToMentor(session, '15 minutes');
           }
 
           // Send reminder to mentee
           if (session.mentee) {
-            await this.sendReminderToMentee(session);
+            await this.sendReminderToMentee(session, '15 minutes');
           }
 
           // Update session reminders field
@@ -103,7 +188,10 @@ export class SessionReminderService {
   /**
    * Send reminder email to mentor
    */
-  private async sendReminderToMentor(session: Session): Promise<void> {
+  private async sendReminderToMentor(
+    session: Session,
+    timeUntil: string
+  ): Promise<void> {
     const mentor = session.mentor;
     if (!mentor || !mentor.email) {
       logger.warn(`Mentor email not found for session ${session.id}`);
@@ -133,13 +221,14 @@ export class SessionReminderService {
     };
     const sessionType = sessionTypeMap[session.type] || session.type;
 
+    // Send email reminder
     await this.emailService.sendSessionReminderEmail(
       mentor.email,
       mentorName,
       menteeName,
       formattedTime,
       session.duration,
-      '15 minutes',
+      timeUntil,
       'mentee',
       session.description,
       sessionType,
@@ -147,14 +236,32 @@ export class SessionReminderService {
     );
 
     logger.info(
-      `15-minute reminder email sent to mentor ${mentor.email} for session ${session.id}`
+      `${timeUntil} reminder email sent to mentor ${mentor.email} for session ${session.id}`
     );
+
+    // Send push notification if mentor has a push token
+    if (mentor.pushToken) {
+      const minutesBefore = timeUntil === '1 hour' ? 60 : 15;
+      await pushNotificationService.sendSessionReminder(
+        mentor.pushToken,
+        mentor.id,
+        menteeName,
+        formattedTime,
+        minutesBefore
+      );
+      logger.info(
+        `${timeUntil} push notification sent to mentor ${mentor.email} for session ${session.id}`
+      );
+    }
   }
 
   /**
    * Send reminder email to mentee
    */
-  private async sendReminderToMentee(session: Session): Promise<void> {
+  private async sendReminderToMentee(
+    session: Session,
+    timeUntil: string
+  ): Promise<void> {
     const mentee = session.mentee;
     if (!mentee || !mentee.email) {
       logger.warn(`Mentee email not found for session ${session.id}`);
@@ -184,13 +291,14 @@ export class SessionReminderService {
     };
     const sessionType = sessionTypeMap[session.type] || session.type;
 
+    // Send email reminder
     await this.emailService.sendSessionReminderEmail(
       mentee.email,
       menteeName,
       mentorName,
       formattedTime,
       session.duration,
-      '15 minutes',
+      timeUntil,
       'mentor',
       session.description,
       sessionType,
@@ -198,8 +306,23 @@ export class SessionReminderService {
     );
 
     logger.info(
-      `15-minute reminder email sent to mentee ${mentee.email} for session ${session.id}`
+      `${timeUntil} reminder email sent to mentee ${mentee.email} for session ${session.id}`
     );
+
+    // Send push notification if mentee has a push token
+    if (mentee.pushToken) {
+      const minutesBefore = timeUntil === '1 hour' ? 60 : 15;
+      await pushNotificationService.sendSessionReminder(
+        mentee.pushToken,
+        mentee.id,
+        mentorName,
+        formattedTime,
+        minutesBefore
+      );
+      logger.info(
+        `${timeUntil} push notification sent to mentee ${mentee.email} for session ${session.id}`
+      );
+    }
   }
 
   /**

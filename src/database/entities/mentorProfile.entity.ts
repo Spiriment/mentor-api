@@ -45,6 +45,9 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'menteeCapacity', type: 'int', nullable: true })
   menteeCapacity?: number;
 
+  @Column({ name: 'sessionDuration', type: 'int', default: 60 })
+  sessionDuration!: number;
+
   @Column({ name: 'mentorshipFormat', type: 'json', nullable: true })
   mentorshipFormat?: string[];
 
@@ -71,4 +74,17 @@ export class MentorProfile extends BaseEntity {
 
   @Column({ name: 'approvedAt', nullable: true })
   approvedAt?: Date;
+
+  // Study progress data
+  @Column({ name: 'currentBook', nullable: true })
+  currentBook?: string;
+
+  @Column({ name: 'currentChapter', default: 1 })
+  currentChapter?: number;
+
+  @Column({ name: 'completedChapters', type: 'json', nullable: true })
+  completedChapters?: number[];
+
+  @Column({ name: 'studyDays', default: 0 })
+  studyDays?: number;
 }
