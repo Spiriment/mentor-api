@@ -10,6 +10,9 @@ import {
 import { User } from './user.entity';
 
 export enum AppNotificationType {
+  MENTORSHIP_REQUEST = 'mentorship_request',
+  MENTORSHIP_ACCEPTED = 'mentorship_accepted',
+  MENTORSHIP_DECLINED = 'mentorship_declined',
   SESSION_REQUEST = 'session_request',
   SESSION_CONFIRMED = 'session_confirmed',
   SESSION_RESCHEDULED = 'session_rescheduled',

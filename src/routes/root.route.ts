@@ -20,6 +20,8 @@ import chatRoutes from '@/routes/chat.routes';
 import appNotificationRoutes from './appNotification.routes';
 import sessionReviewRoutes from './sessionReview.routes';
 import groupSessionRoutes from './groupSession.routes';
+import mentorshipRequestRoutes from './mentorshipRequest.routes';
+import pushTokenRoutes from './pushToken.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -145,6 +147,12 @@ const createRootRoutes = () => {
 
   // Group session routes
   rootRouter.use('/api/sessions/group', groupSessionRoutes);
+
+  // Mentorship request routes
+  rootRouter.use('/api/mentorship-requests', mentorshipRequestRoutes);
+
+  // Push token routes
+  rootRouter.use('/api/users/push-token', pushTokenRoutes);
 
   // Serve uploaded files statically
   rootRouter.use('/uploads', (req, res, next) => {
