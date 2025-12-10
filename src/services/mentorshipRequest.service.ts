@@ -8,8 +8,10 @@ import { User } from '../database/entities/user.entity';
 import { AppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '../database/entities/appNotification.entity';
 import { logger } from '@/config/int-services';
-import { getEmailService } from '@/services';
+import { getEmailService } from './emailHelper';
 import { pushNotificationService } from './pushNotification.service';
+import { AppError } from '../common/errors';
+import { StatusCodes } from 'http-status-codes';
 
 export class MentorshipRequestService {
   private requestRepository: Repository<MentorshipRequest>;
@@ -24,12 +26,13 @@ export class MentorshipRequestService {
 
   /**
    * Create a mentorship request from mentee to mentor
+   * Returns the request and a flag indicating if it was already pending
    */
   async createRequest(data: {
     mentorId: string;
     menteeId: string;
     message?: string;
-  }): Promise<MentorshipRequest> {
+  }): Promise<{ request: MentorshipRequest; alreadyExists: boolean }> {
     try {
       // Check if request already exists
       const existingRequest = await this.requestRepository.findOne({
@@ -40,13 +43,16 @@ export class MentorshipRequestService {
       });
 
       if (existingRequest) {
-        // If there's a pending request, return it
+        // If there's a pending request, return it with flag
         if (existingRequest.status === MENTORSHIP_REQUEST_STATUS.PENDING) {
-          throw new Error('You already have a pending mentorship request with this mentor.');
+          return { request: existingRequest, alreadyExists: true };
         }
         // If there's an accepted request, throw error
         if (existingRequest.status === MENTORSHIP_REQUEST_STATUS.ACCEPTED) {
-          throw new Error('You already have an active mentorship with this mentor.');
+          throw new AppError(
+            'You already have an active mentorship with this mentor.',
+            StatusCodes.BAD_REQUEST
+          );
         }
         // If declined or cancelled, allow creating a new request
         if (
@@ -63,7 +69,7 @@ export class MentorshipRequestService {
           // Send notifications for renewed request
           await this.sendRequestNotifications(existingRequest);
 
-          return existingRequest;
+          return { request: existingRequest, alreadyExists: false };
         }
       }
 
@@ -74,11 +80,43 @@ export class MentorshipRequestService {
       ]);
 
       if (!mentor) {
-        throw new Error('Mentor not found');
+        logger.error('Mentor not found', undefined, {
+          mentorId: data.mentorId,
+          mentorIdType: typeof data.mentorId,
+        });
+        throw new AppError('Mentor not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Verify the user is actually a mentor
+      if (mentor.role !== 'mentor') {
+        logger.error('User is not a mentor', undefined, {
+          mentorId: data.mentorId,
+          userRole: mentor.role,
+        });
+        throw new AppError(
+          'The specified user is not a mentor',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
       if (!mentee) {
-        throw new Error('Mentee not found');
+        logger.error('Mentee not found', undefined, {
+          menteeId: data.menteeId,
+          menteeIdType: typeof data.menteeId,
+        });
+        throw new AppError('Mentee not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Verify the user is actually a mentee
+      if (mentee.role !== 'mentee') {
+        logger.error('User is not a mentee', undefined, {
+          menteeId: data.menteeId,
+          userRole: mentee.role,
+        });
+        throw new AppError(
+          'The specified user is not a mentee',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
       // Create the request
@@ -100,7 +138,7 @@ export class MentorshipRequestService {
       // Send notifications and email
       await this.sendRequestNotifications(savedRequest);
 
-      return savedRequest;
+      return { request: savedRequest, alreadyExists: false };
     } catch (error: any) {
       logger.error('Error creating mentorship request', error);
       throw error;
@@ -110,7 +148,9 @@ export class MentorshipRequestService {
   /**
    * Send notifications and email for a mentorship request
    */
-  private async sendRequestNotifications(request: MentorshipRequest): Promise<void> {
+  private async sendRequestNotifications(
+    request: MentorshipRequest
+  ): Promise<void> {
     try {
       // Get mentor and mentee details
       const [mentor, mentee] = await Promise.all([
@@ -150,7 +190,8 @@ export class MentorshipRequestService {
           templateData: {
             mentorName: `${mentor.firstName} ${mentor.lastName}`,
             menteeName,
-            message: request.message || 'I would love to have you as my mentor.',
+            message:
+              request.message || 'I would love to have you as my mentor.',
             requestId: request.id,
           },
         });
@@ -182,18 +223,28 @@ export class MentorshipRequestService {
   /**
    * Accept a mentorship request
    */
-  async acceptRequest(requestId: string, mentorId: string, responseMessage?: string): Promise<MentorshipRequest> {
+  async acceptRequest(
+    requestId: string,
+    mentorId: string,
+    responseMessage?: string
+  ): Promise<MentorshipRequest> {
     try {
       const request = await this.requestRepository.findOne({
         where: { id: requestId, mentorId },
       });
 
       if (!request) {
-        throw new Error('Mentorship request not found');
+        throw new AppError(
+          'Mentorship request not found',
+          StatusCodes.NOT_FOUND
+        );
       }
 
       if (!request.canRespond()) {
-        throw new Error('This request has already been responded to');
+        throw new AppError(
+          'This request has already been responded to',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
       // Update request status
@@ -221,7 +272,9 @@ export class MentorshipRequestService {
   /**
    * Send notifications and email for accepted mentorship request
    */
-  private async sendAcceptanceNotifications(request: MentorshipRequest): Promise<void> {
+  private async sendAcceptanceNotifications(
+    request: MentorshipRequest
+  ): Promise<void> {
     try {
       const [mentor, mentee] = await Promise.all([
         this.userRepository.findOne({ where: { id: request.mentorId } }),
@@ -260,7 +313,8 @@ export class MentorshipRequestService {
           templateData: {
             menteeName: `${mentee.firstName} ${mentee.lastName}`,
             mentorName,
-            responseMessage: request.responseMessage || 'I look forward to mentoring you!',
+            responseMessage:
+              request.responseMessage || 'I look forward to mentoring you!',
             requestId: request.id,
           },
         });
@@ -273,10 +327,13 @@ export class MentorshipRequestService {
           mentee.id,
           mentorName
         );
-        logger.info('Push notification sent to mentee for mentorship acceptance', {
-          requestId: request.id,
-          menteeId: mentee.id,
-        });
+        logger.info(
+          'Push notification sent to mentee for mentorship acceptance',
+          {
+            requestId: request.id,
+            menteeId: mentee.id,
+          }
+        );
       }
 
       logger.info('Mentorship acceptance notifications sent', {
@@ -291,18 +348,28 @@ export class MentorshipRequestService {
   /**
    * Decline a mentorship request
    */
-  async declineRequest(requestId: string, mentorId: string, responseMessage?: string): Promise<MentorshipRequest> {
+  async declineRequest(
+    requestId: string,
+    mentorId: string,
+    responseMessage?: string
+  ): Promise<MentorshipRequest> {
     try {
       const request = await this.requestRepository.findOne({
         where: { id: requestId, mentorId },
       });
 
       if (!request) {
-        throw new Error('Mentorship request not found');
+        throw new AppError(
+          'Mentorship request not found',
+          StatusCodes.NOT_FOUND
+        );
       }
 
       if (!request.canRespond()) {
-        throw new Error('This request has already been responded to');
+        throw new AppError(
+          'This request has already been responded to',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
       // Update request status
@@ -330,7 +397,9 @@ export class MentorshipRequestService {
   /**
    * Send notifications and email for declined mentorship request
    */
-  private async sendDeclineNotifications(request: MentorshipRequest): Promise<void> {
+  private async sendDeclineNotifications(
+    request: MentorshipRequest
+  ): Promise<void> {
     try {
       const [mentor, mentee] = await Promise.all([
         this.userRepository.findOne({ where: { id: request.mentorId } }),
@@ -402,18 +471,27 @@ export class MentorshipRequestService {
   /**
    * Cancel a mentorship request (by mentee)
    */
-  async cancelRequest(requestId: string, menteeId: string): Promise<MentorshipRequest> {
+  async cancelRequest(
+    requestId: string,
+    menteeId: string
+  ): Promise<MentorshipRequest> {
     try {
       const request = await this.requestRepository.findOne({
         where: { id: requestId, menteeId },
       });
 
       if (!request) {
-        throw new Error('Mentorship request not found');
+        throw new AppError(
+          'Mentorship request not found',
+          StatusCodes.NOT_FOUND
+        );
       }
 
       if (!request.canCancel()) {
-        throw new Error('This request can no longer be cancelled');
+        throw new AppError(
+          'This request can no longer be cancelled',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
       request.status = MENTORSHIP_REQUEST_STATUS.CANCELLED;
@@ -434,7 +512,10 @@ export class MentorshipRequestService {
   /**
    * Get mentorship request status between mentor and mentee
    */
-  async getRequestStatus(mentorId: string, menteeId: string): Promise<MentorshipRequest | null> {
+  async getRequestStatus(
+    mentorId: string,
+    menteeId: string
+  ): Promise<MentorshipRequest | null> {
     try {
       const request = await this.requestRepository.findOne({
         where: {
@@ -456,7 +537,10 @@ export class MentorshipRequestService {
   /**
    * Get all mentorship requests for a mentor
    */
-  async getMentorRequests(mentorId: string, status?: MENTORSHIP_REQUEST_STATUS): Promise<MentorshipRequest[]> {
+  async getMentorRequests(
+    mentorId: string,
+    status?: MENTORSHIP_REQUEST_STATUS
+  ): Promise<MentorshipRequest[]> {
     try {
       const queryBuilder = this.requestRepository
         .createQueryBuilder('request')
@@ -478,7 +562,10 @@ export class MentorshipRequestService {
   /**
    * Get all mentorship requests for a mentee
    */
-  async getMenteeRequests(menteeId: string, status?: MENTORSHIP_REQUEST_STATUS): Promise<MentorshipRequest[]> {
+  async getMenteeRequests(
+    menteeId: string,
+    status?: MENTORSHIP_REQUEST_STATUS
+  ): Promise<MentorshipRequest[]> {
     try {
       const queryBuilder = this.requestRepository
         .createQueryBuilder('request')
@@ -500,7 +587,10 @@ export class MentorshipRequestService {
   /**
    * Check if mentee has active mentorship with mentor
    */
-  async hasActiveMentorship(mentorId: string, menteeId: string): Promise<boolean> {
+  async hasActiveMentorship(
+    mentorId: string,
+    menteeId: string
+  ): Promise<boolean> {
     try {
       const request = await this.requestRepository.findOne({
         where: {

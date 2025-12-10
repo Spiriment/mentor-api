@@ -158,7 +158,7 @@ export class ReengagementService {
       const subjectMap = {
         3: 'We Miss You at Spiriment! 👋',
         7: 'Your Spiritual Journey Awaits 💚',
-        30: 'We'd Love to See You Back at Spiriment 🙏',
+        30: "We'd Love to See You Back at Spiriment 🙏",
       };
 
       await this.emailService.sendEmailWithTemplate({
@@ -195,7 +195,7 @@ export class ReengagementService {
 
       const titleMap = {
         3: '👋 We Miss You!',
-        7: '💚 Don't Let Your Progress Fade',
+        7: "💚 Don't Let Your Progress Fade",
         30: '🙏 Your Faith Community Misses You',
       };
 
