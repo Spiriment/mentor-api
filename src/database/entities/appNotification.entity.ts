@@ -41,8 +41,8 @@ export class AppNotification {
   id!: string;
 
   @Column({
-    type: 'enum',
-    enum: AppNotificationType,
+    type: 'varchar',
+    length: 50,
     default: AppNotificationType.SYSTEM,
   })
   type!: AppNotificationType;

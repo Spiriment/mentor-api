@@ -21,9 +21,22 @@ export class AppNotificationService {
     data?: Record<string, any>;
   }): Promise<AppNotification> {
     try {
+      // Ensure type is the enum value (string), not the enum key
+      const typeValue = typeof data.type === 'string' ? data.type : String(data.type);
+      
+      // Validate that the type is a valid enum value
+      const validTypes = Object.values(AppNotificationType);
+      if (!validTypes.includes(typeValue as AppNotificationType)) {
+        logger.error('Invalid notification type', undefined, {
+          type: typeValue,
+          validTypes,
+        });
+        throw new Error(`Invalid notification type: ${typeValue}`);
+      }
+
       const notification = this.notificationRepository.create({
         userId: data.userId,
-        type: data.type,
+        type: typeValue as AppNotificationType,
         title: data.title,
         message: data.message,
         data: data.data,

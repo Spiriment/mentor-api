@@ -356,4 +356,27 @@ export class MentorProfileService {
       throw error;
     }
   }
+
+  // Update current book and chapter (for Bible reading tracking)
+  async updateCurrentBook(
+    userId: string,
+    currentBook: string,
+    currentChapter: number
+  ): Promise<MentorProfile> {
+    try {
+      const profile = await this.getOrCreateProfile(userId);
+      profile.currentBook = currentBook;
+      profile.currentChapter = currentChapter;
+
+      const updatedProfile = await this.mentorProfileRepository.save(profile);
+      this.logger.info(
+        `Updated current book to ${currentBook} ${currentChapter} for mentor ${userId}`
+      );
+
+      return updatedProfile;
+    } catch (error) {
+      this.logger.error('Error updating current book', error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
 }

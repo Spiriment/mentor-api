@@ -107,7 +107,7 @@ export class User extends BaseEntity {
 
   // Push notification token for mobile devices
   @Column({ name: 'pushToken', nullable: true })
-  pushToken?: string;
+  pushToken?: string | null;
 
   // Track last activity for re-engagement emails
   @Column({ name: 'lastActiveAt', nullable: true })

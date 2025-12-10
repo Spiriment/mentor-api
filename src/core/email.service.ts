@@ -191,6 +191,14 @@ export class EmailService {
       throw new Error(`Partial ${partialName} not found`);
     }
     const bodyContent = partial(data);
+    
+    // Check if the template is standalone HTML (starts with <!DOCTYPE html>)
+    // If so, return it directly without wrapping in baseLayout
+    if (bodyContent.trim().startsWith('<!DOCTYPE html>') || bodyContent.trim().startsWith('<!doctype html>')) {
+      return bodyContent;
+    }
+    
+    // Otherwise, wrap in baseLayout
     return this.baseTemplate({
       ...data,
       body: bodyContent,

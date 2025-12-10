@@ -32,25 +32,29 @@ export class MentorshipRequestController {
         throw new AppError('You cannot send a mentorship request to yourself', StatusCodes.BAD_REQUEST);
       }
 
-      const request = await this.requestService.createRequest({
+      const { request, alreadyExists } = await this.requestService.createRequest({
         mentorId,
         menteeId: user.id,
         message,
       });
 
-      logger.info('Mentorship request created successfully', {
+      logger.info('Mentorship request processed', {
         requestId: request.id,
         mentorId,
         menteeId: user.id,
+        alreadyExists,
       });
 
       return sendSuccessResponse(
         res,
         {
           request,
-          message: 'Mentorship request sent successfully',
+          message: alreadyExists 
+            ? 'You already have a pending mentorship request with this mentor.'
+            : 'Mentorship request sent successfully',
+          alreadyExists,
         },
-        StatusCodes.CREATED
+        alreadyExists ? StatusCodes.OK : StatusCodes.CREATED
       );
     } catch (error: any) {
       logger.error('Error creating mentorship request', error);
