@@ -5,8 +5,8 @@ type CacheEntry<T> = {
   expiresAt: number;
 };
 
-// Supported languages: English (eng), German (deu), Dutch (nld)
-export type BibleLanguage = 'eng' | 'deu' | 'nld';
+// Supported languages: English (eng), German (deu), Dutch (nld), Spanish (spa), French (fra), Italian (ita)
+export type BibleLanguage = 'eng' | 'deu' | 'nld' | 'spa' | 'fra' | 'ita';
 
 // English Bible translations (Dam IDs from Bible Brain API)
 export type BibleTranslation = 'KJV' | 'NIV' | 'NKJV' | 'NLT' | 'ESV' | 'NASB' | 'CSB' | 'WEB' | 'ASV';
@@ -477,6 +477,9 @@ export class BibleService {
         eng: ['ASV', 'KJV', 'WEB'], // English
         deu: ['LUTH', 'ELB'], // German - Luther, Elberfelder
         nld: ['NBV', 'HSV'], // Dutch - Nieuwe Bijbelvertaling, Herziene Statenvertaling
+        spa: ['RVR', 'NVI', 'RVA'], // Spanish - Reina Valera, Nueva Versión Internacional
+        fra: ['LSG', 'BDS', 'S21'], // French - Louis Segond, Bible du Semeur
+        ita: ['NR', 'CEI', 'LND'], // Italian - Nuova Riveduta, CEI
       };
 
       const preferred = preferredBibles[language] || [];
@@ -591,6 +594,9 @@ export class BibleService {
           eng: 'ENGASV',
           deu: 'DEULUT',
           nld: 'NLDNBV',
+          spa: 'SPABES', // Spanish - Biblia en Español Sencillo
+          fra: 'FRALSG', // French - Louis Segond
+          ita: 'ITALND', // Italian - La Nuova Diodati
         };
         damId = fallbackIds[language] || 'ENGASV';
         console.warn(
@@ -689,6 +695,9 @@ export class BibleService {
         eng: 'ENGASV', // English ASV
         deu: 'DEULUT', // German Luther
         nld: 'NLDNBV', // Dutch NBV
+        spa: 'SPABES', // Spanish - Biblia en Español Sencillo
+        fra: 'FRALSG', // French - Louis Segond
+        ita: 'ITALND', // Italian - La Nuova Diodati
       };
       return {
         damId: fallbackIds[language] || 'ENGASV',
@@ -1004,6 +1013,9 @@ export class BibleService {
         eng: 'ENG',
         deu: 'DEU',
         nld: 'NLD',
+        spa: 'SPA',
+        fra: 'FRA',
+        ita: 'ITA',
       };
       const prefix = languagePrefix[language] || 'ENG';
       const testament = isOldTestament ? 'O' : 'N';
@@ -1019,6 +1031,9 @@ export class BibleService {
         eng: 'ENG',
         deu: 'DEU',
         nld: 'NLD',
+        spa: 'SPA',
+        fra: 'FRA',
+        ita: 'ITA',
       };
       const prefix = languagePrefix[language] || 'ENG';
       const testament = isOldTestament ? 'O' : 'N';
@@ -1471,7 +1486,7 @@ export class BibleService {
    * Get available languages
    */
   getAvailableLanguages(): BibleLanguage[] {
-    return ['eng', 'deu', 'nld'];
+    return ['eng', 'deu', 'nld', 'spa', 'fra', 'ita'];
   }
 
   /**
@@ -1482,6 +1497,9 @@ export class BibleService {
       eng: 'English',
       deu: 'Deutsch (German)',
       nld: 'Nederlands (Dutch)',
+      spa: 'Español (Spanish)',
+      fra: 'Français (French)',
+      ita: 'Italiano (Italian)',
     };
     return names[language] || language;
   }
