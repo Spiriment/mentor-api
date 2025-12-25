@@ -8,6 +8,7 @@ const bibleUserRoutes = Router();
 bibleUserRoutes.use(authenticateToken);
 
 // Bookmarks
+bibleUserRoutes.get('/bookmarks/books', controller.getBookmarkBooks);
 bibleUserRoutes.get('/bookmarks', controller.getBookmarks);
 bibleUserRoutes.post('/bookmarks', controller.addBookmark);
 

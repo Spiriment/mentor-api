@@ -22,8 +22,55 @@ export class BibleUserController {
   getBookmarks = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleBookmark);
-      const list = await repo.find({ where: { userId: req.user!.id } });
-      res.json({ success: true, data: list });
+      const { book, page, limit } = req.query;
+
+      const pageNum = page ? parseInt(page as string) : 1;
+      const limitNum = limit ? parseInt(limit as string) : 20;
+      const skip = (pageNum - 1) * limitNum;
+
+      // Build where clause
+      const where: any = { userId: req.user!.id };
+      if (book) {
+        where.book = book as string;
+      }
+
+      // Get total count
+      const total = await repo.count({ where });
+
+      // Get paginated bookmarks
+      const list = await repo.find({
+        where,
+        order: { createdAt: 'DESC' },
+        take: limitNum,
+        skip,
+      });
+
+      res.json({
+        success: true,
+        data: list,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getBookmarkBooks = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const repo = AppDataSource.getRepository(BibleBookmark);
+      const bookmarks = await repo.find({
+        where: { userId: req.user!.id },
+        select: ['book'],
+      });
+
+      // Get unique books
+      const books = Array.from(new Set(bookmarks.map(b => b.book)));
+      res.json({ success: true, data: books.sort() });
     } catch (err) {
       next(err);
     }

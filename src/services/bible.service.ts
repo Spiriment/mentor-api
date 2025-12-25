@@ -594,9 +594,9 @@ export class BibleService {
           eng: 'ENGASV',
           deu: 'DEULUT',
           nld: 'NLDNBV',
-          spa: 'SPABES', // Spanish - Biblia en Español Sencillo
-          fra: 'FRALSG', // French - Louis Segond
-          ita: 'ITALND', // Italian - La Nuova Diodati
+          spa: 'SPARVG', // Spanish - Reina Valera Gomez
+          fra: 'FRALSG', // French - Louis Segond 1910
+          ita: 'ITANDI', // Italian - Nuova Diodati
         };
         damId = fallbackIds[language] || 'ENGASV';
         console.warn(
@@ -695,9 +695,9 @@ export class BibleService {
         eng: 'ENGASV', // English ASV
         deu: 'DEULUT', // German Luther
         nld: 'NLDNBV', // Dutch NBV
-        spa: 'SPABES', // Spanish - Biblia en Español Sencillo
-        fra: 'FRALSG', // French - Louis Segond
-        ita: 'ITALND', // Italian - La Nuova Diodati
+        spa: 'SPARVG', // Spanish - Reina Valera Gomez
+        fra: 'FRALSG', // French - Louis Segond 1910
+        ita: 'ITANDI', // Italian - Nuova Diodati
       };
       return {
         damId: fallbackIds[language] || 'ENGASV',
@@ -1054,9 +1054,12 @@ export class BibleService {
     language: BibleLanguage = 'eng'
   ) {
     try {
+      console.log(`[Bible Brain] Fetching ${book} ${chapter} in language: ${language}`);
       // Step 1: Get the Bible ID (dam_id) and language response for this language
       const { damId, languageResponse } =
         await this.getBibleBrainDamIdWithResponse(language);
+
+      console.log(`[Bible Brain] Got damId for ${language}: ${damId}`);
 
       // Step 2: Get the book code (e.g., ROM, MAT, JHN)
       const bookCode =
@@ -1081,6 +1084,7 @@ export class BibleService {
       // Step 6: Get verses for the chapter using v4 endpoint
       // Try the fileset endpoint first
       let versesResponse;
+      console.log(`[Bible Brain] Trying fileset endpoint: /api/bibles/filesets/${filesetId}/${bookId}/${chapter}`);
       try {
         // GET /api/bibles/filesets/{fileset_id}/{book_id}/{chapter_id}?key=...&v=4
         versesResponse = await axios.get(
@@ -1092,6 +1096,7 @@ export class BibleService {
             },
           }
         );
+        console.log(`[Bible Brain] Fileset endpoint succeeded for ${language}`);
       } catch (filesetError: any) {
         // If fileset endpoint fails, try using dam_id directly
         // Some Bibles might use dam_id instead of fileset_id

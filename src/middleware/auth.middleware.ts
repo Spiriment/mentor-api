@@ -57,6 +57,8 @@ export const authenticateToken = async (
         'birthday',
         'role',
         'isOnboardingComplete',
+        'mentorApprovalStatus',
+        'mentorApprovedAt',
         'isActive',
         'accountStatus',
         'currentStreak',

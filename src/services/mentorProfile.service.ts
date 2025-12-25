@@ -2,7 +2,7 @@ import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
-import { Logger, USER_ROLE } from '../common';
+import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -135,12 +135,16 @@ export class MentorProfileService {
       profile.approvedAt = new Date();
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
-      
+
       // Also update the User table to mark onboarding as complete
+      // For testing: Auto-approve (set to 'approved')
+      // For production: Set to 'pending' and require admin approval
       await this.userRepository.update(userId, {
         isOnboardingComplete: true,
+        mentorApprovalStatus: MENTOR_APPROVAL_STATUS.APPROVED, // Change to PENDING for manual approval
+        mentorApprovedAt: new Date(), // Remove this line for manual approval
       });
-      
+
       this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
 
       return completedProfile;
