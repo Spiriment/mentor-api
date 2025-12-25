@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { ACCOUNT_STATUS, GENDER, USER_ROLE } from '@/common/constants';
+import { ACCOUNT_STATUS, GENDER, USER_ROLE, MENTOR_APPROVAL_STATUS } from '@/common/constants';
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -83,6 +83,18 @@ export class User extends BaseEntity {
   @Column({ name: 'isOnboardingComplete', default: false })
   isOnboardingComplete!: boolean;
 
+  // Mentor approval fields
+  @Column({
+    name: 'mentorApprovalStatus',
+    type: 'enum',
+    enum: MENTOR_APPROVAL_STATUS,
+    nullable: true,
+  })
+  mentorApprovalStatus?: MENTOR_APPROVAL_STATUS;
+
+  @Column({ name: 'mentorApprovedAt', type: 'timestamp', nullable: true })
+  mentorApprovedAt?: Date;
+
   // Streak tracking fields
   @Column({ name: 'currentStreak', default: 0 })
   currentStreak!: number;
@@ -106,7 +118,7 @@ export class User extends BaseEntity {
   monthlyStreakData?: { [key: string]: number[] }; // { 'YYYY-MM': [1,2,3,5,10,...] }
 
   // Push notification token for mobile devices
-  @Column({ name: 'pushToken', nullable: true })
+  @Column({ name: 'pushToken', type: 'varchar', length: 255, nullable: true })
   pushToken?: string | null;
 
   // Track last activity for re-engagement emails

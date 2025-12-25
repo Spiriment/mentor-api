@@ -77,10 +77,63 @@ export class StudyService {
     return (Array.isArray(saved) ? saved[0] : saved) as StudyReflection;
   }
 
-  async listReflections(userId: string): Promise<StudyReflection[]> {
-    return this.reflectionRepo.find({
-      where: { userId },
+  async listReflections(
+    userId: string,
+    options?: {
+      book?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    reflections: StudyReflection[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  }> {
+    const page = options?.page || 1;
+    const limit = options?.limit || 20;
+    const skip = (page - 1) * limit;
+
+    // Build where clause
+    const where: any = { userId };
+    if (options?.book) {
+      where.book = options.book;
+    }
+
+    // Get total count
+    const total = await this.reflectionRepo.count({ where });
+
+    // Get paginated reflections
+    const reflections = await this.reflectionRepo.find({
+      where,
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip,
     });
+
+    return {
+      reflections,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // Get distinct books for filter dropdown
+  async getReflectionBooks(userId: string): Promise<string[]> {
+    const reflections = await this.reflectionRepo.find({
+      where: { userId },
+      select: ['book'],
+    });
+
+    // Get unique books
+    const books = Array.from(new Set(reflections.map(r => r.book)));
+    return books.sort();
   }
 }

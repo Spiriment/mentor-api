@@ -76,8 +76,33 @@ studyRoutes.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id as string;
-      const reflections = await studyService.listReflections(userId);
-      res.json({ data: reflections });
+      const { book, page, limit } = req.query;
+
+      const result = await studyService.listReflections(userId, {
+        book: book as string | undefined,
+        page: page ? parseInt(page as string) : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+
+      res.json({
+        success: true,
+        data: result.reflections,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Get reflection books for filter dropdown
+studyRoutes.get(
+  '/reflections/books',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = (req as any).user?.id as string;
+      const books = await studyService.getReflectionBooks(userId);
+      res.json({ success: true, data: books });
     } catch (error) {
       next(error);
     }
