@@ -22,6 +22,7 @@
     "db:clear": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/clear-database.ts"
   },
   "dependencies": {
+    "agora-token": "^2.0.3",
     "@bull-board/api": "^6.10.0",
     "@bull-board/express": "^6.10.0",
     "@bull-board/ui": "^6.10.0",
@@ -35,6 +36,7 @@
     "bcryptjs": "^3.0.2",
     "bull": "^4.16.5",
     "bullmq": "^5.53.2",
+    "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "date-fns": "^4.1.0",

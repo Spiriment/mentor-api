@@ -141,7 +141,7 @@ export class FileUploadService {
       const uploadResult = await new Promise<any>((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           uploadOptions,
-          (error, result) => {
+          (error: any, result: any) => {
             if (error) {
               reject(error);
             } else {
