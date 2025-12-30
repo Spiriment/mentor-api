@@ -1,0 +1,41 @@
+<h2>Group Session Invitation - {{sessionTitle}}</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>Exciting news! {{mentorName}} has invited you to join a group mentorship session.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Session:</strong> {{sessionTitle}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Mentor:</strong> {{mentorName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Scheduled Time:</strong> {{scheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+</div>
+
+{{#if sessionDescription}}
+  <h3>Session Details:</h3>
+  <p>{{sessionDescription}}</p>
+{{/if}}
+
+<p style='text-align: center; margin: 30px 0;'>
+  <a href='{{acceptUrl}}' class='button' style='background-color: #3A5A40; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 0 10px;'>Accept Invitation</a>
+  <a href='{{declineUrl}}' class='button' style='background-color: #666; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 0 10px;'>Decline</a>
+</p>
+
+<p style='margin-top: 30px; padding: 15px; background-color: #FFF3CD; border-left: 4px solid #FFC107; border-radius: 4px;'>
+  <strong>⏰ Important:</strong> Please respond at least 2 hours before the session starts. You can also respond in the Spiriment app.
+</p>
+
+<p style='margin-top: 30px;'>
+  <strong>What to Expect:</strong><br/>
+  • Join alongside other mentees in a group setting<br/>
+  • Engage in meaningful discussion and learning<br/>
+  • Share insights and grow together in faith<br/>
+  • Each participant can share a summary and review after the session
+</p>
+
+<p>This is a wonderful opportunity to learn and grow alongside fellow believers under {{mentorName}}'s guidance.</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

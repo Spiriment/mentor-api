@@ -105,43 +105,32 @@ export class MentorsController {
   ) => {
     try {
       const { mentorId } = req.params;
-      // Allow bypassing approval check for session-related queries
-      const requireApproval = req.query.requireApproval !== 'false';
+      const { requireApproval } = req.query;
+      const skipApprovalCheck = requireApproval === 'false';
 
       const mentorProfileRepository =
         AppDataSource.getRepository(MentorProfile);
 
-      // Try to find by MentorProfile ID first
-      let queryBuilder = mentorProfileRepository
+      // Build query - try profile.id first, then userId as fallback
+      let query = mentorProfileRepository
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
-        .where('profile.id = :mentorId', { mentorId });
-      
-      if (requireApproval) {
-        queryBuilder = queryBuilder.andWhere('profile.isApproved = :isApproved', { isApproved: true });
-      }
-      
-      let mentor = await queryBuilder.getOne();
+        .where('(profile.id = :mentorId OR profile.userId = :mentorId)', { mentorId });
 
-      // If not found, try to find by userId (for sessions where mentorId is actually userId)
-      if (!mentor) {
-        queryBuilder = mentorProfileRepository
-          .createQueryBuilder('profile')
-          .leftJoinAndSelect('profile.user', 'user')
-          .where('profile.userId = :mentorId', { mentorId });
-        
-        if (requireApproval) {
-          queryBuilder = queryBuilder.andWhere('profile.isApproved = :isApproved', { isApproved: true });
-        }
-        
-        mentor = await queryBuilder.getOne();
+      // Only require approval if not explicitly skipped
+      if (!skipApprovalCheck) {
+        query = query.andWhere('profile.isApproved = :isApproved', { isApproved: true });
       }
+
+      const mentor = await query.getOne();
 
       if (!mentor) {
         return res.status(404).json({
           success: false,
           error: {
-            message: requireApproval ? 'Mentor not found or not approved' : 'Mentor not found',
+            message: skipApprovalCheck 
+              ? 'Mentor not found' 
+              : 'Mentor not found or not approved',
             code: 'MENTOR_NOT_FOUND',
           },
         });

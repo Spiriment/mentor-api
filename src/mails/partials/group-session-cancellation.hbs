@@ -1,0 +1,33 @@
+<h2>Group Session Cancelled - {{sessionTitle}}</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>We're writing to inform you that the group session "{{sessionTitle}}" with {{mentorName}} has been cancelled.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Session:</strong> {{sessionTitle}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Mentor:</strong> {{mentorName}}</p>
+  <p style='margin: 0;'><strong>Status:</strong> <span style='color: #DC3545;'>Cancelled</span></p>
+</div>
+
+{{#if cancellationReason}}
+  <h3>Reason for Cancellation:</h3>
+  <p style='padding: 15px; background-color: #F8F9FA; border-left: 4px solid #DC3545; border-radius: 4px;'>
+    {{cancellationReason}}
+  </p>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='spiriment://schedule' class='button'>View Your Schedule</a>
+</p>
+
+<p>We apologize for any inconvenience. You may receive a new invitation for a rescheduled session, or feel free to reach out to {{mentorName}} through the app to schedule another session.</p>
+
+<p style='margin-top: 30px; padding: 15px; background-color: #E8F5E9; border-left: 4px solid #4CAF50; border-radius: 4px;'>
+  <strong>💚 Don't let this discourage you!</strong> Continue your faith journey by exploring other sessions, reading the Bible, or connecting with other mentors in the Spiriment community.
+</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

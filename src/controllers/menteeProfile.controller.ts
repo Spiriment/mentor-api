@@ -31,9 +31,33 @@ export class MenteeProfileController {
         });
       }
 
+      // Format full profile data similar to mentor profile
+      const formattedMentee = {
+        id: profile.id,
+        userId: profile.userId,
+        firstName: profile.user.firstName,
+        lastName: profile.user.lastName,
+        email: profile.user.email,
+        profileImage: profile.profileImage,
+        country: profile.user.country,
+        bibleReadingFrequency: profile.bibleReadingFrequency,
+        scriptureConfidence: profile.scriptureConfidence,
+        currentMentorship: profile.currentMentorship,
+        spiritualGrowthAreas: profile.spiritualGrowthAreas,
+        christianExperience: profile.christianExperience,
+        bibleTopics: profile.bibleTopics,
+        learningPreference: profile.learningPreference,
+        mentorshipFormat: profile.mentorshipFormat,
+        mentorExpectations: profile.mentorExpectations,
+        spiritualGoals: profile.spiritualGoals,
+        currentBook: profile.currentBook,
+        currentChapter: profile.currentChapter,
+      };
+
       res.json({
         success: true,
-        data: profile,
+        data: formattedMentee,
+        message: 'Mentee profile retrieved successfully',
       });
     } catch (error: any) {
       this.logger.error('Error getting mentee profile', error);
@@ -87,6 +111,40 @@ export class MenteeProfileController {
       });
     } catch (error: any) {
       this.logger.error('Error updating mentee onboarding step', error);
+      next(error);
+    }
+  };
+
+  // Update current book and chapter
+  updateCurrentBook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const { userId } = req.params;
+      const { currentBook, currentChapter } = req.body;
+
+      if (!currentBook) {
+        return res.status(400).json({
+          success: false,
+          message: 'currentBook is required',
+        });
+      }
+
+      const profile = await this.menteeProfileService.updateCurrentBook(
+        userId,
+        currentBook,
+        currentChapter || 1
+      );
+
+      res.json({
+        success: true,
+        data: profile,
+        message: 'Current book updated successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error updating current book', error);
       next(error);
     }
   };
@@ -322,32 +380,6 @@ export class MenteeProfileController {
       });
     } catch (error: any) {
       this.logger.error('Error updating mentorship format', error);
-      next(error);
-    }
-  };
-
-  updateAvailability = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const { userId } = req.params;
-      const { availability } = req.body;
-
-      const profile = await this.menteeProfileService.updateOnboardingStep(
-        userId,
-        'availability',
-        { availability }
-      );
-
-      res.json({
-        success: true,
-        data: profile,
-        message: 'Availability updated successfully',
-      });
-    } catch (error: any) {
-      this.logger.error('Error updating availability', error);
       next(error);
     }
   };

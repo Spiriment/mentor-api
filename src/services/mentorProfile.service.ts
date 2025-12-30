@@ -2,7 +2,7 @@ import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
-import { Logger, USER_ROLE } from '../common';
+import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -128,22 +128,24 @@ export class MentorProfileService {
       Object.assign(profile, data);
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
-
+      
       // Auto-approve mentor when onboarding is complete
-      // This allows mentors to be visible immediately after completing onboarding
-      // In production, you might want to add admin approval workflow
+      // This allows them to be immediately visible to mentees
       profile.isApproved = true;
       profile.approvedAt = new Date();
-      profile.approvalNotes = 'Auto-approved upon onboarding completion';
 
       const completedProfile = await this.mentorProfileRepository.save(profile);
-      
-      // Also update User entity's isOnboardingComplete flag
+
+      // Also update the User table to mark onboarding as complete
+      // For testing: Auto-approve (set to 'approved')
+      // For production: Set to 'pending' and require admin approval
       await this.userRepository.update(userId, {
         isOnboardingComplete: true,
+        mentorApprovalStatus: MENTOR_APPROVAL_STATUS.APPROVED, // Change to PENDING for manual approval
+        mentorApprovedAt: new Date(), // Remove this line for manual approval
       });
-      
-      this.logger.info(`Completed mentor onboarding for user ${userId} and auto-approved`);
+
+      this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
 
       return completedProfile;
     } catch (error) {
@@ -256,6 +258,128 @@ export class MentorProfileService {
       });
     } catch (error) {
       this.logger.error('Error getting pending mentors', error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
+
+  // Update mentor profile (multiple fields at once)
+  async updateProfile(
+    userId: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      country?: string;
+      christianExperience?: string;
+      christianJourney?: string;
+      scriptureTeaching?: string;
+      currentMentoring?: string;
+      churchAffiliation?: string;
+      leadershipRoles?: string;
+      maturityDefinition?: string;
+      menteeCapacity?: number;
+      mentorshipFormat?: string[];
+      menteeCalling?: string[];
+      profileImage?: string;
+    }
+  ): Promise<MentorProfile> {
+    try {
+      const profile = await this.getProfile(userId);
+
+      if (!profile) {
+        throw new Error('Mentor profile not found');
+      }
+
+      // Update user fields if provided
+      if (data.firstName || data.lastName || data.email || data.country) {
+        const user = await this.userRepository.findOne({
+          where: { id: userId },
+        });
+
+        if (!user) {
+          throw new Error('User not found');
+        }
+
+        if (data.firstName !== undefined) {
+          user.firstName = data.firstName;
+        }
+        if (data.lastName !== undefined) {
+          user.lastName = data.lastName;
+        }
+        if (data.email !== undefined) {
+          user.email = data.email.toLowerCase();
+        }
+        if (data.country !== undefined) {
+          user.country = data.country;
+        }
+
+        await this.userRepository.save(user);
+      }
+
+      // Update profile fields
+      if (data.christianExperience !== undefined) {
+        profile.christianExperience = data.christianExperience;
+      }
+      if (data.christianJourney !== undefined) {
+        profile.christianJourney = data.christianJourney;
+      }
+      if (data.scriptureTeaching !== undefined) {
+        profile.scriptureTeaching = data.scriptureTeaching;
+      }
+      if (data.currentMentoring !== undefined) {
+        profile.currentMentoring = data.currentMentoring;
+      }
+      if (data.churchAffiliation !== undefined) {
+        profile.churchAffiliation = data.churchAffiliation;
+      }
+      if (data.leadershipRoles !== undefined) {
+        profile.leadershipRoles = data.leadershipRoles;
+      }
+      if (data.maturityDefinition !== undefined) {
+        profile.maturityDefinition = data.maturityDefinition;
+      }
+      if (data.menteeCapacity !== undefined) {
+        profile.menteeCapacity = data.menteeCapacity;
+      }
+      if (data.mentorshipFormat !== undefined) {
+        profile.mentorshipFormat = data.mentorshipFormat;
+      }
+      if (data.menteeCalling !== undefined) {
+        profile.menteeCalling = data.menteeCalling;
+      }
+      if (data.profileImage !== undefined) {
+        profile.profileImage = data.profileImage;
+      }
+
+      const updatedProfile = await this.mentorProfileRepository.save(profile);
+      this.logger.info(`Updated mentor profile for user ${userId}`);
+
+      return updatedProfile;
+    } catch (error) {
+      this.logger.error('Error updating mentor profile', error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
+
+  // Update current book and chapter (for Bible reading tracking)
+  async updateCurrentBook(
+    userId: string,
+    currentBook: string,
+    currentChapter: number
+  ): Promise<MentorProfile> {
+    try {
+      const profile = await this.getOrCreateProfile(userId);
+      profile.currentBook = currentBook;
+      profile.currentChapter = currentChapter;
+
+      const updatedProfile = await this.mentorProfileRepository.save(profile);
+      this.logger.info(
+        `Updated current book to ${currentBook} ${currentChapter} for mentor ${userId}`
+      );
+
+      return updatedProfile;
+    } catch (error) {
+      this.logger.error('Error updating current book', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }

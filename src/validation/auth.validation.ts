@@ -162,3 +162,10 @@ export type SelectRoleDTO = z.infer<typeof selectRoleSchema>;
 // Login OTP DTOs
 export type SendLoginOtpDTO = z.infer<typeof sendLoginOtpSchema>;
 export type VerifyLoginOtpDTO = z.infer<typeof verifyLoginOtpSchema>;
+
+// Google OAuth schema
+export const googleSignInSchema = z.object({
+  idToken: z.string().min(1, 'Google ID token is required'),
+});
+
+export type GoogleSignInDTO = z.infer<typeof googleSignInSchema>;

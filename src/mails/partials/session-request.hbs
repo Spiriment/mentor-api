@@ -1,0 +1,40 @@
+<h2>New Session Request from {{menteeName}}</h2>
+
+<p>Hello {{mentorName}},</p>
+
+<p>Great news! You have a new mentorship session request.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Mentee:</strong> {{menteeName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Scheduled Time:</strong> {{scheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+  {{#if sessionType}}
+    <p style='margin: 0 0 10px 0;'><strong>Session Type:</strong> {{sessionType}}</p>
+  {{/if}}
+</div>
+
+{{#if description}}
+  <h3>Session Details:</h3>
+  <p>{{description}}</p>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>Review Request in App</a>
+</p>
+
+<p>You can review this request and accept or decline it in the Spiriment app. The mentee is waiting for your response!</p>
+
+<p style='margin-top: 30px;'>
+  <strong>What's Next?</strong><br/>
+  • Open the Spiriment app<br/>
+  • Go to the "Study" tab<br/>
+  • Review the request in the "Pending" section<br/>
+  • Accept or decline the session
+</p>
+
+<p>Thank you for your dedication to mentoring and helping others grow in their faith journey.</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

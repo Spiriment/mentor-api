@@ -14,6 +14,9 @@ router.post('/increment', streakController.incrementStreak);
 // Get streak data
 router.get('/', streakController.getStreakData);
 
+// Get monthly streak data
+router.get('/monthly/:year/:month', streakController.getMonthlyStreakData);
+
 // Reset weekly streak data (admin function)
 router.post('/reset-weekly', streakController.resetWeeklyStreakData);
 

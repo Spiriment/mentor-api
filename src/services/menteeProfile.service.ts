@@ -88,9 +88,6 @@ export class MenteeProfileService {
         case 'mentorshipFormat':
           profile.mentorshipFormat = data.mentorshipFormat;
           break;
-        case 'availability':
-          profile.availability = data.availability;
-          break;
         case 'mentorExpectations':
           profile.mentorExpectations = data.mentorExpectations;
           break;
@@ -99,6 +96,12 @@ export class MenteeProfileService {
           break;
         case 'profileImage':
           profile.profileImage = data.profileImage;
+          break;
+        case 'currentBook':
+          profile.currentBook = data.currentBook;
+          if (data.currentChapter !== undefined) {
+            profile.currentChapter = data.currentChapter;
+          }
           break;
         default:
           throw new Error(`Unknown onboarding step: ${step}`);
@@ -119,6 +122,29 @@ export class MenteeProfileService {
     }
   }
 
+  // Update current book and chapter (for Bible reading tracking)
+  async updateCurrentBook(
+    userId: string,
+    currentBook: string,
+    currentChapter: number
+  ): Promise<MenteeProfile> {
+    try {
+      const profile = await this.getOrCreateProfile(userId);
+      profile.currentBook = currentBook;
+      profile.currentChapter = currentChapter;
+
+      const updatedProfile = await this.menteeProfileRepository.save(profile);
+      this.logger.info(
+        `Updated current book to ${currentBook} ${currentChapter} for user ${userId}`
+      );
+
+      return updatedProfile;
+    } catch (error) {
+      this.logger.error('Error updating current book', error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
+
   // Complete onboarding
   async completeOnboarding(userId: string, data: any): Promise<MenteeProfile> {
     try {
@@ -131,7 +157,7 @@ export class MenteeProfileService {
 
       const completedProfile = await this.menteeProfileRepository.save(profile);
       
-      // Also update User entity's isOnboardingComplete flag
+      // Also update the User table to mark onboarding as complete
       await this.userRepository.update(userId, {
         isOnboardingComplete: true,
       });
@@ -184,7 +210,6 @@ export class MenteeProfileService {
         'bibleTopics',
         'learningPreference',
         'mentorshipFormat',
-        'availability',
         'mentorExpectations',
         'spiritualGoals',
         'profileImage',

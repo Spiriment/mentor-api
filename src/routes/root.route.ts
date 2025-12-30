@@ -9,17 +9,19 @@ import { createAuthRoutes } from './auth.routes';
 import { menteeProfileRoutes } from './menteeProfile.routes';
 import { mentorProfileRoutes } from './mentorProfile.routes';
 import { mentorsRoutes } from './mentors.routes';
+import { mentorRoutes } from './mentor.routes';
 import { uploadRoutes } from './upload.routes';
 import { streakRoutes } from './streak.routes';
 import { sessionRoutes } from './session.routes';
-import { notificationRoutes } from './notification.routes';
-import { agoraRoutes } from './agora.routes';
-import { reviewRoutes } from './review.routes';
-import { emailRoutes } from './email.routes';
 import { bibleRoutes } from './bible.routes';
 import { bibleUserRoutes } from './bibleUser.routes';
 import studyRoutes from '@/controllers/study.controller';
 import chatRoutes from '@/routes/chat.routes';
+import appNotificationRoutes from './appNotification.routes';
+import sessionReviewRoutes from './sessionReview.routes';
+import groupSessionRoutes from './groupSession.routes';
+import mentorshipRequestRoutes from './mentorshipRequest.routes';
+import pushTokenRoutes from './pushToken.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -115,6 +117,9 @@ const createRootRoutes = () => {
   // Mentors routes (for mentees to browse)
   rootRouter.use('/api/mentors', mentorsRoutes);
 
+  // Mentor routes (for mentors to access dashboard and mentees)
+  rootRouter.use('/api/mentor', mentorRoutes);
+
   // Upload routes
   rootRouter.use('/api/upload', uploadRoutes);
 
@@ -124,29 +129,30 @@ const createRootRoutes = () => {
   // Session routes
   rootRouter.use('/api/sessions', sessionRoutes);
 
-  // Notification routes
-  rootRouter.use('/api/notifications', notificationRoutes);
-
-  // Agora routes (video calling)
-  rootRouter.use('/api/agora', agoraRoutes);
-
-  // Review routes
-  rootRouter.use('/api/reviews', reviewRoutes);
-
-  // Email testing routes (development only)
-  if (process.env.NODE_ENV !== 'production') {
-    rootRouter.use('/api/email', emailRoutes);
-  }
-
-  // Bible routes
-  rootRouter.use('/api/bible', bibleRoutes);
+  // Bible routes - register user routes FIRST to avoid matching /:book/:chapter
   rootRouter.use('/api/bible/user', bibleUserRoutes);
+  rootRouter.use('/api/bible', bibleRoutes);
 
   // Study routes
   rootRouter.use('/api/study', studyRoutes);
 
   // Chat routes
   rootRouter.use('/api/chat', chatRoutes);
+
+  // Notification routes
+  rootRouter.use('/api/notifications', appNotificationRoutes);
+
+  // Session review routes
+  rootRouter.use('/api/session-reviews', sessionReviewRoutes);
+
+  // Group session routes
+  rootRouter.use('/api/sessions/group', groupSessionRoutes);
+
+  // Mentorship request routes
+  rootRouter.use('/api/mentorship-requests', mentorshipRequestRoutes);
+
+  // Push token routes
+  rootRouter.use('/api/users/push-token', pushTokenRoutes);
 
   // Serve uploaded files statically
   rootRouter.use('/uploads', (req, res, next) => {

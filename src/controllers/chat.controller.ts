@@ -109,22 +109,15 @@ export class ChatController {
   // Create new conversation
   static async createConversation(req: Request, res: Response) {
     try {
-      // Get userId from auth middleware - User entity has 'id' field
-      const user = (req as any).user;
-      const userId = user?.id; // User entity uses 'id', not 'userId'
-
+      const userId = (req as any).user?.id;
       if (!userId) {
-        logger.error('User ID not found in request', undefined, {
-          user: user ? { id: user.id, email: user.email } : null,
-        });
         return res.status(401).json({
           success: false,
           error: {
-            message: 'User authentication required',
+            message: 'User not authenticated',
           },
         });
       }
-
       const { participantIds, type, title, description } = req.body;
 
       if (
@@ -140,45 +133,8 @@ export class ChatController {
         });
       }
 
-      // Filter out any invalid participant IDs (null, undefined, empty string)
-      const validParticipantIds = participantIds.filter(
-        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
-      );
-
-      if (validParticipantIds.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            message: 'At least one valid participant ID is required',
-          },
-        });
-      }
-
       // Ensure current user is included in participants
-      // Filter out any undefined/null values after creating the Set
-      const allParticipants = [...new Set([userId, ...validParticipantIds])].filter(
-        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
-      );
-
-      if (allParticipants.length === 0) {
-        logger.error('No valid participants after filtering', undefined, {
-          userId,
-          participantIds,
-          validParticipantIds,
-        });
-        return res.status(400).json({
-          success: false,
-          error: {
-            message: 'No valid participants found',
-          },
-        });
-      }
-
-      logger.info('Creating conversation', {
-        userId,
-        participantCount: allParticipants.length,
-        participantIds: allParticipants,
-      });
+      const allParticipants = [...new Set([userId, ...participantIds])];
 
       const conversationData = {
         participantIds: allParticipants,

@@ -44,7 +44,7 @@ export const mentorMaturityDefinitionSchema = z.object({
 
 export const mentorMenteeCapacitySchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
-  menteeCapacity: z.string().min(1, 'Mentee capacity is required'),
+  menteeCapacity: z.number().int().positive('Mentee capacity must be a positive number'),
 });
 
 export const mentorMentorshipFormatSchema = z.object({
@@ -71,6 +71,25 @@ export const mentorProfileImageSchema = z.object({
   profileImage: z.string().min(1, 'Profile image is required'),
 });
 
+// Generic profile update schema (all fields optional)
+export const updateMentorProfileSchema = z.object({
+  firstName: z.string().min(1, 'First name is required').optional(),
+  lastName: z.string().min(1, 'Last name is required').optional(),
+  email: z.string().email('Invalid email address').optional(),
+  country: z.string().optional(),
+  christianExperience: z.string().optional(),
+  christianJourney: z.string().optional(),
+  scriptureTeaching: z.string().optional(),
+  currentMentoring: z.string().optional(),
+  churchAffiliation: z.string().optional(),
+  leadershipRoles: z.string().optional(),
+  maturityDefinition: z.string().optional(),
+  menteeCapacity: z.number().int().positive().optional(),
+  mentorshipFormat: z.array(z.string()).optional(),
+  menteeCalling: z.array(z.string()).optional(),
+  profileImage: z.string().url('Invalid profile image URL').optional(),
+});
+
 // Complete mentor onboarding
 export const completeMentorOnboardingSchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
@@ -87,7 +106,7 @@ export const completeMentorOnboardingSchema = z.object({
   maturityDefinition: z
     .string()
     .min(10, 'Maturity definition must be at least 10 characters'),
-  menteeCapacity: z.string().min(1, 'Mentee capacity is required'),
+  menteeCapacity: z.coerce.number().int().positive('Mentee capacity must be a positive number'),
   mentorshipFormat: z
     .array(z.string())
     .min(1, 'At least one mentorship format is required'),

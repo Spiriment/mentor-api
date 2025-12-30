@@ -1,4 +1,5 @@
 export * from './notification.entity';
+export * from './appNotification.entity';
 export * from './refreshTokens.entity';
 export * from './auditLog.entity';
 export * from './passwordReset.entity';
@@ -11,7 +12,11 @@ export * from './mentorProfile.entity';
 
 // Session entities
 export * from './session.entity';
+export * from './sessionReview.entity';
 export * from './mentorAvailability.entity';
+export * from './groupSession.entity';
+export * from './groupSessionParticipant.entity';
+export * from './mentorshipRequest.entity';
 export * from './bibleBookmark.entity';
 export * from './bibleHighlight.entity';
 export * from './bibleReflection.entity';

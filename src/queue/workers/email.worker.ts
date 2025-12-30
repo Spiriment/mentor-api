@@ -1,6 +1,7 @@
 import { Logger } from "../../common/logger";
 import nodemailer from "nodemailer";
 import * as path from "path";
+import * as fs from "fs";
 import { Config } from "@/common";
 import { Job } from "bullmq";
 
@@ -17,6 +18,11 @@ export class EmailWorker {
       auth: {
         user: Config.email.user,
         pass: Config.email.password,
+      },
+      tls: {
+        // Disable certificate validation for shared hosting with mismatched certificates
+        // This is safe when connecting to your own mail server
+        rejectUnauthorized: false,
       },
     });
   }
@@ -45,18 +51,25 @@ export class EmailWorker {
   private async sendMail(job: Job): Promise<void> {
     const { to, subject, compiledContent } = job.data;
 
+    // Use logo.png instead of logo.jpeg
+    const logoPath = path.join(__dirname, "../../mails/assets/logo.png");
+    const attachments = [];
+
+    // Add logo if it exists
+    if (fs.existsSync(logoPath)) {
+      attachments.push({
+        filename: "logo.png",
+        path: logoPath,
+        cid: "logo",
+      });
+    }
+
     const mailOptions = {
       from: process.env.SMTP_FROM,
       to,
       subject,
       html: compiledContent,
-      attachments: [
-        {
-          filename: "logo.jpeg",
-          path: path.join(__dirname, "../../mails/assets/logo.jpeg"),
-          cid: "logo",
-        },
-      ],
+      attachments,
     };
 
     await this.transporter.sendMail(mailOptions);

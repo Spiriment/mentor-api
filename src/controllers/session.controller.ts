@@ -142,6 +142,7 @@ export class SessionController {
         limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
         upcoming: req.query.upcoming === 'true',
+        past: req.query.past === 'true',
       };
 
       const result = await this.sessionService.getUserSessions(
@@ -351,104 +352,6 @@ export class SessionController {
   };
 
   /**
-   * Reschedule a session (mentor suggests new time)
-   * PATCH /api/sessions/:sessionId/reschedule
-   */
-  rescheduleSession = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const user = req.user;
-
-      if (!user) {
-        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
-      }
-
-      if (user.role !== 'mentor') {
-        throw new AppError(
-          'Only mentors can reschedule sessions',
-          StatusCodes.FORBIDDEN
-        );
-      }
-
-      const { sessionId } = req.params;
-      const { newScheduledAt, reason, message } = req.body;
-
-      if (!newScheduledAt) {
-        throw new AppError(
-          'newScheduledAt is required',
-          StatusCodes.BAD_REQUEST
-        );
-      }
-
-      const session = await this.sessionService.rescheduleSession(
-        sessionId,
-        user.id,
-        new Date(newScheduledAt),
-        reason,
-        message
-      );
-
-      this.logger.info('Session rescheduled successfully', {
-        sessionId,
-        mentorId: user.id,
-        newScheduledAt,
-      });
-
-      return sendSuccessResponse(res, {
-        session,
-        message: 'Session rescheduled successfully. The mentee will be notified.',
-      });
-    } catch (error: any) {
-      this.logger.error('Error rescheduling session', error);
-      next(error);
-    }
-  };
-
-  /**
-   * Confirm session attendance
-   * PATCH /api/sessions/:sessionId/confirm
-   */
-  confirmSession = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const user = req.user;
-
-      if (!user) {
-        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
-      }
-
-      const { sessionId } = req.params;
-      const confirmType = user.role === 'mentor' ? 'mentor' : 'mentee';
-
-      const session = await this.sessionService.confirmSession(
-        sessionId,
-        user.id,
-        confirmType
-      );
-
-      this.logger.info('Session attendance confirmed', {
-        sessionId,
-        userId: user.id,
-        confirmType,
-      });
-
-      return sendSuccessResponse(res, {
-        session,
-        message: 'Session attendance confirmed successfully',
-      });
-    } catch (error: any) {
-      this.logger.error('Error confirming session', error);
-      next(error);
-    }
-  };
-
-  /**
    * Update session status (for starting/ending sessions)
    * PATCH /api/sessions/:sessionId/status
    */
@@ -469,6 +372,33 @@ export class SessionController {
 
       if (!Object.values(SESSION_STATUS).includes(status)) {
         throw new AppError('Invalid session status', StatusCodes.BAD_REQUEST);
+      }
+
+      // If trying to start a session (set to IN_PROGRESS), validate the scheduled time
+      if (status === SESSION_STATUS.IN_PROGRESS) {
+        // Get the session to check scheduled time
+        const existingSession = await this.sessionService.getSessionById(
+          sessionId,
+          user.id
+        );
+
+        if (!existingSession) {
+          throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+        }
+
+        // Check if current time is before scheduled time
+        const now = new Date();
+        const scheduledAt = new Date(existingSession.scheduledAt);
+
+        if (now < scheduledAt) {
+          const timeUntilSession = Math.floor(
+            (scheduledAt.getTime() - now.getTime()) / 1000 / 60
+          );
+          throw new AppError(
+            `Session cannot be joined yet. The session is scheduled to start in ${timeUntilSession} minute(s).`,
+            StatusCodes.FORBIDDEN
+          );
+        }
       }
 
       const updateData: UpdateSessionDTO = { status };
@@ -503,14 +433,10 @@ export class SessionController {
   };
 
   /**
-   * Add session notes (mentor or mentee)
-   * PATCH /api/sessions/:sessionId/notes
+   * Accept a session request (mentor only)
+   * POST /api/sessions/:sessionId/accept
    */
-  addSessionNotes = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
+  acceptSession = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
 
@@ -518,48 +444,259 @@ export class SessionController {
         throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
       }
 
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can accept sessions',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
       const { sessionId } = req.params;
-      const { notes, summary, assignments } = req.body;
 
-      // Get session to verify user is part of it
-      const session = await this.sessionService.getSessionById(
+      const session = await this.sessionService.acceptSession(
         sessionId,
         user.id
       );
 
-      // Determine which notes field to update based on user role
-      const updateData: any = {};
-
-      if (notes !== undefined) {
-        if (user.role === 'mentor') {
-          updateData.mentorNotes = notes;
-        } else {
-          updateData.menteeNotes = notes;
-        }
-      }
-
-      if (summary !== undefined) {
-        updateData.sessionSummary = summary;
-      }
-
-      if (assignments !== undefined) {
-        updateData.assignments = Array.isArray(assignments)
-          ? assignments
-          : [assignments];
-      }
-
-      const updatedSession = await this.sessionService.updateSession(
+      this.logger.info('Session accepted successfully', {
         sessionId,
-        updateData,
-        user.id
-      );
+        mentorId: user.id,
+      });
 
       return sendSuccessResponse(res, {
-        session: updatedSession,
-        message: 'Session notes updated successfully',
+        session,
+        message: 'Session accepted successfully',
       });
     } catch (error: any) {
-      this.logger.error('Error adding session notes', error);
+      this.logger.error('Error accepting session', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Decline a session request (mentor only)
+   * POST /api/sessions/:sessionId/decline
+   */
+  declineSession = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can decline sessions',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { sessionId } = req.params;
+      const { reason } = req.body;
+
+      const session = await this.sessionService.declineSession(
+        sessionId,
+        user.id,
+        reason
+      );
+
+      this.logger.info('Session declined successfully', {
+        sessionId,
+        mentorId: user.id,
+        reason,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session declined successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error declining session', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Request to reschedule a session (mentee only)
+   * POST /api/sessions/:sessionId/reschedule
+   */
+  rescheduleSession = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentee') {
+        throw new AppError(
+          'Only mentees can request to reschedule sessions',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { sessionId } = req.params;
+      const { newScheduledAt, reason, message } = req.body;
+
+      if (!newScheduledAt) {
+        throw new AppError(
+          'New scheduled time is required',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      if (!reason) {
+        throw new AppError(
+          'Reason for rescheduling is required',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      const session = await this.sessionService.rescheduleSession(
+        sessionId,
+        newScheduledAt,
+        user.id,
+        reason,
+        message
+      );
+
+      this.logger.info('Session reschedule requested successfully', {
+        sessionId,
+        menteeId: user.id,
+        newScheduledAt,
+        reason,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session reschedule request sent to mentor',
+      });
+    } catch (error: any) {
+      this.logger.error('Error requesting session reschedule', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Accept a reschedule request (mentor only)
+   * POST /api/sessions/:sessionId/reschedule/accept
+   */
+  acceptReschedule = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can accept reschedule requests',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { sessionId } = req.params;
+
+      const session = await this.sessionService.acceptReschedule(
+        sessionId,
+        user.id
+      );
+
+      this.logger.info('Session reschedule accepted by mentor', {
+        sessionId,
+        mentorId: user.id,
+        newScheduledAt: session.scheduledAt,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session reschedule accepted successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error accepting session reschedule', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Decline a reschedule request (mentor only)
+   * POST /api/sessions/:sessionId/reschedule/decline
+   */
+  declineReschedule = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can decline reschedule requests',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { sessionId } = req.params;
+      const { reason } = req.body;
+
+      const session = await this.sessionService.declineReschedule(
+        sessionId,
+        user.id,
+        reason
+      );
+
+      this.logger.info('Session reschedule declined by mentor', {
+        sessionId,
+        mentorId: user.id,
+        reason,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session reschedule declined - original time confirmed',
+      });
+    } catch (error: any) {
+      this.logger.error('Error declining session reschedule', error);
+      next(error);
+    }
+  };
+
+  /**
+   * Delete mentor availability
+   * DELETE /api/sessions/availability/:availabilityId
+   */
+  deleteAvailability = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      if (user.role !== 'mentor') {
+        throw new AppError(
+          'Only mentors can delete availability',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      const { availabilityId } = req.params;
+
+      await this.sessionService.deleteAvailability(availabilityId, user.id);
+
+      this.logger.info('Availability deleted successfully', {
+        availabilityId,
+        mentorId: user.id,
+      });
+
+      return sendSuccessResponse(res, {
+        message: 'Availability deleted successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error deleting availability', error);
       next(error);
     }
   };

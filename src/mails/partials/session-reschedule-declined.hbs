@@ -1,0 +1,39 @@
+<h2>Session Reschedule - Original Time Confirmed</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>Thank you for your reschedule request. {{mentorName}} has reviewed your request and would like to keep the session at the originally scheduled time.</p>
+
+{{#if reason}}
+  <div style='background-color: #F8F9FA; padding: 14px; margin: 20px 0; border-radius: 6px; border-left: 3px solid #3A5A40;'>
+    <p style='margin: 0 0 5px 0; font-weight: 600; color: #162419;'>Mentor's Response:</p>
+    <p style='margin: 0; color: #162419;'>{{reason}}</p>
+  </div>
+{{/if}}
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Mentor:</strong> {{mentorName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Confirmed Session Time:</strong> {{scheduledTime}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Duration:</strong> {{duration}} minutes</p>
+  {{#if sessionType}}
+    <p style='margin: 0;'><strong>Session Type:</strong> {{sessionType}}</p>
+  {{/if}}
+</div>
+
+{{#if location}}
+  <div style='background-color: #F8F9FA; padding: 14px; margin: 20px 0; border-radius: 6px;'>
+    <p style='margin: 0; color: #162419;'><strong>📍 Location:</strong> {{location}}</p>
+  </div>
+{{/if}}
+
+<p>If this time no longer works for you, please reach out to {{mentorName}} directly through the Spiriment app to discuss alternative options.</p>
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>View Session Details</a>
+</p>
+
+<div style='background-color: #EBEEEC; padding: 16px; margin: 24px 0; border-radius: 6px;'>
+  <p style='margin: 0; font-size: 14px; color: #162419;'>
+    <strong>💡 Tip:</strong> If you need to cancel this session, you can do so from the session details page. We recommend discussing schedule conflicts with your mentor to find the best time for both of you.
+  </p>
+</div>

@@ -70,6 +70,12 @@ export class ConversationParticipant extends BaseEntity {
   @Column({ name: 'typingAt', type: 'datetime', nullable: true })
   typingAt?: Date;
 
+  @Column({ name: 'isOnline', type: 'boolean', default: false })
+  isOnline!: boolean;
+
+  @Column({ name: 'lastSeen', type: 'datetime', nullable: true })
+  lastSeen?: Date;
+
   @Column({ name: 'notificationSettings', type: 'json', nullable: true })
   notificationSettings?: {
     muteConversation: boolean;

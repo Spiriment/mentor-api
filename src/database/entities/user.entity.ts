@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { ACCOUNT_STATUS, GENDER, USER_ROLE } from '@/common/constants';
+import { ACCOUNT_STATUS, GENDER, USER_ROLE, MENTOR_APPROVAL_STATUS } from '@/common/constants';
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -83,6 +83,18 @@ export class User extends BaseEntity {
   @Column({ name: 'isOnboardingComplete', default: false })
   isOnboardingComplete!: boolean;
 
+  // Mentor approval fields
+  @Column({
+    name: 'mentorApprovalStatus',
+    type: 'enum',
+    enum: MENTOR_APPROVAL_STATUS,
+    nullable: true,
+  })
+  mentorApprovalStatus?: MENTOR_APPROVAL_STATUS;
+
+  @Column({ name: 'mentorApprovedAt', type: 'timestamp', nullable: true })
+  mentorApprovedAt?: Date;
+
   // Streak tracking fields
   @Column({ name: 'currentStreak', default: 0 })
   currentStreak!: number;
@@ -95,4 +107,32 @@ export class User extends BaseEntity {
 
   @Column({ name: 'weeklyStreakData', type: 'json', nullable: true })
   weeklyStreakData?: boolean[];
+
+  @Column({ name: 'timezone', default: 'UTC' })
+  timezone!: string;
+
+  @Column({ name: 'streakFreezeCount', default: 0 })
+  streakFreezeCount!: number;
+
+  @Column({ name: 'monthlyStreakData', type: 'json', nullable: true })
+  monthlyStreakData?: { [key: string]: number[] }; // { 'YYYY-MM': [1,2,3,5,10,...] }
+
+  // Push notification token for mobile devices
+  @Column({ name: 'pushToken', type: 'varchar', length: 255, nullable: true })
+  pushToken?: string | null;
+
+  // Track last activity for re-engagement emails
+  @Column({ name: 'lastActiveAt', nullable: true })
+  lastActiveAt?: Date;
+
+  // Track re-engagement email sending to avoid duplicates
+  @Column({ name: 'lastReengagementEmailSentAt', nullable: true })
+  lastReengagementEmailSentAt?: Date;
+
+  @Column({ name: 'reengagementEmailsSent', type: 'json', nullable: true })
+  reengagementEmailsSent?: {
+    day3?: Date;
+    day7?: Date;
+    day30?: Date;
+  };
 }

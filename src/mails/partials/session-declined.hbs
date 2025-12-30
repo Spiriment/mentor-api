@@ -1,0 +1,32 @@
+<h2>Session Request Update</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>We wanted to let you know that {{mentorName}} is unable to accept your session request at this time.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Requested Time:</strong> {{scheduledTime}}</p>
+  {{#if reason}}
+    <p style='margin: 0;'><strong>Reason:</strong> {{reason}}</p>
+  {{/if}}
+</div>
+
+<p><strong>What's Next?</strong></p>
+<p>Don't be discouraged! You have several options:</p>
+
+<ul>
+  <li>Try requesting a different time slot with {{mentorName}}</li>
+  <li>Browse other available mentors who might be a good fit</li>
+  <li>Check back later when {{mentorName}} may have more availability</li>
+</ul>
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>Find Available Mentors</a>
+</p>
+
+<p>Remember, we have many dedicated mentors ready to support your spiritual journey. Keep seeking, and you'll find the right match!</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

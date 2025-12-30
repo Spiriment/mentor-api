@@ -471,4 +471,38 @@ export class MentorProfileController {
       next(error);
     }
   };
+
+  // Update current book and chapter
+  updateCurrentBook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const { userId } = req.params;
+      const { currentBook, currentChapter } = req.body;
+
+      if (!currentBook) {
+        return res.status(400).json({
+          success: false,
+          message: 'currentBook is required',
+        });
+      }
+
+      const profile = await this.mentorProfileService.updateCurrentBook(
+        userId,
+        currentBook,
+        currentChapter || 1
+      );
+
+      res.json({
+        success: true,
+        data: profile,
+        message: 'Current book updated successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error updating current book', error);
+      next(error);
+    }
+  };
 }

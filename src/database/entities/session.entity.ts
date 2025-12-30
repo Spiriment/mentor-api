@@ -77,6 +77,9 @@ export class Session {
   @Column({ type: 'datetime' })
   scheduledAt!: Date;
 
+  @Column({ default: 'UTC' })
+  timezone!: string;
+
   @Column({ type: 'datetime', nullable: true })
   startedAt?: Date;
 
@@ -153,6 +156,21 @@ export class Session {
 
   @Column({ default: false })
   mentorConfirmed!: boolean;
+
+  @Column({ type: 'datetime', nullable: true, select: false })
+  previousScheduledAt?: Date;
+
+  @Column({ type: 'datetime', nullable: true, select: false })
+  rescheduleRequestedAt?: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  requestedScheduledAt?: Date;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  rescheduleReason?: string;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  rescheduleMessage?: string;
 
   @CreateDateColumn()
   createdAt!: Date;

@@ -11,16 +11,21 @@ import {
   AVAILABILITY_STATUS,
 } from '@/database/entities/mentorAvailability.entity';
 import { User } from '@/database/entities/user.entity';
-import {
-  AppNotification,
-  AppNotificationType,
-} from '@/database/entities/appNotification.entity';
+import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
-import { EmailService } from '@/core/email.service';
-import { format } from 'date-fns';
+import { format, addMinutes } from 'date-fns';
+import { toZonedTime, format as formatTz } from 'date-fns-tz';
+import { Between, In } from 'typeorm';
+import {
+  getEmailService,
+  formatSessionTime,
+  formatSessionType,
+} from './emailHelper';
+import { getAppNotificationService } from './appNotification.service';
+import { AppNotificationType } from '@/database/entities/appNotification.entity';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -77,13 +82,6 @@ export class SessionService {
   private availabilityRepository =
     AppDataSource.getRepository(MentorAvailability);
   private userRepository = AppDataSource.getRepository(User);
-  private notificationRepository = AppDataSource.getRepository(AppNotification);
-  private emailService: EmailService;
-
-  constructor() {
-    // Initialize EmailService without queue for direct sending
-    this.emailService = new EmailService(null);
-  }
 
   /**
    * Create a new session
@@ -107,75 +105,78 @@ export class SessionService {
         throw new AppError('Mentee not found', StatusCodes.NOT_FOUND);
       }
 
-      // Check if mentor is available at the requested time
-      const isAvailable = await this.isMentorAvailable(
-        data.mentorId,
-        data.scheduledAt
-      );
-      if (!isAvailable) {
-        throw new AppError(
-          'Mentor is not available at the requested time',
-          StatusCodes.CONFLICT
-        );
-      }
+      // Use a transaction to prevent race conditions
+      const savedSession = await AppDataSource.transaction(
+        async (transactionalEntityManager) => {
+          const sessionRepository =
+            transactionalEntityManager.getRepository(Session);
 
-      // Create session
-      const session = this.sessionRepository.create({
-        mentorId: data.mentorId,
-        menteeId: data.menteeId,
-        scheduledAt: data.scheduledAt,
-        type: data.type || SESSION_TYPE.ONE_ON_ONE,
-        duration: data.duration || SESSION_DURATION.ONE_HOUR,
-        title: data.title,
-        description: data.description,
-        meetingLink: data.meetingLink,
-        meetingId: data.meetingId,
-        meetingPassword: data.meetingPassword,
-        location: data.location,
-        isRecurring: data.isRecurring || false,
-        recurringPattern: data.recurringPattern,
-        status: SESSION_STATUS.SCHEDULED,
-      });
-
-      const savedSession = await this.sessionRepository.save(session);
-
-      // Load relations for email notification
-      const sessionWithRelations = await this.sessionRepository.findOne({
-        where: { id: savedSession.id },
-        relations: ['mentor', 'mentee'],
-      });
-
-      // Send email and in-app notification to mentor
-      if (sessionWithRelations) {
-        await this.sendSessionRequestEmail(sessionWithRelations).catch((error) => {
-          logger.error('Failed to send session request email', error);
-          // Don't throw - email failure shouldn't break session creation
-        });
-
-        // Create in-app notification for mentor
-        // Note: This is non-blocking - if the table doesn't exist, it will fail gracefully
-        await this.createInAppNotification({
-          userId: sessionWithRelations.mentorId,
-          type: AppNotificationType.SESSION_REQUEST,
-          title: 'New Session Request',
-          message: `${sessionWithRelations.mentee?.firstName || 'A mentee'} has requested a session with you`,
-          data: {
-            sessionId: sessionWithRelations.id,
-            menteeId: sessionWithRelations.menteeId,
-          },
-        }).catch((error: any) => {
-          // Log error but don't break session creation
-          // This can happen if the app_notifications table hasn't been created yet
-          if (error?.message?.includes("doesn't exist")) {
-            logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
-              table: 'app_notifications',
-              sessionId: sessionWithRelations.id,
-            });
-          } else {
-          logger.error('Failed to create in-app notification', error);
+          // Check if mentor is available at the requested time with duration overlap checking
+          const duration = data.duration || SESSION_DURATION.ONE_HOUR;
+          const isAvailable = await this.isMentorAvailable(
+            data.mentorId,
+            data.scheduledAt,
+            duration
+          );
+          if (!isAvailable) {
+            throw new AppError(
+              'Mentor is not available at the requested time',
+              StatusCodes.CONFLICT
+            );
           }
-        });
-      }
+
+          // Double-check for overlapping sessions within the transaction (prevents race condition)
+          const requestedEndTime = addMinutes(data.scheduledAt, duration);
+          const activeStatuses = [
+            SESSION_STATUS.SCHEDULED,
+            SESSION_STATUS.CONFIRMED,
+            SESSION_STATUS.IN_PROGRESS,
+          ];
+
+          const overlappingSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.mentorId = :mentorId', { mentorId: data.mentorId })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: data.scheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (overlappingSessions.length > 0) {
+            throw new AppError(
+              'Mentor is not available at the requested time (time slot conflict)',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Create session within transaction
+          const session = sessionRepository.create({
+            mentorId: data.mentorId,
+            menteeId: data.menteeId,
+            scheduledAt: data.scheduledAt,
+            timezone: mentee.timezone || 'UTC', // Use mentee's timezone
+            type: data.type || SESSION_TYPE.ONE_ON_ONE,
+            duration: duration,
+            title: data.title,
+            description: data.description,
+            meetingLink: data.meetingLink,
+            meetingId: data.meetingId,
+            meetingPassword: data.meetingPassword,
+            location: data.location,
+            isRecurring: data.isRecurring || false,
+            recurringPattern: data.recurringPattern,
+            status: SESSION_STATUS.SCHEDULED,
+          });
+
+          return await sessionRepository.save(session);
+        }
+      );
 
       logger.info('Session created successfully', {
         sessionId: savedSession.id,
@@ -183,6 +184,43 @@ export class SessionService {
         menteeId: data.menteeId,
         scheduledAt: data.scheduledAt,
       });
+
+      // Send email notification to mentor
+      try {
+        const emailService = getEmailService();
+        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+        const sessionType = formatSessionType(savedSession.type);
+        await emailService.sendSessionRequestEmail(
+          mentor.email,
+          `${mentor.firstName} ${mentor.lastName}`,
+          `${mentee.firstName} ${mentee.lastName}`,
+          scheduledTimeFormatted,
+          savedSession.duration,
+          sessionType,
+          data.location
+        );
+      } catch (emailError: any) {
+        logger.error('Failed to send session request email', emailError);
+      }
+
+      // Create in-app notification for mentor
+      try {
+        const notificationService = getAppNotificationService();
+        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+        await notificationService.createNotification({
+          userId: mentor.id,
+          type: AppNotificationType.SESSION_REQUEST,
+          title: '📅 New Session Request',
+          message: `${mentee.firstName} ${mentee.lastName} requested a session on ${scheduledTimeFormatted}`,
+          data: {
+            sessionId: savedSession.id,
+            menteeId: mentee.id,
+            scheduledAt: data.scheduledAt.toISOString(),
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
 
       return savedSession;
     } catch (error: any) {
@@ -217,70 +255,9 @@ export class SessionService {
         );
       }
 
-      // Check if status is being changed to confirmed
-      const wasConfirmed = session.status === SESSION_STATUS.CONFIRMED;
-      const isBeingConfirmed = data.status === SESSION_STATUS.CONFIRMED;
-
       // Update session fields
       Object.assign(session, data);
       const updatedSession = await this.sessionRepository.save(session);
-
-      // Send email notification if status changed to confirmed
-      // Reload with relations for email
-      if (!wasConfirmed && isBeingConfirmed) {
-        const sessionWithRelations = await this.sessionRepository.findOne({
-          where: { id: updatedSession.id },
-          relations: ['mentor', 'mentee'],
-        });
-        
-        if (sessionWithRelations) {
-          await this.sendSessionConfirmedEmail(sessionWithRelations).catch((error) => {
-            logger.error('Failed to send session confirmed email', error);
-            // Don't throw - email failure shouldn't break session update
-          });
-
-          // Create in-app notifications for both parties
-          await this.createInAppNotification({
-            userId: sessionWithRelations.menteeId,
-            type: AppNotificationType.SESSION_CONFIRMED,
-            title: 'Session Confirmed',
-            message: `Your session with ${sessionWithRelations.mentor?.firstName || 'your mentor'} has been confirmed`,
-            data: {
-              sessionId: sessionWithRelations.id,
-              mentorId: sessionWithRelations.mentorId,
-            },
-          }).catch((error: any) => {
-            if (error?.message?.includes("doesn't exist")) {
-              logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
-                table: 'app_notifications',
-                sessionId: sessionWithRelations.id,
-              });
-            } else {
-            logger.error('Failed to create in-app notification for mentee', error);
-            }
-          });
-
-          await this.createInAppNotification({
-            userId: sessionWithRelations.mentorId,
-            type: AppNotificationType.SESSION_CONFIRMED,
-            title: 'Session Confirmed',
-            message: `You confirmed a session with ${sessionWithRelations.mentee?.firstName || 'your mentee'}`,
-            data: {
-              sessionId: sessionWithRelations.id,
-              menteeId: sessionWithRelations.menteeId,
-            },
-          }).catch((error: any) => {
-            if (error?.message?.includes("doesn't exist")) {
-              logger.warn('In-app notifications table not found. Run migrations to enable notifications.', {
-                table: 'app_notifications',
-                sessionId: sessionWithRelations.id,
-              });
-            } else {
-            logger.error('Failed to create in-app notification for mentor', error);
-            }
-          });
-        }
-      }
 
       logger.info('Session updated successfully', {
         sessionId,
@@ -306,6 +283,7 @@ export class SessionService {
       limit?: number;
       offset?: number;
       upcoming?: boolean;
+      past?: boolean;
     } = {}
   ): Promise<{ sessions: Session[]; total: number }> {
     try {
@@ -327,30 +305,85 @@ export class SessionService {
       }
 
       if (options.upcoming) {
-        queryBuilder
-          .andWhere('session.scheduledAt > :now', {
+        queryBuilder.andWhere('session.scheduledAt > :now', {
           now: new Date(),
-          })
-          .andWhere('session.status != :cancelled', {
-            cancelled: SESSION_STATUS.CANCELLED,
-          })
-          .andWhere('session.status != :completed', {
-            completed: SESSION_STATUS.COMPLETED,
-          })
-          .andWhere('session.status != :noShow', {
-            noShow: SESSION_STATUS.NO_SHOW,
+        });
+        // Exclude cancelled and completed sessions from upcoming
+        queryBuilder.andWhere('session.status != :cancelledStatus', {
+          cancelledStatus: SESSION_STATUS.CANCELLED,
+        });
+        queryBuilder.andWhere('session.status != :completedStatus', {
+          completedStatus: SESSION_STATUS.COMPLETED,
         });
       }
 
+      if (options.past) {
+        queryBuilder.andWhere('session.scheduledAt < :now', {
+          now: new Date(),
+        });
+        // Exclude cancelled sessions from past (but include completed and other statuses)
+        queryBuilder.andWhere('session.status != :cancelledStatus', {
+          cancelledStatus: SESSION_STATUS.CANCELLED,
+        });
+      }
+
+      // Order by scheduledAt - DESC for past (newest first), ASC for upcoming (oldest first)
+      const orderDirection = options.past ? 'DESC' : 'ASC';
       queryBuilder
-        .orderBy('session.scheduledAt', 'ASC')
+        .orderBy('session.scheduledAt', orderDirection)
         .skip(options.offset || 0)
         .take(options.limit || 20);
 
       const [sessions, total] = await queryBuilder.getManyAndCount();
 
+      // If user is a mentor, enrich mentee data with profile images
+      if (userRole === 'mentor' && sessions.length > 0) {
+        const menteeIds = sessions
+          .map((s) => s.menteeId)
+          .filter((id): id is string => id !== null && id !== undefined);
+
+        if (menteeIds.length > 0) {
+          const menteeProfiles = await AppDataSource.getRepository(
+            MenteeProfile
+          ).find({
+            where: { userId: In(menteeIds) },
+            select: ['userId', 'profileImage'],
+          });
+
+          const profileImageMap = new Map(
+            menteeProfiles.map((p) => [p.userId, p.profileImage])
+          );
+
+          // Attach profile images to mentee objects
+          for (const session of sessions) {
+            if (session.mentee && session.menteeId) {
+              const profileImage = profileImageMap.get(session.menteeId);
+              if (profileImage) {
+                (session.mentee as any).profileImage = profileImage;
+              }
+            }
+          }
+        }
+      }
+
       return { sessions, total };
     } catch (error: any) {
+      // If error is due to missing column, try to run migration or use fallback
+      if (
+        error.message &&
+        error.message.includes('Unknown column') &&
+        error.message.includes('previousScheduledAt')
+      ) {
+        logger.warn(
+          'Missing previousScheduledAt column detected. Please run migration 1764500000000-AddPreviousScheduledAtToSession'
+        );
+        // Try to use find() as fallback (but this won't work with all filters)
+        // For now, just log and rethrow - the migration should be run
+        logger.error(
+          'Error getting user sessions - missing database column. Please run migrations.',
+          error
+        );
+      }
       logger.error('Error getting user sessions', error);
       throw error;
     }
@@ -445,213 +478,251 @@ export class SessionService {
   }
 
   /**
-   * Reschedule a session (mentor suggests new time)
+   * Check if two time ranges overlap
    */
-  async rescheduleSession(
-    sessionId: string,
-    mentorId: string,
-    newScheduledAt: Date,
-    reason?: string,
-    message?: string
-  ): Promise<Session> {
-    try {
-      const session = await this.sessionRepository.findOne({
-        where: { id: sessionId },
-        relations: ['mentor', 'mentee'],
-      });
-
-      if (!session) {
-        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
-      }
-
-      // Only mentor can reschedule
-      if (session.mentorId !== mentorId) {
-        throw new AppError(
-          'Only the mentor can reschedule this session',
-          StatusCodes.FORBIDDEN
-        );
-      }
-
-      // Check if session can be rescheduled
-      if (session.status === SESSION_STATUS.CANCELLED) {
-        throw new AppError(
-          'Cannot reschedule a cancelled session',
-          StatusCodes.BAD_REQUEST
-        );
-      }
-
-      if (session.status === SESSION_STATUS.COMPLETED) {
-        throw new AppError(
-          'Cannot reschedule a completed session',
-          StatusCodes.BAD_REQUEST
-        );
-      }
-
-      // Check if mentor is available at new time
-      const isAvailable = await this.isMentorAvailable(mentorId, newScheduledAt);
-      if (!isAvailable) {
-        throw new AppError(
-          'Mentor is not available at the requested time',
-          StatusCodes.CONFLICT
-        );
-      }
-
-      // Store old scheduled time for logging
-      const oldScheduledAt = session.scheduledAt;
-
-      // Update session with new time and status
-      session.scheduledAt = newScheduledAt;
-      session.status = SESSION_STATUS.RESCHEDULED;
-      if (reason) {
-        session.cancellationReason = reason;
-      }
-      if (message) {
-        session.mentorNotes = message;
-      }
-
-      const updatedSession = await this.sessionRepository.save(session);
-
-      logger.info('Session rescheduled successfully', {
-        sessionId,
-        mentorId,
-        oldScheduledAt,
-        newScheduledAt,
-        reason,
-      });
-
-      return updatedSession;
-    } catch (error: any) {
-      logger.error('Error rescheduling session', error);
-      throw error;
-    }
+  private doTimeRangesOverlap(
+    start1: Date,
+    end1: Date,
+    start2: Date,
+    end2: Date
+  ): boolean {
+    return start1 < end2 && start2 < end1;
   }
 
   /**
-   * Confirm session attendance (mentor or mentee)
-   */
-  async confirmSession(
-    sessionId: string,
-    userId: string,
-    confirmType: 'mentor' | 'mentee'
-  ): Promise<Session> {
-    try {
-      const session = await this.sessionRepository.findOne({
-        where: { id: sessionId },
-        relations: ['mentor', 'mentee'],
-      });
-
-      if (!session) {
-        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
-      }
-
-      // Check if user has permission
-      if (confirmType === 'mentor' && session.mentorId !== userId) {
-        throw new AppError(
-          'Only the mentor can confirm as mentor',
-          StatusCodes.FORBIDDEN
-        );
-      }
-
-      if (confirmType === 'mentee' && session.menteeId !== userId) {
-        throw new AppError(
-          'Only the mentee can confirm as mentee',
-          StatusCodes.FORBIDDEN
-        );
-      }
-
-      // Only confirmed sessions can be confirmed for attendance
-      if (session.status !== SESSION_STATUS.CONFIRMED) {
-        throw new AppError(
-          'Only confirmed sessions can be confirmed for attendance',
-          StatusCodes.BAD_REQUEST
-        );
-      }
-
-      // Update confirmation status
-      if (confirmType === 'mentor') {
-        session.mentorConfirmed = true;
-      } else {
-        session.menteeConfirmed = true;
-      }
-
-      const updatedSession = await this.sessionRepository.save(session);
-
-      logger.info('Session attendance confirmed', {
-        sessionId,
-        userId,
-        confirmType,
-      });
-
-      return updatedSession;
-    } catch (error: any) {
-      logger.error('Error confirming session', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if mentor is available at a specific time
+   * Check if mentor is available at a specific time with duration
    */
   async isMentorAvailable(
     mentorId: string,
-    requestedTime: Date
+    requestedTime: Date,
+    requestedDuration?: SESSION_DURATION
   ): Promise<boolean> {
     try {
-      const dayOfWeek = requestedTime.getDay() as DAY_OF_WEEK;
-      const timeString = requestedTime.toTimeString().slice(0, 8); // HH:MM:SS format
-
-      // Check recurring availability
-      const availability = await this.availabilityRepository.findOne({
+      // Get all availability records to determine mentor's timezone
+      // We'll use the first availability's timezone, or default to UTC
+      const allAvailabilities = await this.availabilityRepository.find({
         where: {
           mentorId,
-          dayOfWeek,
           status: AVAILABILITY_STATUS.AVAILABLE,
-          isRecurring: true,
         },
       });
 
+      // Get mentor's timezone from availability records (use first one found, or default to UTC)
+      const mentorTimezone =
+        allAvailabilities.length > 0 && allAvailabilities[0].timezone
+          ? allAvailabilities[0].timezone
+          : 'UTC';
+
+      // Convert requested UTC time to mentor's timezone
+      const requestedTimeInMentorTz = toZonedTime(
+        requestedTime,
+        mentorTimezone
+      );
+
+      // Extract day of week and time in mentor's timezone
+      const dayOfWeek = requestedTimeInMentorTz.getDay() as DAY_OF_WEEK;
+      const timeString = formatTz(requestedTimeInMentorTz, 'HH:mm:ss', {
+        timeZone: mentorTimezone,
+      });
+
+      // Get date string in mentor's timezone (YYYY-MM-DD)
+      const requestedDateString = formatTz(
+        requestedTimeInMentorTz,
+        'yyyy-MM-dd',
+        { timeZone: mentorTimezone }
+      );
+
+      logger.info('Checking mentor availability', {
+        mentorId,
+        requestedTime: requestedTime.toISOString(),
+        mentorTimezone,
+        requestedTimeInMentorTz: requestedTimeInMentorTz.toISOString(),
+        dayOfWeek,
+        timeString,
+        requestedDateString,
+      });
+
+      logger.info('Found availability records', {
+        mentorId,
+        count: allAvailabilities.length,
+        availabilities: allAvailabilities.map((a) => ({
+          id: a.id,
+          dayOfWeek: a.dayOfWeek,
+          isRecurring: a.isRecurring,
+          specificDate: a.specificDate,
+          startTime: a.startTime,
+          endTime: a.endTime,
+        })),
+      });
+
+      let availability = await this.availabilityRepository
+        .createQueryBuilder('availability')
+        .where('availability.mentorId = :mentorId', { mentorId })
+        .andWhere('availability.status = :status', {
+          status: AVAILABILITY_STATUS.AVAILABLE,
+        })
+        .andWhere('availability.isRecurring = :isRecurring', {
+          isRecurring: false,
+        })
+        .andWhere('DATE(availability.specificDate) = :requestedDate', {
+          requestedDate: requestedDateString,
+        })
+        .getOne();
+
+      logger.info('Specific date availability check', {
+        mentorId,
+        requestedDateString,
+        found: !!availability,
+        availabilityId: availability?.id,
+      });
+
+      // If no specific date availability, check for recurring availability
       if (!availability) {
+        availability = await this.availabilityRepository.findOne({
+          where: {
+            mentorId,
+            dayOfWeek,
+            status: AVAILABILITY_STATUS.AVAILABLE,
+            isRecurring: true,
+          },
+        });
+
+        logger.info('Recurring availability check', {
+          mentorId,
+          dayOfWeek,
+          found: !!availability,
+          availabilityId: availability?.id,
+        });
+      }
+
+      if (!availability) {
+        logger.warn('No availability found for mentor', {
+          mentorId,
+          requestedTime: requestedTime.toISOString(),
+          dayOfWeek,
+          requestedDateString,
+        });
         return false;
       }
 
-      // Check if requested time is within available hours
-      if (
-        timeString < availability.startTime ||
-        timeString > availability.endTime
-      ) {
+      // Calculate requested session end time in mentor's timezone
+      const duration = requestedDuration || SESSION_DURATION.ONE_HOUR;
+      const requestedEndTime = addMinutes(requestedTime, duration);
+      const requestedEndTimeInMentorTz = toZonedTime(
+        requestedEndTime,
+        mentorTimezone
+      );
+      const requestedEndTimeString = formatTz(
+        requestedEndTimeInMentorTz,
+        'HH:mm:ss',
+        { timeZone: mentorTimezone }
+      );
+
+      logger.info('Found availability, checking time range', {
+        mentorId,
+        availabilityId: availability.id,
+        availabilityStartTime: availability.startTime,
+        availabilityEndTime: availability.endTime,
+        requestedStartTimeString: timeString,
+        requestedEndTimeString,
+        duration,
+      });
+
+      // Check if requested session START time is within available hours
+      if (timeString < availability.startTime) {
+        logger.warn('Requested start time before available hours', {
+          mentorId,
+          requestedTimeString: timeString,
+          availabilityStartTime: availability.startTime,
+        });
         return false;
       }
 
-      // Check for breaks
+      // Check if requested session END time is within available hours
+      if (requestedEndTimeString > availability.endTime) {
+        logger.warn('Requested end time after available hours', {
+          mentorId,
+          requestedEndTimeString,
+          availabilityEndTime: availability.endTime,
+        });
+        return false;
+      }
+
+      // Check for breaks - check if session overlaps with any break period
       if (availability.breaks) {
         for (const breakPeriod of availability.breaks) {
+          // Check if session start time is within break
           if (
             timeString >= breakPeriod.startTime &&
             timeString <= breakPeriod.endTime
           ) {
+            logger.warn('Session start time conflicts with break', {
+              mentorId,
+              requestedTimeString: timeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
+            return false;
+          }
+          // Check if session end time is within break
+          if (
+            requestedEndTimeString >= breakPeriod.startTime &&
+            requestedEndTimeString <= breakPeriod.endTime
+          ) {
+            logger.warn('Session end time conflicts with break', {
+              mentorId,
+              requestedEndTimeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
+            return false;
+          }
+          // Check if session spans across a break
+          if (
+            timeString < breakPeriod.startTime &&
+            requestedEndTimeString > breakPeriod.endTime
+          ) {
+            logger.warn('Session spans across break period', {
+              mentorId,
+              requestedTimeString: timeString,
+              requestedEndTimeString,
+              breakStart: breakPeriod.startTime,
+              breakEnd: breakPeriod.endTime,
+            });
             return false;
           }
         }
       }
 
-      // Check if there's already a session at this time (scheduled or confirmed)
-      const existingSession = await this.sessionRepository.findOne({
-        where: [
-          {
-            mentorId,
-            scheduledAt: requestedTime,
-            status: SESSION_STATUS.SCHEDULED,
-          },
-          {
-            mentorId,
-            scheduledAt: requestedTime,
-            status: SESSION_STATUS.CONFIRMED,
-          },
-        ],
+      // Check for overlapping sessions (scheduled or confirmed) using time ranges
+      const activeStatuses = [
+        SESSION_STATUS.SCHEDULED,
+        SESSION_STATUS.CONFIRMED,
+        SESSION_STATUS.IN_PROGRESS,
+      ];
+
+      const existingSessions = await this.sessionRepository.find({
+        where: {
+          mentorId,
+          status: In(activeStatuses),
+        },
       });
 
-      if (existingSession) {
-        return false;
+      // Check if any existing session overlaps with requested time range
+      for (const existingSession of existingSessions) {
+        const existingStart = new Date(existingSession.scheduledAt);
+        const existingEnd = addMinutes(existingStart, existingSession.duration);
+
+        if (
+          this.doTimeRangesOverlap(
+            requestedTime,
+            requestedEndTime,
+            existingStart,
+            existingEnd
+          )
+        ) {
+          return false;
+        }
       }
 
       return true;
@@ -697,8 +768,9 @@ export class SessionService {
         existingAvailability.notes = data.notes;
         existingAvailability.status = AVAILABILITY_STATUS.AVAILABLE;
 
-        const updatedAvailability =
-          await this.availabilityRepository.save(existingAvailability);
+        const updatedAvailability = await this.availabilityRepository.save(
+          existingAvailability
+        );
 
         logger.info('Mentor availability updated successfully', {
           availabilityId: updatedAvailability.id,
@@ -759,6 +831,37 @@ export class SessionService {
   }
 
   /**
+   * Delete mentor availability
+   */
+  async deleteAvailability(
+    availabilityId: string,
+    mentorId: string
+  ): Promise<void> {
+    try {
+      const availability = await this.availabilityRepository.findOne({
+        where: { id: availabilityId, mentorId },
+      });
+
+      if (!availability) {
+        throw new AppError(
+          'Availability not found or you do not have permission to delete it',
+          StatusCodes.NOT_FOUND
+        );
+      }
+
+      await this.availabilityRepository.remove(availability);
+
+      logger.info('Mentor availability deleted successfully', {
+        availabilityId,
+        mentorId,
+      });
+    } catch (error: any) {
+      logger.error('Error deleting mentor availability', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get available time slots for a mentor on a specific date
    */
   async getAvailableSlots(
@@ -802,7 +905,7 @@ export class SessionService {
           }
         }
 
-        // Check if there's already a session at this time
+        // Check if there's already a session overlapping with this time slot
         const sessionDateTime = new Date(date);
         sessionDateTime.setHours(
           currentTime.getHours(),
@@ -810,26 +913,45 @@ export class SessionService {
           0,
           0
         );
+        const slotEndTime = addMinutes(sessionDateTime, slotDuration);
 
-        // Check for existing sessions (scheduled or confirmed) at this time
-        const existingSession = await this.sessionRepository.findOne({
-          where: [
-            {
-              mentorId,
-              scheduledAt: sessionDateTime,
-              status: SESSION_STATUS.SCHEDULED,
-            },
-            {
-              mentorId,
-              scheduledAt: sessionDateTime,
-              status: SESSION_STATUS.CONFIRMED,
-            },
-          ],
+        // Check for existing sessions (scheduled or confirmed) that overlap with this slot
+        const activeStatuses = [
+          SESSION_STATUS.SCHEDULED,
+          SESSION_STATUS.CONFIRMED,
+          SESSION_STATUS.IN_PROGRESS,
+        ];
+        const overlappingSessions = await this.sessionRepository.find({
+          where: {
+            mentorId,
+            status: In(activeStatuses),
+          },
         });
+
+        let hasOverlap = false;
+        for (const existingSession of overlappingSessions) {
+          const existingStart = new Date(existingSession.scheduledAt);
+          const existingEnd = addMinutes(
+            existingStart,
+            existingSession.duration
+          );
+
+          if (
+            this.doTimeRangesOverlap(
+              sessionDateTime,
+              slotEndTime,
+              existingStart,
+              existingEnd
+            )
+          ) {
+            hasOverlap = true;
+            break;
+          }
+        }
 
         slots.push({
           time: timeString,
-          available: !isInBreak && !existingSession,
+          available: !isInBreak && !hasOverlap,
         });
 
         currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
@@ -843,194 +965,644 @@ export class SessionService {
   }
 
   /**
-   * Send email notification when mentee requests a session
+   * Accept a session request (mentor only)
    */
-  private async sendSessionRequestEmail(session: Session): Promise<void> {
-    if (!session.mentor || !session.mentor.email) {
-      logger.warn(`Mentor email not found for session ${session.id}`);
-      return;
-    }
-
-    if (!session.mentee) {
-      logger.warn(`Mentee not found for session ${session.id}`);
-      return;
-    }
-
-    // Ensure scheduledAt is a valid Date object
-    let scheduledTime: Date;
-    if (session.scheduledAt instanceof Date) {
-      scheduledTime = session.scheduledAt;
-    } else if (typeof session.scheduledAt === 'string') {
-      scheduledTime = new Date(session.scheduledAt);
-    } else {
-      scheduledTime = new Date(session.scheduledAt as any);
-    }
-
-    // Validate the date
-    if (isNaN(scheduledTime.getTime())) {
-      logger.warn(`Invalid scheduledAt date for session ${session.id}: ${session.scheduledAt}`);
-      scheduledTime = new Date(); // Fallback to current date
-    }
-
-    const formattedTime = format(
-      scheduledTime,
-      "EEEE, MMMM d, yyyy 'at' h:mm a"
-    );
-    const menteeName = session.mentee
-      ? `${session.mentee.firstName || ''} ${session.mentee.lastName || ''}`.trim() || session.mentee.email
-      : 'A mentee';
-
-    const message =
-      `You have received a new session request!\n\n` +
-      `Session Details:\n` +
-      `- Requested by: ${menteeName}\n` +
-      `- Date & Time: ${formattedTime}\n` +
-      `- Duration: ${session.duration} minutes\n` +
-      `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
-      `\nPlease open the Mentor App to review and respond to this request.`;
-
-    await this.emailService.sendNotificationEmail({
-      to: session.mentor.email,
-      subject: `📅 New Session Request from ${menteeName}`,
-      message,
-      userName: session.mentor.firstName || session.mentor.email,
-      type: 'Session Request',
-      priority: 'medium',
-      title: 'New Session Request',
-      actionUrl: `/sessions/${session.id}`,
-      actionText: 'View Session Request',
-    });
-
-    logger.info(
-      `Session request email sent to mentor ${session.mentor.email} for session ${session.id}`
-    );
-  }
-
-  /**
-   * Send email notification when mentor confirms a session
-   */
-  private async sendSessionConfirmedEmail(session: Session): Promise<void> {
-    if (!session.mentor || !session.mentee) {
-      logger.warn(`Session relations not loaded for session ${session.id}`);
-      return;
-    }
-
-    // Ensure scheduledAt is a valid Date object
-    let scheduledTime: Date;
-    if (session.scheduledAt instanceof Date) {
-      scheduledTime = session.scheduledAt;
-    } else if (typeof session.scheduledAt === 'string') {
-      scheduledTime = new Date(session.scheduledAt);
-    } else {
-      scheduledTime = new Date(session.scheduledAt as any);
-    }
-
-    // Validate the date
-    if (isNaN(scheduledTime.getTime())) {
-      logger.warn(`Invalid scheduledAt date for session ${session.id}: ${session.scheduledAt}`);
-      scheduledTime = new Date(); // Fallback to current date
-    }
-
-    const formattedTime = format(
-      scheduledTime,
-      "EEEE, MMMM d, yyyy 'at' h:mm a"
-    );
-
-    // Send to mentee
-    if (session.mentee.email) {
-      const mentorName = session.mentor
-        ? `${session.mentor.firstName || ''} ${session.mentor.lastName || ''}`.trim() || session.mentor.email
-        : 'Your mentor';
-
-      const menteeMessage =
-        `Great news! Your session request has been confirmed.\n\n` +
-        `Session Details:\n` +
-        `- With: ${mentorName}\n` +
-        `- Date & Time: ${formattedTime}\n` +
-        `- Duration: ${session.duration} minutes\n` +
-        `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
-        `\nPlease open the Mentor App to view your confirmed session.`;
-
-      await this.emailService.sendNotificationEmail({
-        to: session.mentee.email,
-        subject: `✅ Session Confirmed with ${mentorName}`,
-        message: menteeMessage,
-        userName: session.mentee.firstName || session.mentee.email,
-        type: 'Session Confirmed',
-        priority: 'high',
-        title: 'Session Confirmed',
-        actionUrl: `/sessions/${session.id}`,
-        actionText: 'View Session',
-      }).catch((error) => {
-        logger.error('Failed to send confirmation email to mentee', error);
+  async acceptSession(sessionId: string, mentorId: string): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
       });
 
-      logger.info(
-        `Session confirmed email sent to mentee ${session.mentee.email} for session ${session.id}`
-      );
-    }
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
 
-    // Send to mentor
-    if (session.mentor.email) {
-      const menteeName = session.mentee
-        ? `${session.mentee.firstName || ''} ${session.mentee.lastName || ''}`.trim() || session.mentee.email
-        : 'Your mentee';
+      // Verify the user is the mentor for this session
+      if (session.mentorId !== mentorId) {
+        throw new AppError(
+          'Only the mentor can accept this session',
+          StatusCodes.FORBIDDEN
+        );
+      }
 
-      const mentorMessage =
-        `You have confirmed a session request.\n\n` +
-        `Session Details:\n` +
-        `- With: ${menteeName}\n` +
-        `- Date & Time: ${formattedTime}\n` +
-        `- Duration: ${session.duration} minutes\n` +
-        `${session.description ? `- Description: ${session.description}\n` : ''}\n` +
-        `\nPlease open the Mentor App to view your confirmed session.`;
+      // Check current status
+      if (session.status !== SESSION_STATUS.SCHEDULED) {
+        throw new AppError(
+          `Cannot accept session with status: ${session.status}`,
+          StatusCodes.BAD_REQUEST
+        );
+      }
 
-      await this.emailService.sendNotificationEmail({
-        to: session.mentor.email,
-        subject: `✅ Session Confirmed with ${menteeName}`,
-        message: mentorMessage,
-        userName: session.mentor.firstName || session.mentor.email,
-        type: 'Session Confirmed',
-        priority: 'high',
-        title: 'Session Confirmed',
-        actionUrl: `/sessions/${session.id}`,
-        actionText: 'View Session',
-      }).catch((error) => {
-        logger.error('Failed to send confirmation email to mentor', error);
+      // Update status to confirmed
+      session.status = SESSION_STATUS.CONFIRMED;
+      const updatedSession = await this.sessionRepository.save(session);
+
+      logger.info('Session accepted by mentor', {
+        sessionId,
+        mentorId,
+        menteeId: session.menteeId,
       });
 
-      logger.info(
-        `Session confirmed email sent to mentor ${session.mentor.email} for session ${session.id}`
-      );
+      // Send email notification to mentee
+      try {
+        const emailService = getEmailService();
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        const sessionType = formatSessionType(session.type);
+        await emailService.sendSessionAcceptedEmail(
+          session.mentee.email,
+          `${session.mentee.firstName} ${session.mentee.lastName}`,
+          `${session.mentor.firstName} ${session.mentor.lastName}`,
+          scheduledTimeFormatted,
+          session.duration,
+          sessionType,
+          session.location
+        );
+      } catch (emailError: any) {
+        logger.error('Failed to send session accepted email', emailError);
+      }
+
+      // Create in-app notification for mentee
+      try {
+        const notificationService = getAppNotificationService();
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        await notificationService.createNotification({
+          userId: session.menteeId,
+          type: AppNotificationType.SESSION_CONFIRMED,
+          title: '✅ Session Confirmed',
+          message: `${session.mentor.firstName} ${session.mentor.lastName} confirmed your session on ${scheduledTimeFormatted}`,
+          data: {
+            sessionId: session.id,
+            mentorId: session.mentorId,
+            scheduledAt: session.scheduledAt.toISOString(),
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error accepting session', error);
+      throw error;
     }
   }
 
   /**
-   * Create in-app notification
+   * Decline a session request (mentor only)
    */
-  private async createInAppNotification(data: {
-    userId: string;
-    type: AppNotificationType;
-    title: string;
-    message: string;
-    data?: Record<string, any>;
-  }): Promise<AppNotification> {
-    const notification = this.notificationRepository.create({
-      userId: data.userId,
-      type: data.type,
-      title: data.title,
-      message: data.message,
-      data: data.data,
-      isRead: false,
-    });
+  async declineSession(
+    sessionId: string,
+    mentorId: string,
+    reason?: string
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
 
-    const savedNotification = await this.notificationRepository.save(notification);
-    logger.info('In-app notification created', {
-      notificationId: savedNotification.id,
-      userId: data.userId,
-      type: data.type,
-    });
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
 
-    return savedNotification;
+      // Verify the user is the mentor for this session
+      if (session.mentorId !== mentorId) {
+        throw new AppError(
+          'Only the mentor can decline this session',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Check current status
+      if (session.status !== SESSION_STATUS.SCHEDULED) {
+        throw new AppError(
+          `Cannot decline session with status: ${session.status}`,
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // Update status to cancelled
+      session.status = SESSION_STATUS.CANCELLED;
+      session.cancelledAt = new Date();
+      session.cancellationReason = reason || 'Declined by mentor';
+
+      const updatedSession = await this.sessionRepository.save(session);
+
+      logger.info('Session declined by mentor', {
+        sessionId,
+        mentorId,
+        menteeId: session.menteeId,
+        reason,
+      });
+
+      // Send email notification to mentee
+      try {
+        const emailService = getEmailService();
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        await emailService.sendSessionDeclinedEmail(
+          session.mentee.email,
+          `${session.mentee.firstName} ${session.mentee.lastName}`,
+          `${session.mentor.firstName} ${session.mentor.lastName}`,
+          scheduledTimeFormatted,
+          reason
+        );
+      } catch (emailError: any) {
+        logger.error('Failed to send session declined email', emailError);
+      }
+
+      // Create in-app notification for mentee
+      try {
+        const notificationService = getAppNotificationService();
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        await notificationService.createNotification({
+          userId: session.menteeId,
+          type: AppNotificationType.SESSION_DECLINED,
+          title: '❌ Session Declined',
+          message: `${session.mentor.firstName} ${
+            session.mentor.lastName
+          } declined your session on ${scheduledTimeFormatted}${
+            reason ? `: ${reason}` : ''
+          }`,
+          data: {
+            sessionId: session.id,
+            mentorId: session.mentorId,
+            scheduledAt: session.scheduledAt.toISOString(),
+            reason,
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error declining session', error);
+      throw error;
+    }
+  }
+
+  async rescheduleSession(
+    sessionId: string,
+    newScheduledAt: string,
+    userId: string,
+    reason?: string,
+    message?: string
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Only mentee can request reschedule
+      if (session.menteeId !== userId) {
+        throw new AppError(
+          'Only the mentee can request to reschedule this session',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Cannot reschedule completed or cancelled sessions
+      if (
+        session.status === SESSION_STATUS.COMPLETED ||
+        session.status === SESSION_STATUS.CANCELLED
+      ) {
+        throw new AppError(
+          `Cannot reschedule a ${session.status} session`,
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // Validate mentor availability at the new requested time
+      const newScheduledAtDate = new Date(newScheduledAt);
+      const isAvailable = await this.isMentorAvailable(
+        session.mentorId,
+        newScheduledAtDate,
+        session.duration
+      );
+
+      if (!isAvailable) {
+        throw new AppError(
+          'Mentor is not available at the requested reschedule time',
+          StatusCodes.CONFLICT
+        );
+      }
+
+      // Check for overlapping sessions at the new time (excluding current session)
+      const requestedEndTime = addMinutes(newScheduledAtDate, session.duration);
+      const activeStatuses = [
+        SESSION_STATUS.SCHEDULED,
+        SESSION_STATUS.CONFIRMED,
+        SESSION_STATUS.IN_PROGRESS,
+      ];
+
+      const overlappingSessions = await this.sessionRepository.find({
+        where: {
+          mentorId: session.mentorId,
+          status: In(activeStatuses),
+        },
+      });
+
+      // Check if any session (other than current) overlaps with requested time
+      for (const existingSession of overlappingSessions) {
+        // Skip the current session being rescheduled
+        if (existingSession.id === session.id) {
+          continue;
+        }
+
+        const existingStart = new Date(existingSession.scheduledAt);
+        const existingEnd = addMinutes(existingStart, existingSession.duration);
+
+        if (
+          this.doTimeRangesOverlap(
+            newScheduledAtDate,
+            requestedEndTime,
+            existingStart,
+            existingEnd
+          )
+        ) {
+          throw new AppError(
+            'The requested reschedule time conflicts with another session',
+            StatusCodes.CONFLICT
+          );
+        }
+      }
+
+      // Store the reschedule request details
+      session.previousScheduledAt = session.scheduledAt;
+      session.rescheduleRequestedAt = new Date();
+      session.requestedScheduledAt = newScheduledAtDate;
+      session.rescheduleReason = reason;
+      session.rescheduleMessage = message;
+
+      const updatedSession = await this.sessionRepository.save(session);
+
+      const currentScheduledTime = new Date(session.scheduledAt);
+      const sessionType = formatSessionType(session.type);
+      const currentTimeFormatted = formatSessionTime(currentScheduledTime);
+      const newTimeFormatted = formatSessionTime(new Date(newScheduledAt));
+
+      logger.info('Session reschedule requested', {
+        sessionId,
+        userId,
+        currentScheduledAt: currentScheduledTime,
+        newScheduledAt,
+        reason,
+      });
+
+      // Send email notification to mentor
+      try {
+        const emailService = getEmailService();
+        await emailService.sendSessionRescheduleRequestEmail(
+          session.mentor.email,
+          `${session.mentor.firstName} ${session.mentor.lastName}`,
+          `${session.mentee.firstName} ${session.mentee.lastName}`,
+          currentTimeFormatted,
+          newTimeFormatted,
+          session.duration,
+          reason,
+          message,
+          sessionType
+        );
+      } catch (emailError: any) {
+        logger.error(
+          'Failed to send session reschedule request email',
+          emailError
+        );
+      }
+
+      // Create in-app notification for mentor
+      try {
+        const notificationService = getAppNotificationService();
+        await notificationService.createNotification({
+          userId: session.mentorId,
+          type: AppNotificationType.RESCHEDULE_REQUEST,
+          title: '🔄 Reschedule Request',
+          message: `${session.mentee.firstName} ${session.mentee.lastName} requested to reschedule session from ${currentTimeFormatted} to ${newTimeFormatted}`,
+          data: {
+            sessionId: session.id,
+            menteeId: session.menteeId,
+            currentScheduledAt: currentScheduledTime.toISOString(),
+            requestedScheduledAt: newScheduledAt,
+            reason,
+            message,
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error requesting session reschedule', error);
+      throw error;
+    }
+  }
+
+  async acceptReschedule(
+    sessionId: string,
+    mentorId: string
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Verify the user is the mentor for this session
+      if (session.mentorId !== mentorId) {
+        throw new AppError(
+          'Only the mentor can accept this reschedule',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Check if there's a pending reschedule request
+      if (!session.rescheduleRequestedAt || !session.requestedScheduledAt) {
+        throw new AppError(
+          'No pending reschedule request for this session',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      const previousTime = session.scheduledAt;
+      const requestedNewTime = session.requestedScheduledAt;
+
+      if (!requestedNewTime) {
+        throw new AppError(
+          'No requested reschedule time found',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      const previousTimeFormatted = formatSessionTime(previousTime);
+      const newTimeFormatted = formatSessionTime(requestedNewTime);
+
+      // Use a transaction to prevent race conditions when accepting reschedule
+      const updatedSession = await AppDataSource.transaction(
+        async (transactionalEntityManager) => {
+          const sessionRepository =
+            transactionalEntityManager.getRepository(Session);
+
+          // Re-fetch session within transaction to get latest state
+          const currentSession = await sessionRepository.findOne({
+            where: { id: sessionId },
+            relations: ['mentor', 'mentee'],
+          });
+
+          if (!currentSession) {
+            throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+          }
+
+          // Verify reschedule request still exists
+          if (
+            !currentSession.rescheduleRequestedAt ||
+            !currentSession.requestedScheduledAt
+          ) {
+            throw new AppError(
+              'No pending reschedule request for this session',
+              StatusCodes.BAD_REQUEST
+            );
+          }
+
+          // Validate mentor availability at the new time (may have changed since request)
+          const isAvailable = await this.isMentorAvailable(
+            currentSession.mentorId,
+            currentSession.requestedScheduledAt,
+            currentSession.duration
+          );
+
+          if (!isAvailable) {
+            throw new AppError(
+              'Mentor is no longer available at the requested reschedule time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Double-check for overlapping sessions within transaction (excluding current session)
+          const requestedEndTime = addMinutes(
+            currentSession.requestedScheduledAt,
+            currentSession.duration
+          );
+          const activeStatuses = [
+            SESSION_STATUS.SCHEDULED,
+            SESSION_STATUS.CONFIRMED,
+            SESSION_STATUS.IN_PROGRESS,
+          ];
+
+          const overlappingSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.mentorId = :mentorId', {
+              mentorId: currentSession.mentorId,
+            })
+            .andWhere('session.id != :sessionId', {
+              sessionId: currentSession.id,
+            })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: currentSession.requestedScheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (overlappingSessions.length > 0) {
+            throw new AppError(
+              'The requested reschedule time conflicts with another session',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Update session with new time within transaction
+          currentSession.scheduledAt = currentSession.requestedScheduledAt;
+          currentSession.status = SESSION_STATUS.CONFIRMED;
+          currentSession.rescheduleRequestedAt = undefined;
+          currentSession.requestedScheduledAt = undefined;
+          currentSession.previousScheduledAt = undefined;
+          currentSession.rescheduleReason = undefined;
+          currentSession.rescheduleMessage = undefined;
+
+          return await sessionRepository.save(currentSession);
+        }
+      );
+
+      // Re-fetch session with relations for notifications
+      const finalSession = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!finalSession) {
+        throw new AppError(
+          'Session not found after update',
+          StatusCodes.NOT_FOUND
+        );
+      }
+
+      logger.info('Session reschedule accepted by mentor', {
+        sessionId,
+        mentorId,
+        previousScheduledAt: previousTime,
+        newScheduledAt: finalSession.scheduledAt,
+      });
+
+      // Send email notification to mentee
+      try {
+        const emailService = getEmailService();
+        const sessionType = formatSessionType(finalSession.type);
+        await emailService.sendSessionRescheduleAcceptedEmail(
+          finalSession.mentee.email,
+          `${finalSession.mentee.firstName} ${finalSession.mentee.lastName}`,
+          `${finalSession.mentor.firstName} ${finalSession.mentor.lastName}`,
+          previousTimeFormatted,
+          newTimeFormatted,
+          finalSession.duration,
+          sessionType,
+          finalSession.location
+        );
+      } catch (emailError: any) {
+        logger.error(
+          'Failed to send session reschedule accepted email',
+          emailError
+        );
+      }
+
+      // Create in-app notification for mentee
+      try {
+        const notificationService = getAppNotificationService();
+        await notificationService.createNotification({
+          userId: finalSession.menteeId,
+          type: AppNotificationType.RESCHEDULE_ACCEPTED,
+          title: '✅ Reschedule Accepted',
+          message: `${finalSession.mentor.firstName} ${finalSession.mentor.lastName} accepted your reschedule request. New time: ${newTimeFormatted}`,
+          data: {
+            sessionId: finalSession.id,
+            mentorId: finalSession.mentorId,
+            previousScheduledAt: previousTime.toISOString(),
+            newScheduledAt: finalSession.scheduledAt.toISOString(),
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
+
+      return finalSession;
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error accepting session reschedule', error);
+      throw error;
+    }
+  }
+
+  async declineReschedule(
+    sessionId: string,
+    mentorId: string,
+    reason?: string
+  ): Promise<Session> {
+    try {
+      const session = await this.sessionRepository.findOne({
+        where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
+      });
+
+      if (!session) {
+        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Verify the user is the mentor for this session
+      if (session.mentorId !== mentorId) {
+        throw new AppError(
+          'Only the mentor can decline this reschedule',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Check if there's a pending reschedule request
+      if (!session.rescheduleRequestedAt) {
+        throw new AppError(
+          'No pending reschedule request for this session',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+
+      // Clear reschedule request data (keep original time)
+      session.previousScheduledAt = undefined;
+      session.rescheduleRequestedAt = undefined;
+      session.rescheduleReason = undefined;
+      session.rescheduleMessage = undefined;
+
+      const updatedSession = await this.sessionRepository.save(session);
+
+      logger.info('Session reschedule declined by mentor', {
+        sessionId,
+        mentorId,
+        originalScheduledAt: session.scheduledAt,
+      });
+
+      // Send email notification to mentee
+      try {
+        const emailService = getEmailService();
+        const sessionType = formatSessionType(session.type);
+        await emailService.sendSessionRescheduleDeclinedEmail(
+          session.mentee.email,
+          `${session.mentee.firstName} ${session.mentee.lastName}`,
+          `${session.mentor.firstName} ${session.mentor.lastName}`,
+          scheduledTimeFormatted,
+          session.duration,
+          sessionType,
+          session.location,
+          reason
+        );
+      } catch (emailError: any) {
+        logger.error(
+          'Failed to send session reschedule declined email',
+          emailError
+        );
+      }
+
+      // Create in-app notification for mentee
+      try {
+        const notificationService = getAppNotificationService();
+        await notificationService.createNotification({
+          userId: session.menteeId,
+          type: AppNotificationType.RESCHEDULE_DECLINED,
+          title: '❌ Reschedule Declined',
+          message: `${session.mentor.firstName} ${
+            session.mentor.lastName
+          } declined your reschedule request. Original time: ${scheduledTimeFormatted}${
+            reason ? `. Reason: ${reason}` : ''
+          }`,
+          data: {
+            sessionId: session.id,
+            mentorId: session.mentorId,
+            scheduledAt: session.scheduledAt.toISOString(),
+            reason,
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to create in-app notification', notifError);
+      }
+
+      return updatedSession;
+    } catch (error: any) {
+      logger.error('Error declining session reschedule', error);
+      throw error;
+    }
   }
 }

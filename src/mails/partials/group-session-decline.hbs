@@ -1,0 +1,29 @@
+<h2>{{menteeName}} Declined Your Group Session Invitation</h2>
+
+<p>Hello {{mentorName}},</p>
+
+<p>{{menteeName}} has declined the invitation to your group session.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Session:</strong> {{sessionTitle}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Mentee:</strong> {{menteeName}}</p>
+  <p style='margin: 0;'>✗ <strong style='color: #DC3545;'>Declined</strong></p>
+</div>
+
+{{#if declineReason}}
+  <h3>Reason:</h3>
+  <p style='padding: 15px; background-color: #F8F9FA; border-left: 4px solid #DC3545; border-radius: 4px;'>
+    {{declineReason}}
+  </p>
+{{/if}}
+
+<p style='text-align: center;'>
+  <a href='spiriment://group-sessions/{{groupSessionId}}' class='button'>View Session Details</a>
+</p>
+
+<p>You can view all participant responses in the Spiriment app. Remember that at least 2 participants must accept for the session to proceed.</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>
