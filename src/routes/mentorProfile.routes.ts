@@ -119,4 +119,10 @@ router.put(
   mentorProfileController.updateProfileImage
 );
 
+// Update current book and chapter (for Bible reading tracking)
+router.put(
+  '/:userId/current-book',
+  mentorProfileController.updateCurrentBook
+);
+
 export { router as mentorProfileRoutes };

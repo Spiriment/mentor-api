@@ -10,7 +10,6 @@ import {
   updateSessionStatusSchema,
   sessionQuerySchema,
   dateParamSchema,
-  rescheduleSessionSchema,
 } from '@/validation/session.validation';
 
 const sessionController = new SessionController();
@@ -54,18 +53,37 @@ router.patch(
   sessionController.updateSessionStatus
 );
 
-// Reschedule session (mentor only)
-router.patch(
-  '/:sessionId/reschedule',
+// Accept/Decline session (mentor only)
+router.post(
+  '/:sessionId/accept',
   requireRole(['mentor']),
-  validate(rescheduleSessionSchema),
+  sessionController.acceptSession
+);
+
+router.post(
+  '/:sessionId/decline',
+  requireRole(['mentor']),
+  sessionController.declineSession
+);
+
+// Reschedule session (mentee only)
+router.post(
+  '/:sessionId/reschedule',
+  requireRole(['mentee']),
   sessionController.rescheduleSession
 );
 
-// Confirm session attendance
-router.patch(
-  '/:sessionId/confirm',
-  sessionController.confirmSession
+// Accept/Decline reschedule (mentor only)
+router.post(
+  '/:sessionId/reschedule/accept',
+  requireRole(['mentor']),
+  sessionController.acceptReschedule
+);
+
+router.post(
+  '/:sessionId/reschedule/decline',
+  requireRole(['mentor']),
+  sessionController.declineReschedule
 );
 
 // Availability management
@@ -87,10 +105,10 @@ router.get(
   sessionController.getAvailableSlots
 );
 
-// Session notes and summaries
-router.patch(
-  '/:sessionId/notes',
-  sessionController.addSessionNotes
+router.delete(
+  '/availability/:availabilityId',
+  requireRole(['mentor']),
+  sessionController.deleteAvailability
 );
 
 export { router as sessionRoutes };

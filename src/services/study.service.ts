@@ -15,18 +15,43 @@ export class StudyService {
   }
 
   async getProgress(userId: string): Promise<StudyProgress | null> {
-    return this.progressRepo.findOne({ where: { userId } });
+    const progress = await this.progressRepo.findOne({ where: { userId } });
+    // Ensure all required fields have default values if progress exists but fields are null
+    if (progress) {
+      return {
+        ...progress,
+        currentBookIndex: progress.currentBookIndex ?? 0,
+        currentChapterIndex: progress.currentChapterIndex ?? 0,
+        completedChapters: progress.completedChapters ?? [],
+        currentDay: progress.currentDay ?? 1,
+        totalDays: progress.totalDays ?? 0,
+        lastStudiedAt: progress.lastStudiedAt ?? undefined, // Preserve lastStudiedAt
+      };
+    }
+    return null;
   }
 
   async upsertProgress(
     progress: Partial<StudyProgress> & { userId: string }
   ): Promise<StudyProgress> {
     const existing = await this.getProgress(progress.userId);
+    
+    // If lastStudiedAt is not explicitly provided in the update,
+    // set it to the current time (any progress update means the user has studied)
+    const updateData: Partial<StudyProgress> = {
+      ...progress,
+    };
+    
+    // Always update lastStudiedAt when progress is updated, unless explicitly provided
+    if (!updateData.lastStudiedAt) {
+      updateData.lastStudiedAt = new Date();
+    }
+    
     if (existing) {
-      const merged = this.progressRepo.merge(existing, progress);
+      const merged = this.progressRepo.merge(existing, updateData);
       return this.progressRepo.save(merged);
     }
-    return this.progressRepo.save(this.progressRepo.create(progress));
+    return this.progressRepo.save(this.progressRepo.create(updateData));
   }
 
   async addSession(
@@ -52,10 +77,63 @@ export class StudyService {
     return (Array.isArray(saved) ? saved[0] : saved) as StudyReflection;
   }
 
-  async listReflections(userId: string): Promise<StudyReflection[]> {
-    return this.reflectionRepo.find({
-      where: { userId },
+  async listReflections(
+    userId: string,
+    options?: {
+      book?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    reflections: StudyReflection[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  }> {
+    const page = options?.page || 1;
+    const limit = options?.limit || 20;
+    const skip = (page - 1) * limit;
+
+    // Build where clause
+    const where: any = { userId };
+    if (options?.book) {
+      where.book = options.book;
+    }
+
+    // Get total count
+    const total = await this.reflectionRepo.count({ where });
+
+    // Get paginated reflections
+    const reflections = await this.reflectionRepo.find({
+      where,
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip,
     });
+
+    return {
+      reflections,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // Get distinct books for filter dropdown
+  async getReflectionBooks(userId: string): Promise<string[]> {
+    const reflections = await this.reflectionRepo.find({
+      where: { userId },
+      select: ['book'],
+    });
+
+    // Get unique books
+    const books = Array.from(new Set(reflections.map(r => r.book)));
+    return books.sort();
   }
 }

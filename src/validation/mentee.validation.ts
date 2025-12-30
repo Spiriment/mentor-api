@@ -96,7 +96,7 @@ export const completeMenteeOnboardingSchema = z.object({
     .min(1, 'At least one mentorship format is required'),
   availability: z
     .array(z.string())
-    .min(1, 'At least one availability option is required'),
+    .optional(),
   mentorExpectations: z
     .array(z.string())
     .min(1, 'At least one mentor expectation is required'),

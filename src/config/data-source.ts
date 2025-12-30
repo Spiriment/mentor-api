@@ -6,11 +6,16 @@ import {
   PasswordReset,
   SystemConfig,
   UserNotification,
+  AppNotification,
   User,
   MenteeProfile,
   MentorProfile,
   Session,
+  SessionReview,
   MentorAvailability,
+  GroupSession,
+  GroupSessionParticipant,
+  MentorshipRequest,
   BibleBookmark,
   BibleHighlight,
   BibleReflection,
@@ -21,8 +26,6 @@ import {
   Conversation,
   Message,
   ConversationParticipant,
-  AppNotification,
-  Review,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -46,11 +49,16 @@ export const AppDataSource = new DataSource({
     PasswordReset,
     SystemConfig,
     UserNotification,
+    AppNotification,
     User,
     MenteeProfile,
     MentorProfile,
     Session,
+    SessionReview,
     MentorAvailability,
+    GroupSession,
+    GroupSessionParticipant,
+    MentorshipRequest,
     BibleBookmark,
     BibleHighlight,
     BibleReflection,
@@ -61,13 +69,7 @@ export const AppDataSource = new DataSource({
     Conversation,
     Message,
     ConversationParticipant,
-    AppNotification,
-    Review,
   ],
-  migrations: [
-    Config.nodeEnv === 'development'
-      ? 'src/database/migrations/**/*.ts'
-      : 'database/migrations/**/*.js',
-  ],
+  migrations: ['src/database/migrations/*.ts'],
   subscribers: [],
 });

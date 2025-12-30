@@ -16,3 +16,9 @@ export enum USER_ROLE {
   MENTEE = 'mentee',
   MENTOR = 'mentor',
 }
+
+export enum MENTOR_APPROVAL_STATUS {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}

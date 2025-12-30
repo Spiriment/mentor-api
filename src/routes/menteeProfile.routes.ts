@@ -10,7 +10,6 @@ import {
   menteeBibleTopicsSchema,
   menteeLearningPreferenceSchema,
   menteeMentorshipFormatSchema,
-  menteeAvailabilitySchema,
   menteeMentorExpectationsSchema,
   menteeSpiritualGoalsSchema,
   menteeProfileImageSchema,
@@ -92,12 +91,6 @@ router.put(
 );
 
 router.put(
-  '/:userId/availability',
-  validate(menteeAvailabilitySchema),
-  menteeProfileController.updateAvailability
-);
-
-router.put(
   '/:userId/mentor-expectations',
   validate(menteeMentorExpectationsSchema),
   menteeProfileController.updateMentorExpectations
@@ -113,6 +106,12 @@ router.put(
   '/:userId/profile-image',
   validate(menteeProfileImageSchema),
   menteeProfileController.updateProfileImage
+);
+
+// Update current book and chapter (for Bible reading tracking)
+router.put(
+  '/:userId/current-book',
+  menteeProfileController.updateCurrentBook
 );
 
 export { router as menteeProfileRoutes };

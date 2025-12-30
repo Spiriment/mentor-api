@@ -1,17 +1,17 @@
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { logger } from '@/config/int-services';
 import {
   User,
   Conversation,
   Message,
   ConversationParticipant,
-  MentorProfile,
-  MenteeProfile,
   CONVERSATION_TYPE,
   MESSAGE_TYPE,
   MESSAGE_STATUS,
   PARTICIPANT_ROLE,
   PARTICIPANT_STATUS,
+  MentorProfile,
+  MenteeProfile,
 } from '@/database/entities';
 
 export interface CreateConversationData {
@@ -31,8 +31,8 @@ export interface CreateMessageData {
 }
 
 export interface UpdateParticipantData {
-  // Note: isOnline and lastSeen are not fields in ConversationParticipant entity
-  // Online status should be tracked separately if needed
+  isOnline?: boolean;
+  lastSeen?: Date;
   isTyping?: boolean;
   typingAt?: Date;
 }
@@ -63,40 +63,26 @@ export class ChatService {
     await queryRunner.startTransaction();
 
     try {
-      // Create conversation
-      const conversation = this.conversationRepository.create({
+      // Create conversation - use queryRunner.manager.create() when in a transaction
+      const conversation = queryRunner.manager.create(Conversation, {
         type: data.type || CONVERSATION_TYPE.MENTOR_MENTEE,
         title: data.title,
         description: data.description,
       });
 
-      const savedConversation = await queryRunner.manager.save(conversation);
+      const savedConversation = await queryRunner.manager.save(Conversation, conversation);
 
-      // Filter out any invalid participant IDs before creating participants
-      const validParticipantIds = (data.participantIds || []).filter(
-        (id) => id != null && id !== undefined && id !== '' && typeof id === 'string'
-      );
-
-      if (validParticipantIds.length === 0) {
-        throw new Error('No valid participant IDs provided');
-      }
-
-      // Add participants
-      const participants = validParticipantIds.map((userId) => {
-        if (!userId || typeof userId !== 'string') {
-          throw new Error(`Invalid participant ID: ${userId}`);
-        }
-        
-        const participant = this.participantRepository.create({
+      // Add participants - use queryRunner.manager.create() when in a transaction
+      const participants = data.participantIds.map((userId) => {
+        return queryRunner.manager.create(ConversationParticipant, {
           conversationId: savedConversation.id,
-          userId: userId,
+          userId,
           role: this.determineParticipantRole(userId, data.createdBy),
           status: PARTICIPANT_STATUS.ACTIVE,
         });
-        return participant;
       });
 
-      await queryRunner.manager.save(participants);
+      await queryRunner.manager.save(ConversationParticipant, participants);
 
       await queryRunner.commitTransaction();
 
@@ -142,13 +128,13 @@ export class ChatService {
         status: PARTICIPANT_STATUS.ACTIVE,
       });
 
-    // Then, load all conversations with ALL their participants
+    // Then, get all conversations with ALL their participants
     const queryBuilder = this.conversationRepository
       .createQueryBuilder('conversation')
       .leftJoinAndSelect('conversation.participants', 'participant')
       .leftJoinAndSelect('participant.user', 'user')
       .leftJoinAndSelect('conversation.messages', 'message')
-      .where(`conversation.id IN (${userParticipantQuery.getQuery()})`)
+      .where('conversation.id IN (' + userParticipantQuery.getQuery() + ')')
       .setParameters(userParticipantQuery.getParameters())
       .andWhere('conversation.status = :conversationStatus', {
         conversationStatus: 'active',
@@ -159,53 +145,69 @@ export class ChatService {
       .offset(offset);
 
     const conversations = await queryBuilder.getMany();
-    
-    // Enrich user data with profileImage from profile entities
-    // Since User doesn't have reverse relations to profiles, we need to fetch them separately
-    const mentorProfileRepository = this.dataSource.getRepository(MentorProfile);
-    const menteeProfileRepository = this.dataSource.getRepository(MenteeProfile);
-    
-    // Collect all unique user IDs to fetch profiles in batch
+
+    // Collect all user IDs and their roles
     const userIds = new Set<string>();
-    conversations.forEach((conversation) => {
-      conversation.participants?.forEach((participant) => {
-        if (participant.user?.id) {
-          userIds.add(participant.user.id);
+    const userRoleMap = new Map<string, 'mentor' | 'mentee'>();
+    
+    for (const conversation of conversations) {
+      if (conversation.participants) {
+        for (const participant of conversation.participants) {
+          if (participant.user) {
+            userIds.add(participant.user.id);
+            if (participant.user.role) {
+              userRoleMap.set(participant.user.id, participant.user.role as 'mentor' | 'mentee');
+            }
+          }
         }
-      });
-    });
-    
-    // Fetch all profiles in parallel
-    const [mentorProfiles, menteeProfiles] = await Promise.all([
-      mentorProfileRepository.find({
-        where: Array.from(userIds).map((id) => ({ userId: id })),
-        select: ['userId', 'profileImage'],
-      }),
-      menteeProfileRepository.find({
-        where: Array.from(userIds).map((id) => ({ userId: id })),
-        select: ['userId', 'profileImage'],
-      }),
-    ]);
-    
-    // Create maps for quick lookup
-    const mentorProfileMap = new Map(
-      mentorProfiles.map((p) => [p.userId, p.profileImage])
-    );
-    const menteeProfileMap = new Map(
-      menteeProfiles.map((p) => [p.userId, p.profileImage])
-    );
-    
-    // Enrich user data with profileImage
-    conversations.forEach((conversation) => {
-      conversation.participants?.forEach((participant) => {
-        if (participant.user) {
-          const user = participant.user as any;
-          // Try mentor profile first, then mentee profile
-          user.profileImage =
-            mentorProfileMap.get(user.id) || menteeProfileMap.get(user.id) || undefined;
+      }
+    }
+
+    // Batch load all profile images
+    const userIdsArray = Array.from(userIds);
+    if (userIdsArray.length > 0) {
+      const mentorUserIds = userIdsArray.filter(id => userRoleMap.get(id) === 'mentor');
+      const menteeUserIds = userIdsArray.filter(id => userRoleMap.get(id) === 'mentee');
+
+      const [mentorProfiles, menteeProfiles] = await Promise.all([
+        mentorUserIds.length > 0
+          ? this.dataSource.getRepository(MentorProfile).find({
+              where: { userId: In(mentorUserIds) },
+              select: ['userId', 'profileImage'],
+            })
+          : [],
+        menteeUserIds.length > 0
+          ? this.dataSource.getRepository(MenteeProfile).find({
+              where: { userId: In(menteeUserIds) },
+              select: ['userId', 'profileImage'],
+            })
+          : [],
+      ]);
+
+      // Create maps for quick lookup
+      const mentorProfileMap = new Map(
+        mentorProfiles.map(p => [p.userId, p.profileImage])
+      );
+      const menteeProfileMap = new Map(
+        menteeProfiles.map(p => [p.userId, p.profileImage])
+      );
+
+      // Enrich participants with profile images
+      for (const conversation of conversations) {
+        if (conversation.participants) {
+          for (const participant of conversation.participants) {
+            if (participant.user) {
+              const profileImage =
+                mentorProfileMap.get(participant.user.id) ||
+                menteeProfileMap.get(participant.user.id);
+              if (profileImage) {
+                (participant.user as any).profileImage = profileImage;
+              }
+            }
+          }
         }
-      });
-    });
+      }
+    }
 
     return conversations;
   }
@@ -222,6 +224,18 @@ export class ChatService {
       },
     });
     return !!participant;
+  }
+
+  async getConversationParticipants(
+    conversationId: string
+  ): Promise<ConversationParticipant[]> {
+    return await this.participantRepository.find({
+      where: {
+        conversationId,
+        status: PARTICIPANT_STATUS.ACTIVE,
+      },
+      relations: ['user'],
+    });
   }
 
   // Message Management
@@ -294,6 +308,16 @@ export class ChatService {
     );
   }
 
+  async markMessageAsDelivered(messageId: string): Promise<void> {
+    await this.messageRepository.update(
+      { id: messageId },
+      {
+        status: MESSAGE_STATUS.DELIVERED,
+        deliveredAt: new Date(),
+      }
+    );
+  }
+
   async markConversationAsRead(
     conversationId: string,
     userId: string
@@ -347,20 +371,23 @@ export class ChatService {
   ): Promise<void> {
     const updateData: any = {};
 
-    // Note: isOnline and lastSeen are not fields in ConversationParticipant entity
-    // Online status should be tracked separately if needed (e.g., in User entity or separate table)
-    
+    if (data.isOnline !== undefined) {
+      updateData.isOnline = data.isOnline;
+    }
+    if (data.lastSeen !== undefined) {
+      updateData.lastSeen = data.lastSeen;
+    }
     if (data.isTyping !== undefined) {
       updateData.isTyping = data.isTyping;
       updateData.typingAt = data.typingAt || new Date();
     }
 
-    // Only update if there's data to update
+    // Only update if there's something to update
     if (Object.keys(updateData).length > 0) {
-    await this.participantRepository.update(
-      { userId, conversationId },
-      updateData
-    );
+      await this.participantRepository.update(
+        { userId, conversationId },
+        updateData
+      );
     }
   }
 

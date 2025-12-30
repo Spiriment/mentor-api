@@ -57,6 +57,8 @@ export const authenticateToken = async (
         'birthday',
         'role',
         'isOnboardingComplete',
+        'mentorApprovalStatus',
+        'mentorApprovedAt',
         'isActive',
         'accountStatus',
         'currentStreak',
@@ -83,6 +85,13 @@ export const authenticateToken = async (
         'ACCOUNT_DEACTIVATED'
       );
     }
+
+    // Update last active timestamp (async, don't block the request)
+    userRepository
+      .update(user.id, { lastActiveAt: new Date() })
+      .catch((err) => {
+        console.error('Error updating lastActiveAt:', err);
+      });
 
     // Add user to request object
     req.user = user;

@@ -36,6 +36,12 @@ export class MenteeProfile extends BaseEntity {
   @Column({ name: 'christianExperience', nullable: true })
   christianExperience?: string;
 
+  @Column({ name: 'churchDenomination', nullable: true })
+  churchDenomination?: string;
+
+  @Column({ name: 'churchName', nullable: true })
+  churchName?: string;
+
   @Column({ name: 'bibleTopics', type: 'json', nullable: true })
   bibleTopics?: string[];
 
@@ -44,9 +50,6 @@ export class MenteeProfile extends BaseEntity {
 
   @Column({ name: 'mentorshipFormat', type: 'json', nullable: true })
   mentorshipFormat?: string[];
-
-  @Column({ name: 'availability', type: 'json', nullable: true })
-  availability?: string[];
 
   @Column({ name: 'mentorExpectations', type: 'json', nullable: true })
   mentorExpectations?: string[];

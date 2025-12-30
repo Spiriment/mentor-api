@@ -21,34 +21,62 @@ export class EmailService {
 
   constructor(queueService: QueueService | null) {
     this.queueService = queueService;
-    // Configure transporter based on port
-    const isSecurePort = Config.email.port === 465;
+
+    // Initialize logger first for error logging
+    this.logger = new Logger({
+      service: 'email-service',
+      level: process.env.LOG_LEVEL || 'info',
+    });
+
+    // Validate email configuration
+    if (
+      !Config.email.host ||
+      Config.email.host.trim() === '' ||
+      Config.email.host === 'mail'
+    ) {
+      const errorMsg = `Invalid SMTP_HOST configuration. Current value: "${
+        Config.email.host || 'undefined'
+      }". Please set SMTP_HOST in your .env file to a valid SMTP server (e.g., smtp.gmail.com, smtp.mailtrap.io, mail.yourdomain.com)`;
+      this.logger.error(
+        'Email service configuration error',
+        new Error(errorMsg)
+      );
+      throw new Error(errorMsg);
+    }
+
+    if (!Config.email.user || !Config.email.password) {
+      const errorMsg =
+        'SMTP_USER and SMTP_PASSWORD must be configured in .env file';
+      this.logger.error(
+        'Email service configuration error',
+        new Error(errorMsg)
+      );
+      throw new Error(errorMsg);
+    }
 
     this.transporter = nodemailer.createTransport({
       host: Config.email.host,
-      port: Config.email.port,
-      secure: isSecurePort, // true for 465, false for 587 (STARTTLS)
-      requireTLS: !isSecurePort, // Require TLS for port 587
+      port: Config.email.port || 587,
+      secure: Config.email.port === 465,
       auth: {
         user: Config.email.user,
         pass: Config.email.password,
       },
-      // Connection settings - increased timeouts for slow connections
-      connectionTimeout: 60000, // 60 seconds
-      greetingTimeout: 30000, // 30 seconds
-      socketTimeout: 60000, // 60 seconds
-      // TLS options for STARTTLS (port 587)
       tls: {
-        rejectUnauthorized: false, // Accept self-signed certificates
+        // Disable certificate validation for shared hosting with mismatched certificates
+        // This is safe when connecting to your own mail server
+        rejectUnauthorized: false,
       },
-      // Disable debug logging to reduce noise in logs
-      debug: false,
-      logger: false,
+      connectionTimeout: 10000, // 10 seconds connection timeout
+      greetingTimeout: 10000, // 10 seconds greeting timeout
+      socketTimeout: 10000, // 10 seconds socket timeout
     });
 
-    this.logger = new Logger({
-      service: 'email-service',
-      level: process.env.LOG_LEVEL || 'info',
+    this.logger.info('Email service initialized successfully', {
+      host: Config.email.host,
+      port: Config.email.port || 587,
+      from: Config.email.from,
+      user: Config.email.user?.substring(0, 3) + '***', // Log partial email for security
     });
 
     this.baseLayout = fs.readFileSync(
@@ -103,50 +131,57 @@ export class EmailService {
   }
 
   public async sendEmail(options: EmailJobData): Promise<void> {
-    // Default attachments including the logo
+    // Attach logo if not already attached
     const logoPath = path.join(__dirname, '../mails/assets/logo.png');
-    const defaultAttachments: any[] = [];
+    const attachments = options.attachments || [];
 
-    // Only add logo if the file exists
+    // Add logo as attachment if it exists and not already included
     if (fs.existsSync(logoPath)) {
-      defaultAttachments.push({
-        filename: 'logo.png',
-        path: logoPath,
-        cid: 'mentor-app-logo', // Content-ID for embedding in email
-      });
-    } else {
-      this.logger.warn(`Logo file not found at: ${logoPath}`);
+      const hasLogo = attachments.some(
+        (att: any) => att.filename === 'logo.png' || att.cid === 'logo'
+      );
+      if (!hasLogo) {
+        attachments.push({
+          filename: 'logo.png',
+          path: logoPath,
+          cid: 'logo', // Content ID for embedding in HTML
+        });
+      }
     }
 
     const mailOptions = {
-      from: process.env.SMTP_FROM || Config.email.from,
+      from: process.env.SMTP_FROM,
       to: options.to,
       subject: options.subject,
       html: options.compiledContent,
-      attachments: options.attachments
-        ? [...defaultAttachments, ...options.attachments]
-        : defaultAttachments,
+      attachments,
     };
 
+    this.logger.info('📤 Attempting to send email', {
+      to: options.to,
+      subject: options.subject,
+      from: mailOptions.from,
+      hasAttachments: (mailOptions.attachments?.length || 0) > 0,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
-      const info = await this.transporter.sendMail(mailOptions);
-      this.logger.info('Email sent successfully', {
-        to: options.to,
-        subject: options.subject,
-        hasLogo: defaultAttachments.length > 0,
-        messageId: info.messageId,
-      });
+    await this.transporter.sendMail(mailOptions);
+
+    this.logger.info('✅ Email sent successfully', {
+      to: options.to,
+      subject: options.subject,
+      timestamp: new Date().toISOString(),
+    });
     } catch (error: any) {
-      this.logger.error('Failed to send email', error, {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      this.logger.error('❌ Failed to send email', errorObj, {
         to: options.to,
         subject: options.subject,
-        errorMessage: error.message,
         errorCode: error.code,
-        errorStack: error.stack,
-        smtpHost: Config.email.host,
-        smtpPort: Config.email.port,
+        timestamp: new Date().toISOString(),
       });
-      throw error;
+      throw error; // Re-throw to let caller handle
     }
   }
 
@@ -156,11 +191,18 @@ export class EmailService {
       throw new Error(`Partial ${partialName} not found`);
     }
     const bodyContent = partial(data);
+    
+    // Check if the template is standalone HTML (starts with <!DOCTYPE html>)
+    // If so, return it directly without wrapping in baseLayout
+    if (bodyContent.trim().startsWith('<!DOCTYPE html>') || bodyContent.trim().startsWith('<!doctype html>')) {
+      return bodyContent;
+    }
+    
+    // Otherwise, wrap in baseLayout
     return this.baseTemplate({
       ...data,
       body: bodyContent,
       currentYear: new Date().getFullYear(),
-      appUrl: data.appUrl || Config.appUrl || '',
     });
   }
 
@@ -171,9 +213,6 @@ export class EmailService {
     userName?: string;
     actionUrl?: string;
     actionText?: string;
-    type?: string;
-    priority?: 'high' | 'medium' | 'low' | 'urgent';
-    title?: string;
   }): Promise<void> {
     const content = this.generateEmailContent(
       {
@@ -181,10 +220,6 @@ export class EmailService {
         message: props.message,
         actionUrl: props.actionUrl,
         actionText: props.actionText,
-        type: props.type,
-        priority: props.priority || 'low',
-        title: props.title,
-        appUrl: Config.appUrl,
       },
       'notification'
     );
@@ -225,23 +260,16 @@ export class EmailService {
 
       if (this.queueService) {
         await this.queueService.sendEmail(jobData);
-        this.logger.info('Dynamic email queued successfully', {
-          to: options.to,
-          subject: options.subject,
-          sectionsCount: options.data.sections.length,
-        });
-      } else {
-        // Send directly if no queue service (for development/testing)
-        await this.sendEmail(jobData);
-        this.logger.info('Dynamic email sent successfully', {
-          to: options.to,
-          subject: options.subject,
-          sectionsCount: options.data.sections.length,
-        });
       }
+
+      this.logger.info('Dynamic email queued successfully', {
+        to: options.to,
+        subject: options.subject,
+        sectionsCount: options.data.sections.length,
+      });
     } catch (error) {
       this.logger.error(
-        'Failed to send dynamic email',
+        'Failed to queue dynamic email',
         error instanceof Error ? error : new Error(String(error)),
         {
           to: options.to,
@@ -273,10 +301,9 @@ export class EmailService {
     };
 
     if (this.queueService) {
-      // Use queue if available
       await this.queueService.sendEmail(jobData);
     } else {
-      // Send directly if no queue service (for development/testing)
+      // Send directly if no queue service (for mentor app)
       await this.sendEmail(jobData);
     }
   }
@@ -289,7 +316,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Password Reset - Mentor App',
+      subject: 'Password Reset - Spiriment',
       partialName: 'password-reset',
       templateData: {
         title: 'Password Reset',
@@ -376,20 +403,45 @@ export class EmailService {
     verificationCode: string,
     isLogin: boolean = false
   ): Promise<void> {
-    // Send email with template
-    await this.sendEmailWithTemplate({
+    this.logger.info('📧 Sending email verification', {
       to,
-      subject: isLogin
-        ? 'Login Verification Code - Mentor App'
-        : 'Email Verification - Mentor App',
-      partialName: 'email-verification',
-      templateData: {
-        title: isLogin ? 'Login Verification' : 'Email Verification',
-        userName,
-        verificationCode,
-        isLogin,
-      },
+      userName,
+      isLogin,
+      verificationCodeLength: verificationCode.length,
+      timestamp: new Date().toISOString(),
     });
+
+    try {
+      // Send email with template
+      await this.sendEmailWithTemplate({
+        to,
+        subject: isLogin
+          ? 'Login Verification Code - Spiriment'
+          : 'Email Verification - Spiriment',
+        partialName: 'email-verification',
+        templateData: {
+          title: isLogin ? 'Login Verification' : 'Email Verification',
+          userName,
+          verificationCode,
+          isLogin,
+        },
+      });
+
+      this.logger.info('✅ Email verification sent successfully', {
+        to,
+        isLogin,
+      });
+    } catch (error) {
+      this.logger.error(
+        '❌ Failed to send email verification',
+        error instanceof Error ? error : new Error(String(error)),
+        {
+          to,
+          isLogin,
+        }
+      );
+      throw error;
+    }
 
     // Also log for development/testing
     this.logger.info(`🔐 OTP sent to ${to}: ${verificationCode}`, {
@@ -453,6 +505,333 @@ export class EmailService {
         email: to,
         password,
         link: 'https://aptfuel.com',
+      },
+    });
+  }
+
+  public async sendSessionRequestEmail(
+    to: string,
+    mentorName: string,
+    menteeName: string,
+    scheduledTime: string,
+    duration: number,
+    description?: string,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `New Session Request from ${menteeName} - Spiriment`,
+      partialName: 'session-request',
+      templateData: {
+        title: 'New Session Request',
+        mentorName,
+        menteeName,
+        scheduledTime,
+        duration,
+        description,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionAcceptedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Accepted by ${mentorName} - Spiriment`,
+      partialName: 'session-accepted',
+      templateData: {
+        title: 'Session Accepted',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        duration,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionDeclinedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    reason?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Request Update - Spiriment`,
+      partialName: 'session-declined',
+      templateData: {
+        title: 'Session Request Update',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        reason,
+        appUrl: appUrl || 'spiriment://mentors',
+      },
+    });
+  }
+
+  public async sendSessionReminderEmail(
+    to: string,
+    userName: string,
+    partnerName: string,
+    scheduledTime: string,
+    duration: number,
+    timeUntil: string,
+    role: 'mentor' | 'mentee',
+    description?: string,
+    sessionType?: string,
+    location?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `⏰ Session Reminder: Your session starts in ${timeUntil} - Spiriment`,
+      partialName: 'session-reminder',
+      templateData: {
+        title: `Session Reminder - ${timeUntil}`,
+        userName,
+        partnerName,
+        scheduledTime,
+        duration,
+        timeUntil,
+        role,
+        description,
+        sessionType,
+        location,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleRequestEmail(
+    to: string,
+    mentorName: string,
+    menteeName: string,
+    currentScheduledTime: string,
+    newScheduledTime: string,
+    duration: number,
+    reason?: string,
+    message?: string,
+    sessionType?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `📅 Session Reschedule Request from ${menteeName} - Spiriment`,
+      partialName: 'session-reschedule-request',
+      templateData: {
+        title: 'Session Reschedule Request',
+        mentorName,
+        menteeName,
+        currentScheduledTime,
+        newScheduledTime,
+        duration,
+        reason,
+        message,
+        sessionType,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleAcceptedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    previousScheduledTime: string,
+    newScheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    location?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `✅ Session Rescheduled - ${mentorName} Accepted - Spiriment`,
+      partialName: 'session-reschedule-accepted',
+      templateData: {
+        title: 'Session Rescheduled',
+        menteeName,
+        mentorName,
+        previousScheduledTime,
+        newScheduledTime,
+        duration,
+        sessionType,
+        location,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionRescheduleDeclinedEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    scheduledTime: string,
+    duration: number,
+    sessionType?: string,
+    location?: string,
+    reason?: string,
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `Session Time Confirmed - ${mentorName} - Spiriment`,
+      partialName: 'session-reschedule-declined',
+      templateData: {
+        title: 'Session Time Confirmed',
+        menteeName,
+        mentorName,
+        scheduledTime,
+        duration,
+        sessionType,
+        location,
+        reason,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  // Group Session Email Methods
+
+  public async sendGroupSessionInvitation(props: {
+    to: string;
+    menteeName: string;
+    mentorName: string;
+    sessionTitle: string;
+    sessionDescription: string;
+    scheduledAt: Date;
+    duration: number;
+    groupSessionId: string;
+    participantId: string;
+  }): Promise<void> {
+    const { format } = await import('date-fns');
+    const scheduledTime = format(props.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
+
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Group Session Invitation - ${props.sessionTitle} - Spiriment`,
+      partialName: 'group-session-invitation',
+      templateData: {
+        title: 'Group Session Invitation',
+        menteeName: props.menteeName,
+        mentorName: props.mentorName,
+        sessionTitle: props.sessionTitle,
+        sessionDescription: props.sessionDescription,
+        scheduledTime,
+        duration: props.duration,
+        groupSessionId: props.groupSessionId,
+        participantId: props.participantId,
+        acceptUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=true`,
+        declineUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=false`,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionAcceptance(props: {
+    to: string;
+    mentorName: string;
+    menteeName: string;
+    sessionTitle: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `${props.menteeName} Accepted Your Group Session - Spiriment`,
+      partialName: 'group-session-acceptance',
+      templateData: {
+        title: 'Group Session Accepted',
+        mentorName: props.mentorName,
+        menteeName: props.menteeName,
+        sessionTitle: props.sessionTitle,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionDecline(props: {
+    to: string;
+    mentorName: string;
+    menteeName: string;
+    sessionTitle: string;
+    declineReason?: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `${props.menteeName} Declined Your Group Session - Spiriment`,
+      partialName: 'group-session-decline',
+      templateData: {
+        title: 'Group Session Declined',
+        mentorName: props.mentorName,
+        menteeName: props.menteeName,
+        sessionTitle: props.sessionTitle,
+        declineReason: props.declineReason,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionReminder(props: {
+    to: string;
+    userName: string;
+    sessionTitle: string;
+    scheduledAt: Date;
+    duration: number;
+    mentorName: string;
+    timeUntilSession: string;
+  }): Promise<void> {
+    const { format } = await import('date-fns');
+    const scheduledTime = format(props.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
+
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Reminder: Group Session "${props.sessionTitle}" ${props.timeUntilSession} - Spiriment`,
+      partialName: 'group-session-reminder',
+      templateData: {
+        title: 'Group Session Reminder',
+        userName: props.userName,
+        sessionTitle: props.sessionTitle,
+        scheduledTime,
+        duration: props.duration,
+        mentorName: props.mentorName,
+        timeUntilSession: props.timeUntilSession,
+        appUrl: 'spiriment://group-sessions',
+      },
+    });
+  }
+
+  public async sendGroupSessionCancellation(props: {
+    to: string;
+    menteeName: string;
+    mentorName: string;
+    sessionTitle: string;
+    cancellationReason?: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Group Session Cancelled - ${props.sessionTitle} - Spiriment`,
+      partialName: 'group-session-cancellation',
+      templateData: {
+        title: 'Group Session Cancelled',
+        menteeName: props.menteeName,
+        mentorName: props.mentorName,
+        sessionTitle: props.sessionTitle,
+        cancellationReason: props.cancellationReason,
+        appUrl: 'spiriment://sessions',
       },
     });
   }

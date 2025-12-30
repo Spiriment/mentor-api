@@ -1,57 +1,69 @@
-<html lang="en">
+<html lang='en'>
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset='UTF-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
     <title>{{title}}</title>
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
+      href='https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap'
+      rel='stylesheet'
     />
     <style>
       * { box-sizing: border-box; } body { margin: 0; padding: 0;
-      background-color: #f5f5f5; font-family: 'Poppins', Arial, sans-serif; }
+      background-color: #F8F9FA; font-family: 'Poppins', Arial, sans-serif; }
       .email-container { max-width: 600px; margin: 0 auto; background-color:
-      #ffffff; padding: 30px 25px; border-radius: 10px; box-shadow: 0 2px 10px
-      rgba(0, 0, 0, 0.05); color: #333; } .logo-container { text-align: center;
-      margin-bottom: 20px; } .logo-container img { width: 80px; height: 80px; }
-      .content { font-size: 16px; line-height: 1.6; color: #333; } .footer {
-      margin-top: 30px; text-align: center; } .footer hr { border: none;
-      border-top: 1px solid #e0e0e0; margin: 30px 0; } .support-text {
-      font-size: 14px; color: #666; margin-bottom: 10px; } .support-link {
-      color: #002E66; text-decoration: none; font-weight: 600; } .tagline {
-      font-size: 13px; font-style: italic; color: #999; margin-top: 10px; }
-      .copyright { font-size: 12px; color: #999; margin-top: 8px; } @media
-      (max-width: 520px) { .email-container { padding: 20px 15px; } }
+      #FFFFFF; padding: 30px 25px; border-radius: 10px; box-shadow: 0 2px 10px
+      rgba(0, 0, 0, 0.05); color: #162419; } .logo-container { text-align:
+      center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px
+      solid #EBEEEC; } .logo-container img { max-width: 180px; width: auto;
+      height: auto; } .content { font-size: 16px; line-height: 1.7; color:
+      #162419; } .content h1, .content h2, .content h3 { color: #3A5A40;
+      margin-top: 0; } .content a { color: #3A5A40; text-decoration: none;
+      font-weight: 500; } .content a:hover { color: #162419; text-decoration:
+      underline; } .button { display: inline-block; padding: 14px 32px;
+      background-color: #3A5A40; color: #FFFFFF !important; text-decoration:
+      none; border-radius: 8px; font-weight: 600; margin: 20px 0; transition:
+      background-color 0.3s ease; } .button:hover { background-color: #162419;
+      text-decoration: none !important; } .info-box { background-color: #EBEEEC;
+      border-left: 4px solid #3A5A40; padding: 16px; margin: 20px 0;
+      border-radius: 4px; } .info-box strong { color: #3A5A40; } .footer {
+      margin-top: 40px; text-align: center; padding-top: 30px; } .footer hr {
+      border: none; border-top: 1px solid #C0CBC3; margin: 30px 0; }
+      .support-text { font-size: 14px; color: #162419; margin-bottom: 10px; }
+      .support-link { color: #3A5A40; text-decoration: none; font-weight: 600; }
+      .support-link:hover { color: #162419; text-decoration: underline; }
+      .tagline { font-size: 13px; font-style: italic; color: #3A5A40;
+      margin-top: 10px; font-weight: 500; } .copyright { font-size: 12px; color:
+      #999999; margin-top: 8px; } @media (max-width: 520px) { .email-container {
+      padding: 20px 15px; } .logo-container { margin-bottom: 20px;
+      padding-bottom: 15px; } .button { padding: 12px 24px; font-size: 14px; } }
     </style>
   </head>
   <body>
-    <div class="email-container">
-      <div class="logo-container">
-        <img
-          src="cid:mentor-app-logo"
-          alt="Mentor App Logo"
-          style="width: 80px; height: 80px; object-fit: contain;"
-        />
+    <div class='email-container'>
+      <div class='logo-container'>
+        <img src='cid:logo' alt='Spiriment Logo' />
       </div>
 
-      <div class="content">
+      <div class='content'>
         {{{body}}}
       </div>
 
-      <div class="footer">
+      <div class='footer'>
         <hr />
-        <p class="support-text">
+        <p class='support-text'>
           Need assistance? Contact
-          <a href="mailto:support@mentorapp.com" class="support-link">Support</a>,
-          we are here to help.
+          <a
+            href='mailto:support@spiriment.com'
+            class='support-link'
+          >Support</a>, we are here to help.
         </p>
-        <p class="tagline">
-          Mentor App – Connect, Grow, Mentor
+        <p class='tagline'>
+          Spiriment – Connect, Mentor,Grow
         </p>
-        <p class="copyright">
+        <p class='copyright'>
           ©
           {{currentYear}}
-          Mentor App. All rights reserved.
+          Spiriment. All rights reserved.
         </p>
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   VerifyOtpDTO,
   UpdateProfileDTO,
   SelectRoleDTO,
+  GoogleSignInDTO,
 } from '../validation/auth.validation';
 import { EmailService } from '@/core/email.service';
 import { RoleEnum } from '@/common/auth/rbac';
@@ -34,6 +35,7 @@ import { UserRepository } from '@/repository/user.repository';
 import { generateOTP } from '@/common/helpers/auth';
 import { FileUploadService } from '@/core/fileUpload.service';
 import { StatusCodes } from 'http-status-codes';
+import { OAuth2Client } from 'google-auth-library';
 
 export class AuthService {
   private logger: Logger;
@@ -558,17 +560,47 @@ export class AuthService {
         isEmailVerified: true,
         otpToken: true,
         otpTokenExpiry: true,
-        role: true,
-        isOnboardingComplete: true,
       },
     });
 
     const verificationToken = this.generateEmailVerificationToken();
     const tokenExpiry = addMinutes(new Date(), 10);
 
-    if (existingUser) {
-      // User exists - send OTP for login/verification
-      // Update OTP even if already verified (for login flow)
+    // If user exists and is verified, treat this as a login request
+    if (existingUser && existingUser.isEmailVerified) {
+      // Generate and send OTP for login
+      await this.UserRepository.update(existingUser.id, {
+        otpToken: verificationToken,
+        otpTokenExpiry: tokenExpiry,
+      });
+
+      // Send OTP email for login (non-blocking - don't await)
+      this.emailService.sendEmailVerificationEmail(
+        data.email,
+        existingUser.firstName || 'User',
+        verificationToken,
+        false
+      ).then(() => {
+      this.logger.info('Login OTP sent to existing user', { email: data.email });
+      }).catch((emailError: any) => {
+        // Log email error but don't fail login - user can request OTP again
+        const errorObj = emailError instanceof Error ? emailError : new Error(String(emailError));
+        this.logger.error('Failed to send login OTP email', errorObj, {
+          email: data.email,
+          errorCode: emailError.code,
+        });
+      });
+
+      return {
+        message: 'Verification code sent to your email',
+        isExistingUser: true,
+        isEmailVerified: true,
+      };
+    }
+
+    // New user or unverified user - registration flow
+    if (existingUser && !existingUser.isEmailVerified) {
+      // Update existing user with new OTP
       await this.UserRepository.update(existingUser.id, {
         otpToken: verificationToken,
         otpTokenExpiry: tokenExpiry,
@@ -580,42 +612,34 @@ export class AuthService {
         otpToken: verificationToken,
         otpTokenExpiry: tokenExpiry,
         isEmailVerified: false,
+        timezone: 'UTC', // Explicitly set timezone to avoid database issues
       });
 
       await this.UserRepository.save(User);
     }
 
-    // Send OTP email asynchronously (don't block the response)
-    // Fire and forget - don't await, let it run in background
+    // Send OTP email for registration (non-blocking - don't await)
+    // This allows the API to respond immediately while email is sent in background
     this.emailService.sendEmailVerificationEmail(
       data.email,
       existingUser?.firstName || 'User',
       verificationToken,
-      !!existingUser?.isEmailVerified // isLogin flag
+      false
     ).then(() => {
-      this.logger.info('OTP sent successfully', { email: data.email });
+    this.logger.info('Registration OTP sent successfully', { email: data.email });
     }).catch((emailError: any) => {
-      // Log email error but don't fail the registration
-      // OTP is still generated and stored, user can see it in logs for development
-      const errorMessage = emailError?.message || emailError?.toString() || 'Unknown email error';
-      const error = emailError instanceof Error ? emailError : new Error(errorMessage);
-      this.logger.error('Failed to send OTP email, but OTP is still valid', error, {
+      // Log email error but don't fail registration - user can request OTP again
+      const errorObj = emailError instanceof Error ? emailError : new Error(String(emailError));
+      this.logger.error('Failed to send registration OTP email', errorObj, {
         email: data.email,
-        errorCode: emailError?.code,
-        otp: verificationToken, // Log OTP for development/testing
+        errorCode: emailError.code,
       });
     });
 
-    // Return immediately - don't wait for email
     return {
       message: 'Verification code sent to your email',
-      isExistingUser: !!existingUser,
-      isEmailVerified: existingUser?.isEmailVerified || false,
-      // In development, include OTP in response for testing (remove in production)
-      ...(process.env.NODE_ENV !== 'production' && {
-        otp: verificationToken,
-        note: 'OTP included for development only',
-      }),
+      isExistingUser: false,
+      isEmailVerified: false,
     };
   };
 
@@ -632,6 +656,7 @@ export class AuthService {
         isOnboardingComplete: true,
         otpToken: true,
         otpTokenExpiry: true,
+        emailVerifiedAt: true,
       },
     });
 
@@ -651,31 +676,85 @@ export class AuthService {
       throw new AppError('Invalid verification code', 400);
     }
 
-    // Mark email as verified and clear OTP
-    await this.UserRepository.update(User.id, {
-      isEmailVerified: true,
-      emailVerifiedAt: new Date(),
-      otpToken: null as any,
-      otpTokenExpiry: null as any,
-    });
+    const isExistingVerifiedUser = User.isEmailVerified;
 
-    this.logger.info('OTP verified successfully', { email: data.email });
+    // If user is already verified, this is a login - just clear OTP
+    // If user is not verified, this is registration - mark as verified
+    if (isExistingVerifiedUser) {
+      // Login flow - just clear OTP
+      await this.UserRepository.update(User.id, {
+        otpToken: null as any,
+        otpTokenExpiry: null as any,
+      });
+      this.logger.info('Login OTP verified successfully', { email: data.email });
+    } else {
+      // Registration flow - mark email as verified and clear OTP
+      await this.UserRepository.update(User.id, {
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
+        otpToken: null as any,
+        otpTokenExpiry: null as any,
+      });
+      this.logger.info('Registration OTP verified successfully', { email: data.email });
+    }
 
-    // Generate and return tokens with user data
+    // Check profile table for onboarding completion status (in case User table is not updated)
+    let isOnboardingComplete = User.isOnboardingComplete || false;
+    if (User.role && !isOnboardingComplete) {
+      try {
+        if (User.role === 'mentee') {
+          const MenteeProfile = await this.UserRepository.manager.getRepository('MenteeProfile').findOne({
+            where: { userId: User.id },
+            select: ['isOnboardingComplete'],
+          });
+          if (MenteeProfile?.isOnboardingComplete) {
+            isOnboardingComplete = true;
+            // Update User table to sync
+            await this.UserRepository.update(User.id, { isOnboardingComplete: true });
+          }
+        } else if (User.role === 'mentor') {
+          const MentorProfile = await this.UserRepository.manager.getRepository('MentorProfile').findOne({
+            where: { userId: User.id },
+            select: ['isOnboardingComplete'],
+          });
+          if (MentorProfile?.isOnboardingComplete) {
+            isOnboardingComplete = true;
+            // Update User table to sync
+            await this.UserRepository.update(User.id, { isOnboardingComplete: true });
+          }
+        }
+      } catch (profileError) {
+        this.logger.warn('Error checking profile onboarding status', { error: profileError });
+        // Continue with User table value if profile check fails
+      }
+    }
+
+    // Generate and return tokens
     const tokens = this.generateTokens(User);
-    return {
+    
+    // Return user data for existing users (login flow) so frontend knows role and onboarding status
+    const response: any = {
       ...tokens,
-      message: 'Email verified successfully',
-      user: {
+      message: isExistingVerifiedUser 
+        ? 'Login successful' 
+        : 'Email verified successfully',
+      isExistingUser: isExistingVerifiedUser,
+    };
+    
+    // Include user data for existing verified users (login flow)
+    if (isExistingVerifiedUser) {
+      response.user = {
         id: User.id,
         email: User.email,
-        firstName: User.firstName,
-        lastName: User.lastName,
-        role: User.role,
-        isEmailVerified: true,
-        isOnboardingComplete: User.isOnboardingComplete || false,
-      },
-    };
+        firstName: User.firstName || '',
+        lastName: User.lastName || '',
+        role: User.role || '',
+        isVerified: User.isEmailVerified || false,
+        isOnboardingComplete: isOnboardingComplete,
+      };
+    }
+    
+    return response;
   };
 
   updateUserProfile = async (data: UpdateProfileDTO): Promise<any> => {
@@ -735,10 +814,11 @@ export class AuthService {
       throw new AppError('Email not verified', 400);
     }
 
-    // Update user role - onboarding is NOT complete yet (role-specific onboarding still needed)
+    // Update user role - do NOT mark onboarding as complete yet
+    // Onboarding will be marked complete after role-specific onboarding is finished
     await this.UserRepository.update(User.id, {
       role: data.role,
-      isOnboardingComplete: false, // Will be set to true after role-specific onboarding
+      isOnboardingComplete: false, // Keep false until role-specific onboarding is complete
     });
 
     // Get updated user for token generation
@@ -912,5 +992,143 @@ export class AuthService {
       },
       token: tokens.accessToken,
     };
+  };
+
+  googleSignIn = async (data: GoogleSignInDTO): Promise<TokenResponse> => {
+    try {
+      // Initialize Google OAuth client
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (!clientId) {
+        this.logger.error('GOOGLE_CLIENT_ID is not configured');
+        throw new AppError('Google authentication is not configured', 500);
+      }
+
+      const client = new OAuth2Client(clientId);
+
+      // Verify the ID token
+      const ticket = await client.verifyIdToken({
+        idToken: data.idToken,
+        audience: clientId,
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload) {
+        throw new AppError('Invalid Google token', 401);
+      }
+
+      // Extract user information from Google payload
+      const googleId = payload.sub;
+      const email = payload.email;
+      const emailVerified = payload.email_verified || false;
+      const firstName = payload.given_name || '';
+      const lastName = payload.family_name || '';
+      const profilePicture = payload.picture || null;
+
+      if (!email) {
+        throw new AppError('Email not provided by Google', 400);
+      }
+
+      // Check if user exists by email
+      // Note: If you add googleId field to User entity, you can search by it too
+      let user = await this.UserRepository.findOne({
+        where: { email },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          isActive: true,
+          isEmailVerified: true,
+          isOnboardingComplete: true,
+          password: true,
+        },
+      });
+
+      if (user) {
+        // User exists - update fields if needed
+        const updateData: any = {};
+
+        // Mark email as verified if Google says it's verified
+        if (emailVerified && !user.isEmailVerified) {
+          updateData.isEmailVerified = true;
+        }
+
+        // Update name if not set
+        if (!user.firstName && firstName) {
+          updateData.firstName = firstName;
+        }
+        if (!user.lastName && lastName) {
+          updateData.lastName = lastName;
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await this.UserRepository.update(user.id, updateData);
+        }
+
+        if (!user.isActive) {
+          throw new AppError('Account is inactive', 401);
+        }
+      } else {
+        // Create new user
+        const newUser = this.UserRepository.create({
+          email,
+          firstName,
+          lastName,
+          isEmailVerified: emailVerified,
+          isActive: true,
+          // Set a random password (user won't use it, but field is required)
+          password: await bcrypt.hash(
+            `google_${googleId}_${Date.now()}`,
+            10
+          ),
+        });
+
+        user = await this.UserRepository.save(newUser);
+        this.logger.info('New user created via Google Sign-In', {
+          userId: user.id,
+          email: user.email,
+        });
+      }
+
+      // Generate JWT tokens
+      const tokens = this.generateTokens(user);
+
+      // Fetch full user data for response
+      const fullUser = await this.UserRepository.findOne({
+        where: { id: user.id },
+      });
+
+      if (!fullUser) {
+        throw new AppError(
+          'User not found after creation/update',
+          StatusCodes.INTERNAL_SERVER_ERROR
+        );
+      }
+
+      return {
+        ...tokens,
+        user: {
+          id: fullUser.id,
+          email: fullUser.email,
+          firstName: fullUser.firstName || '',
+          lastName: fullUser.lastName || '',
+          role: fullUser.role || '',
+          isVerified: fullUser.isEmailVerified || false,
+          isOnboardingComplete: fullUser.isOnboardingComplete || false,
+        },
+        isEmailVerified: user.isEmailVerified,
+        accountStatus: user.accountStatus,
+      };
+    } catch (error: any) {
+      this.logger.error('Google Sign-In error', error);
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(
+        error.message || 'Google authentication failed',
+        401
+      );
+    }
   };
 }
