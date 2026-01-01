@@ -70,6 +70,10 @@ export const AppDataSource = new DataSource({
     Message,
     ConversationParticipant,
   ],
-  migrations: ['src/database/migrations/*.ts'],
+  migrations: [
+    process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'
+      ? 'dist/database/migrations/*.js'
+      : 'src/database/migrations/*.ts',
+  ],
   subscribers: [],
 });
