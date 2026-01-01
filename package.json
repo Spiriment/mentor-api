@@ -18,6 +18,7 @@
     "db-migrate:generate:prod": "NODE_ENV=production npx typeorm migration:generate ./src/database/migrations/MyNewMigration --outputJs -d dist/config/data-source.js",
     "db-migrate:generate:staging": "NODE_ENV=staging npx typeorm migration:generate ./src/database/migrations/MyNewMigration --outputJs -d dist/config/data-source.js",
     "db-migrate:run:staging": "NODE_ENV=staging npx typeorm migration:run --dataSource dist/config/data-source.js",
+    "db-migrate:sync:prod": "NODE_ENV=production npx typeorm schema:sync --dataSource dist/config/data-source.js",
     "migration:run": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/config/data-source.ts",
     "migration:revert": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/config/data-source.ts",
     "dev": "npm run start:dev",
