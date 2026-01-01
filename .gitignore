@@ -10,7 +10,6 @@ package-lock.json
 .env.production
 
 # Database migrations
-src/database/migrations/
 dist/database/migrations/
 
 
