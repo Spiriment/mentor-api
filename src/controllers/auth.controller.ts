@@ -446,6 +446,8 @@ export class AuthController {
           birthday: user.birthday,
           role: user.role,
           isOnboardingComplete: user.isOnboardingComplete,
+          mentorApprovalStatus: user.mentorApprovalStatus,
+          mentorApprovedAt: user.mentorApprovedAt,
           isActive: user.isActive,
           accountStatus: user.accountStatus,
           // Streak data

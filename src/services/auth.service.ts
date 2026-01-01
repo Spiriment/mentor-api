@@ -741,8 +741,8 @@ export class AuthService {
       isExistingUser: isExistingVerifiedUser,
     };
     
-    // Include user data for existing verified users (login flow)
-    if (isExistingVerifiedUser) {
+    // Include user data if user exists, so frontend knows role and onboarding status
+    if (User) {
       response.user = {
         id: User.id,
         email: User.email,
@@ -751,6 +751,7 @@ export class AuthService {
         role: User.role || '',
         isVerified: User.isEmailVerified || false,
         isOnboardingComplete: isOnboardingComplete,
+        mentorApprovalStatus: User.mentorApprovalStatus,
       };
     }
     
