@@ -25,6 +25,7 @@
     "db-seed:prod": "NODE_ENV=production node database/seeders/seed-runner.js",
     "db-seed:staging": "NODE_ENV=staging node database/seeders/seed-runner.js",
     "build-and-seed:prod": "npm run build:main && npm run db-seed:prod",
+    "check:dist": "node -e \"const fs = require('fs'); const path = './dist/config/data-source.js'; if (fs.existsSync(path)) { console.log('✅ Found:', path); } else { console.error('❌ Missing:', path); process.exit(1); }\"",
     "db:clear": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/clear-database.ts"
   },
   "dependencies": {
@@ -70,6 +71,8 @@
     "tsconfig-paths": "^4.2.0",
     "typeorm": "^0.3.20",
     "typeorm-extension": "^3.7.1",
+    "typescript": "^5.3.3",
+    "cross-env": "^7.0.3",
     "uuid": "^13.0.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
@@ -80,9 +83,7 @@
     "@types/crypto-js": "^4.2.2",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/nodemailer": "^6.4.17",
-    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
+    "ts-node-dev": "^2.0.0"
   }
 }
