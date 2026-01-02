@@ -12,12 +12,14 @@ export type BibleLanguage = 'eng' | 'deu' | 'nld' | 'spa' | 'fra' | 'ita';
 export type BibleTranslation = 'KJV' | 'NIV' | 'NKJV' | 'NLT' | 'ESV' | 'NASB' | 'CSB' | 'WEB' | 'ASV';
 
 // Mapping of translation codes to Bible Brain Dam IDs
+// Note: These fileset IDs may change or not be available for all books
+// The system will fall back to alternative sources if these fail
 const TRANSLATION_DAM_IDS: Record<BibleTranslation, string> = {
-  KJV: 'ENGESVN2DA', // King James Version
-  NIV: 'ENGNIVN2ET', // New International Version
+  KJV: 'ENGKJVN2ET', // King James Version (was incorrectly set to ESV)
+  NIV: 'ENGNIVN2ET', // New International Version  
   NKJV: 'ENGNKJN2ET', // New King James Version
   NLT: 'ENGNLTN2ET', // New Living Translation
-  ESV: 'ENGESVN2ET', // English Standard Version
+  ESV: 'ENGESVN2DA', // English Standard Version
   NASB: 'ENGNASN2ET', // New American Standard Bible
   CSB: 'ENGCSBN2ET', // Christian Standard Bible
   WEB: 'ENGWEBN2ET', // World English Bible
@@ -1369,6 +1371,7 @@ export class BibleService {
 
   /**
    * Fetch chapter with specific English translation
+   * Includes fallback to other translations if the requested one fails
    */
   private async getChapterWithTranslation(
     book: string,
@@ -1378,8 +1381,8 @@ export class BibleService {
     const damId = TRANSLATION_DAM_IDS[translation];
     const bookCode = BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
 
+    // Try the requested translation first
     try {
-      // Try to get verses using the dam_id directly
       const versesResponse = await axios.get(
         `${this.bibleBrainBaseUrl}/api/bibles/filesets/${damId}/${bookCode}/${chapter}`,
         {
@@ -1422,9 +1425,70 @@ export class BibleService {
         translation_name: TRANSLATION_NAMES[translation],
       };
     } catch (error: any) {
-      console.error(`Error fetching ${translation}:`, error);
+      console.error(`Error fetching ${translation}:`, error.message);
+      
+      // If the requested translation fails, try fallback translations
+      // This prevents 404 errors from crashing the entire request
+      const fallbackTranslations: BibleTranslation[] = ['ESV', 'KJV', 'WEB'];
+      
+      for (const fallback of fallbackTranslations) {
+        if (fallback === translation) continue; // Skip if it's the same as requested
+        
+        try {
+          console.log(`Trying fallback translation: ${fallback} for ${book} ${chapter}`);
+          const fallbackDamId = TRANSLATION_DAM_IDS[fallback];
+          
+          const versesResponse = await axios.get(
+            `${this.bibleBrainBaseUrl}/api/bibles/filesets/${fallbackDamId}/${bookCode}/${chapter}`,
+            {
+              params: {
+                key: this.bibleBrainApiKey,
+                v: 4,
+              },
+            }
+          );
+
+          let verses: any[] = [];
+          if (Array.isArray(versesResponse.data?.data)) {
+            verses = versesResponse.data.data;
+          } else if (Array.isArray(versesResponse.data)) {
+            verses = versesResponse.data;
+          }
+
+          if (verses && verses.length > 0) {
+            const formattedVerses = verses
+              .map((verse: any) => ({
+                book_id: bookCode,
+                book_name: book,
+                chapter: chapter,
+                verse: verse.verse_id || verse.verse || verse.verse_num || 0,
+                text: verse.verse_text || verse.text || '',
+              }))
+              .filter((v: any) => v.verse > 0 && v.text);
+
+            formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+
+            console.log(`Successfully fetched ${book} ${chapter} using fallback: ${fallback}`);
+            
+            return {
+              reference: `${book} ${chapter}`,
+              verses: formattedVerses,
+              text: formattedVerses.map((v: any) => `${v.verse} ${v.text}`).join(' '),
+              translation: fallback, // Return the actual translation used
+              translation_id: fallbackDamId,
+              translation_name: TRANSLATION_NAMES[fallback],
+              note: `Requested ${translation} but used ${fallback} as fallback`,
+            };
+          }
+        } catch (fallbackError: any) {
+          console.error(`Fallback ${fallback} also failed:`, fallbackError.message);
+          // Continue to next fallback
+        }
+      }
+      
+      // If all Bible Brain attempts fail, throw error to trigger bible-api.com fallback
       throw new Error(
-        `Failed to fetch ${book} ${chapter} in ${translation}: ${error.message}`
+        `Failed to fetch ${book} ${chapter} in ${translation} and all fallback translations`
       );
     }
   }
