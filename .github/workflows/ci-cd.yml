@@ -33,7 +33,7 @@ jobs:
       - name: 📂 Create deployment directory
         run: |
           mkdir -p deploy
-          cp -r dist/* deploy/
+          cp -r dist deploy/
           cp package.json deploy/
           cp package-lock.json deploy/
 
