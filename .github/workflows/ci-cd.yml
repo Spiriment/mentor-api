@@ -36,6 +36,7 @@ jobs:
           cp -r dist deploy/
           cp package.json deploy/
           cp package-lock.json deploy/
+          cp index.js deploy/
 
       - name: 📂 Sync via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
