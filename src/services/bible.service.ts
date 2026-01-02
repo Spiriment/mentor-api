@@ -1468,17 +1468,19 @@ export class BibleService {
 
             formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
 
-            console.log(`Successfully fetched ${book} ${chapter} using fallback: ${fallback}`);
-            
-            return {
-              reference: `${book} ${chapter}`,
-              verses: formattedVerses,
-              text: formattedVerses.map((v: any) => `${v.verse} ${v.text}`).join(' '),
-              translation: fallback, // Return the actual translation used
-              translation_id: fallbackDamId,
-              translation_name: TRANSLATION_NAMES[fallback],
-              note: `Requested ${translation} but used ${fallback} as fallback`,
-            };
+            if (formattedVerses.length > 0) {
+              console.log(`Successfully fetched ${book} ${chapter} using fallback: ${fallback}`);
+              
+              return {
+                reference: `${book} ${chapter}`,
+                verses: formattedVerses,
+                text: formattedVerses.map((v: any) => `${v.verse} ${v.text}`).join(' '),
+                translation: fallback, // Return the actual translation used
+                translation_id: fallbackDamId,
+                translation_name: TRANSLATION_NAMES[fallback],
+                note: `Requested ${translation} but used ${fallback} as fallback`,
+              };
+            }
           }
         } catch (fallbackError: any) {
           console.error(`Fallback ${fallback} also failed:`, fallbackError.message);
@@ -1486,7 +1488,7 @@ export class BibleService {
         }
       }
       
-      // If all Bible Brain attempts fail, throw error to trigger bible-api.com fallback
+      // If all Bible Brain attempts fail or return empty verses, throw error to trigger bible-api.com fallback
       throw new Error(
         `Failed to fetch ${book} ${chapter} in ${translation} and all fallback translations`
       );
