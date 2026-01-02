@@ -235,6 +235,24 @@ export class PushNotificationService {
       channelId: 'mentorship-requests',
     });
   }
+
+  /**
+   * Send a welcome notification
+   */
+  async sendWelcomeNotification(
+    pushToken: string,
+    userId: string,
+    userName: string
+  ): Promise<boolean> {
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title: '🌟 Welcome to Spiriment!',
+      body: `Hi ${userName}, we're glad to have you! Explore the app to find your perfect mentorship match.`,
+      data: { type: 'welcome' },
+      channelId: 'default',
+    });
+  }
 }
 
 export const pushNotificationService = new PushNotificationService();
