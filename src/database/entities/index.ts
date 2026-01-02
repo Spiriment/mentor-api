@@ -30,6 +30,8 @@ export * from './studyReflection.entity';
 export * from './conversation.entity';
 export * from './message.entity';
 export * from './conversationParticipant.entity';
+export * from './scheduledNotification.entity';
+
 
 // Notification entities
 export * from './appNotification.entity';

@@ -26,6 +26,7 @@ import {
   Conversation,
   Message,
   ConversationParticipant,
+  ScheduledNotification,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -69,6 +70,7 @@ export const AppDataSource = new DataSource({
     Conversation,
     Message,
     ConversationParticipant,
+    ScheduledNotification,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'
