@@ -5,6 +5,7 @@ import { RedisClient } from "@/common";
 import { SessionReminderService } from "@/services/sessionReminder.service";
 import { StreakNotificationService } from "@/services/streakNotification.service";
 import { ReengagementService } from "@/services/reengagement.service";
+import { notificationSchedulerService } from "@/services/notificationScheduler.service";
 import { EmailService } from "./email.service";
 
 export class CronService {
@@ -111,6 +112,28 @@ export class CronService {
 
       this.tasks.set("reengagement", reengagementTask);
       logger.info("Re-engagement cron job scheduled (daily at 10 AM UTC)");
+
+      // Schedule notification processing job - runs every minute
+      const notificationProcessingTask = cron.schedule(
+        "* * * * *", // Every minute
+        async () => {
+          try {
+            await notificationSchedulerService.processPendingNotifications();
+          } catch (error) {
+            logger.error(
+              "Error in notification processing cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("notification-processing", notificationProcessingTask);
+      logger.info("Notification processing cron job scheduled (every minute)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -172,6 +195,8 @@ export class CronService {
         return "0 12,20 * * * (Twice daily at 12 PM and 8 PM UTC)";
       case "reengagement":
         return "0 10 * * * (Daily at 10 AM UTC)";
+      case "notification-processing":
+        return "* * * * * (Every minute)";
       default:
         return "Unknown";
     }
