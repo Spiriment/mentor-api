@@ -6,6 +6,7 @@ import { Config } from '@/config';
 import { logger } from '@/config/int-services';
 import { User } from '@/database/entities';
 import { ChatService } from '@/services/chat.service';
+import { pushNotificationService } from '@/services/pushNotification.service';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -39,6 +40,17 @@ interface SocketEvents {
   // Reaction events
   'add-reaction': (data: { messageId: string; emoji: string }) => void;
   'remove-reaction': (messageId: string) => void;
+
+  // Call events
+  'call-invite': (data: {
+    sessionId?: string;
+    targetUserId: string;
+    callerName: string;
+    callerImage?: string;
+  }) => void;
+  'call-accept': (data: { sessionId?: string; callerId: string }) => void;
+  'call-reject': (data: { sessionId?: string; callerId: string }) => void;
+  'call-end': (data: { sessionId?: string; targetUserId: string }) => void;
 }
 
 export class WebSocketService {
@@ -163,6 +175,23 @@ export class WebSocketService {
       await this.handleRemoveReaction(socket, messageId);
     });
 
+    // Handle video calls
+    socket.on('call-invite', (data: any) => {
+      this.handleCallInvite(socket, data);
+    });
+
+    socket.on('call-accept', (data: any) => {
+      this.handleCallAccept(socket, data);
+    });
+
+    socket.on('call-reject', (data: any) => {
+      this.handleCallReject(socket, data);
+    });
+
+    socket.on('call-end', (data: any) => {
+      this.handleCallEnd(socket, data);
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
       this.handleDisconnection(socket);
@@ -285,6 +314,22 @@ export class WebSocketService {
           messageId: message.id,
           deliveredAt: new Date(),
         });
+      } else {
+        // Recipient is offline, send push notification to all other participants
+        const participants = await this.chatService.getConversationParticipants(conversationId);
+        const sender = socket.user!;
+        const senderName = `${sender.firstName} ${sender.lastName || ''}`.trim();
+
+        for (const participant of participants) {
+          if (participant.userId !== socket.userId && participant.user?.pushToken) {
+            await pushNotificationService.sendNewMessageNotification(
+              participant.user.pushToken,
+              participant.userId,
+              senderName,
+              content
+            );
+          }
+        }
       }
 
       logger.info(
@@ -448,6 +493,50 @@ export class WebSocketService {
     } catch (error: any) {
       logger.error('Error broadcasting user status:', error);
     }
+  }
+
+  // Call handling methods
+  private handleCallInvite(socket: AuthenticatedSocket, data: any) {
+    const { targetUserId, sessionId, callerName, callerImage } = data;
+    logger.info(`Call invite from ${socket.userId} to ${targetUserId}`);
+
+    // Send to target user room
+    this.io.to(`user:${targetUserId}`).emit('call-invite', {
+      callerId: socket.userId,
+      callerName: callerName || `${socket.user?.firstName} ${socket.user?.lastName || ''}`.trim(),
+      callerImage: callerImage,
+      sessionId,
+    });
+  }
+
+  private handleCallAccept(socket: AuthenticatedSocket, data: any) {
+    const { callerId, sessionId } = data;
+    logger.info(`Call accepted by ${socket.userId} for caller ${callerId}`);
+
+    this.io.to(`user:${callerId}`).emit('call-accepted', {
+      acceptorId: socket.userId,
+      sessionId,
+    });
+  }
+
+  private handleCallReject(socket: AuthenticatedSocket, data: any) {
+    const { callerId, sessionId } = data;
+    logger.info(`Call rejected by ${socket.userId} for caller ${callerId}`);
+
+    this.io.to(`user:${callerId}`).emit('call-rejected', {
+      rejectorId: socket.userId,
+      sessionId,
+    });
+  }
+
+  private handleCallEnd(socket: AuthenticatedSocket, data: any) {
+    const { targetUserId, sessionId } = data;
+    logger.info(`Call ended by ${socket.userId} for ${targetUserId}`);
+
+    this.io.to(`user:${targetUserId}`).emit('call-ended', {
+      enderId: socket.userId,
+      sessionId,
+    });
   }
 
   // Public methods for external use
