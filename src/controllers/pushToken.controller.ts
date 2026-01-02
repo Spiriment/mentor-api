@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AppDataSource } from '../config/data-source';
 import { User } from '../database/entities/user.entity';
 import { Logger } from '../common';
-import { pushNotificationService } from '../services/pushNotification.service';
+import { notificationSchedulerService } from '../services/notificationScheduler.service';
 
 export class PushTokenController {
   private userRepository = AppDataSource.getRepository(User);
@@ -40,28 +40,19 @@ export class PushTokenController {
 
       this.logger.info(`Push token updated for user ${userId}`);
 
-      // Schedule a welcome notification after 2 minutes (test for user)
-      setTimeout(async () => {
-        try {
-          const updatedUser = await this.userRepository.findOne({
-            where: { id: userId },
-            select: ['id', 'firstName', 'pushToken']
-          });
+      // Get user's first name for the welcome notification
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'firstName'],
+      });
 
-          if (updatedUser && updatedUser.pushToken === pushToken) {
-            this.logger.info(`Sending delayed welcome notification to user ${userId}`);
-            await pushNotificationService.sendWelcomeNotification(
-              pushToken,
-              userId,
-              updatedUser.firstName || 'User'
-            );
-          }
-        } catch (timerError) {
-          this.logger.error('Error in delayed welcome notification timer', 
-            timerError instanceof Error ? timerError : new Error(String(timerError))
-          );
-        }
-      }, 120000); // 2 minutes
+      // Schedule a welcome notification in the database (survives server restarts)
+      await notificationSchedulerService.scheduleWelcomeNotification(
+        userId,
+        pushToken,
+        user?.firstName || 'User',
+        2 // 2 minutes delay
+      );
 
       return res.status(200).json({
         success: true,
