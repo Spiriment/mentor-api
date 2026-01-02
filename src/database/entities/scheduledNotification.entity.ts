@@ -7,7 +7,7 @@ import {
   Index,
 } from 'typeorm';
 
-export type NotificationType = 'welcome' | 'session_reminder' | 'message' | 'other';
+export type ScheduledNotificationType = 'welcome' | 'session_reminder' | 'message' | 'other';
 export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
 
 @Entity('scheduled_notifications')
@@ -29,7 +29,7 @@ export class ScheduledNotification {
     enum: ['welcome', 'session_reminder', 'message', 'other'],
     default: 'other',
   })
-  type: NotificationType;
+  type: ScheduledNotificationType;
 
   @Column({ type: 'varchar', length: 255 })
   title: string;
