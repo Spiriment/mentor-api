@@ -46,13 +46,24 @@ export class PushTokenController {
         select: ['id', 'firstName'],
       });
 
+      this.logger.info(`📋 User found: ${user?.id}, firstName: ${user?.firstName}`);
+
       // Schedule a welcome notification in the database (survives server restarts)
-      await notificationSchedulerService.scheduleWelcomeNotification(
-        userId,
-        pushToken,
-        user?.firstName || 'User',
-        2 // 2 minutes delay
-      );
+      try {
+        this.logger.info(`🔔 Attempting to schedule welcome notification for user ${userId}`);
+        
+        const scheduledNotification = await notificationSchedulerService.scheduleWelcomeNotification(
+          userId,
+          pushToken,
+          user?.firstName || 'User',
+          2 // 2 minutes delay
+        );
+
+        this.logger.info(`✅ Welcome notification scheduled successfully: ${scheduledNotification.id}`);
+      } catch (scheduleError) {
+        this.logger.error('❌ FAILED to schedule welcome notification', scheduleError instanceof Error ? scheduleError : new Error(String(scheduleError)));
+        // Don't fail the whole request if notification scheduling fails
+      }
 
       return res.status(200).json({
         success: true,
