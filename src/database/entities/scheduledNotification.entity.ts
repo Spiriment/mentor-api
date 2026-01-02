@@ -37,7 +37,7 @@ export class ScheduledNotification {
   @Column({ type: 'text' })
   body: string;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'json', nullable: true })
   data?: Record<string, any>;
 
   @Column({ type: 'timestamp' })
