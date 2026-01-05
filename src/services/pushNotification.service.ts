@@ -253,6 +253,81 @@ export class PushNotificationService {
       channelId: 'default',
     });
   }
+
+  /**
+   * Send mentor approval notification
+   */
+  async sendMentorApprovalNotification(
+    pushToken: string,
+    userId: string,
+    userName: string
+  ): Promise<boolean> {
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title: '🎊 Profile Approved!',
+      body: `Congratulations ${userName}, your mentor profile has been approved! You are now visible to mentees.`,
+      data: { type: 'mentor_approval' },
+      channelId: 'default',
+    });
+  }
+
+  /**
+   * Send session request notification
+   */
+  async sendSessionRequestNotification(
+    pushToken: string,
+    userId: string,
+    menteeName: string,
+    sessionTime: string
+  ): Promise<boolean> {
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title: '📅 New Session Request',
+      body: `${menteeName} has requested a session for ${sessionTime}.`,
+      data: { type: 'session_request' },
+      channelId: 'session-reminders',
+    });
+  }
+
+  /**
+   * Send session status update notification
+   */
+  async sendSessionStatusNotification(
+    pushToken: string,
+    userId: string,
+    partnerName: string,
+    status: 'accepted' | 'declined' | 'rescheduled',
+    sessionTime: string
+  ): Promise<boolean> {
+    let title = '';
+    let body = '';
+
+    switch (status) {
+      case 'accepted':
+        title = '✅ Session Accepted';
+        body = `${partnerName} has accepted your session on ${sessionTime}.`;
+        break;
+      case 'declined':
+        title = '❌ Session Declined';
+        body = `${partnerName} has declined your session request for ${sessionTime}.`;
+        break;
+      case 'rescheduled':
+        title = '📅 Session Rescheduled';
+        body = `${partnerName} has requested to reschedule the session for ${sessionTime}.`;
+        break;
+    }
+
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title,
+      body,
+      data: { type: 'session_status_update', status },
+      channelId: 'session-reminders',
+    });
+  }
 }
 
 export const pushNotificationService = new PushNotificationService();
