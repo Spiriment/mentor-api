@@ -58,6 +58,8 @@ export interface UpdateSessionDTO {
   mentorNotes?: string;
   menteeNotes?: string;
   sessionNotes?: string;
+  sessionSummary?: string;
+  assignments?: string[];
   status?: SESSION_STATUS;
 }
 

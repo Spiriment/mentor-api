@@ -786,6 +786,7 @@ export class AuthService {
       country: data.country,
       countryCode: data.countryCode,
       birthday: birthday,
+      timezone: data.timezone || User.timezone || 'UTC',
     });
 
     this.logger.info('User profile updated', { email: data.email });

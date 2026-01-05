@@ -54,6 +54,8 @@ export const updateSessionSchema = z.object({
   mentorNotes: z.string().max(1000, 'Notes too long').optional(),
   menteeNotes: z.string().max(1000, 'Notes too long').optional(),
   sessionNotes: z.string().max(1000, 'Notes too long').optional(),
+  sessionSummary: z.string().max(2000, 'Summary too long').optional(),
+  assignments: z.array(z.string()).optional(),
   status: z.nativeEnum(SESSION_STATUS).optional(),
   startedAt: z
     .string()
@@ -69,6 +71,13 @@ export const updateSessionSchema = z.object({
     })
     .optional()
     .or(z.date().optional()),
+});
+
+// Add session notes validation
+export const addSessionNotesSchema = z.object({
+  notes: z.string().max(2000, 'Notes too long').optional(),
+  summary: z.string().max(2000, 'Summary too long').optional(),
+  assignments: z.array(z.string()).optional(),
 });
 
 // Cancel session validation
