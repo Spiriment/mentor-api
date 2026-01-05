@@ -127,6 +127,30 @@ studyRoutes.post(
   }
 );
 
+
+studyRoutes.put(
+  '/reflections/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = (req as any).user?.id as string;
+      const { id } = req.params;
+      const { content } = req.body;
+
+      const updated = await studyService.updateReflection(userId, id, { content });
+
+      if (!updated) {
+        return res
+          .status(404)
+          .json({ success: false, message: 'Reflection not found' });
+      }
+
+      res.json({ success: true, data: updated });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 studyRoutes.delete(
   '/reflections/:id',
   async (req: Request, res: Response, next: NextFunction) => {

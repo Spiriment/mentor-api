@@ -146,6 +146,21 @@ export class StudyService {
     return books.sort();
   }
 
+  async updateReflection(
+    userId: string,
+    reflectionId: string,
+    data: Partial<Pick<StudyReflection, 'content'>>
+  ): Promise<StudyReflection | null> {
+    const reflection = await this.reflectionRepo.findOne({
+      where: { id: reflectionId, userId },
+    });
+
+    if (!reflection) return null;
+
+    const updated = this.reflectionRepo.merge(reflection, data);
+    return this.reflectionRepo.save(updated);
+  }
+
   async deleteReflection(userId: string, reflectionId: string): Promise<boolean> {
     const result = await this.reflectionRepo.delete({
       id: reflectionId,
