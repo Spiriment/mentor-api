@@ -27,6 +27,10 @@ import {
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { pushNotificationService } from './pushNotification.service';
+import {
+  MentorshipRequest,
+  MENTORSHIP_REQUEST_STATUS,
+} from '@/database/entities/mentorshipRequest.entity';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -106,6 +110,24 @@ export class SessionService {
 
       if (!mentee) {
         throw new AppError('Mentee not found', StatusCodes.NOT_FOUND);
+      }
+
+      // 1. Verify mentorship status
+      const mentorshipRequest = await AppDataSource.getRepository(
+        MentorshipRequest
+      ).findOne({
+        where: {
+          mentorId: data.mentorId,
+          menteeId: data.menteeId,
+          status: MENTORSHIP_REQUEST_STATUS.ACCEPTED,
+        },
+      });
+
+      if (!mentorshipRequest) {
+        throw new AppError(
+          'You can only book sessions with mentors who have accepted your mentorship request',
+          StatusCodes.FORBIDDEN
+        );
       }
 
       // Use a transaction to prevent race conditions

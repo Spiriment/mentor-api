@@ -128,8 +128,9 @@ export class WebSocketService {
     // Join user to their personal room for notifications
     socket.join(`user:${userId}`);
 
-    // Broadcast user online status to all their conversations
-    await this.broadcastUserOnlineStatus(userId, true);
+    // Broadcast user online status via socket only (not DB)
+    // to update status indicators without breaking push notification logic.
+    await this.broadcastUserOnlineStatus(userId, true, false);
 
     logger.info(`User ${user.email} connected (socket: ${socket.id})`);
 
@@ -239,11 +240,23 @@ export class WebSocketService {
     }
   }
 
-  private handleLeaveConversation(
+  private async handleLeaveConversation(
     socket: AuthenticatedSocket,
     conversationId: string
   ) {
     socket.leave(`conversation:${conversationId}`);
+    
+    // Update user's online status in conversation to false
+    // This means they are no longer actively viewing the chat
+    await this.chatService.updateParticipantStatus(
+      socket.userId!,
+      conversationId,
+      {
+        isOnline: false,
+        lastSeen: new Date(),
+      }
+    );
+
     socket.emit('left-conversation', { conversationId });
     logger.info(`User ${socket.userId} left conversation ${conversationId}`);
   }
@@ -292,36 +305,36 @@ export class WebSocketService {
         message
       );
 
-      // Check if recipient is online and mark as delivered (double tick)
+      // Send notifications to other participants
       const participants = await this.chatService.getConversationParticipants(conversationId);
-      const recipientOnline = participants.some(
-        (p) => p.userId !== socket.userId && p.isOnline
-      );
+      const sender = socket.user!;
+      const senderName = `${sender.firstName} ${sender.lastName || ''}`.trim();
 
-      if (recipientOnline) {
-        // Mark as delivered
-        await this.chatService.markMessageAsDelivered(message.id);
+      for (const participant of participants) {
+        // Skip sender
+        if (participant.userId === socket.userId) continue;
 
-        // Notify sender that message was delivered (double tick)
-        socket.emit('message-delivered', {
-          messageId: message.id,
-          status: 'delivered',
-          deliveredAt: new Date(),
-        });
+        if (participant.isOnline) {
+          // Recipient is actively viewing the conversation
+          // We can mark message as delivered if at least one other participant is online
+          await this.chatService.markMessageAsDelivered(message.id);
 
-        // Also broadcast to conversation
-        this.io.to(`conversation:${conversationId}`).emit('message-delivered', {
-          messageId: message.id,
-          deliveredAt: new Date(),
-        });
-      } else {
-        // Recipient is offline, send push notification to all other participants
-        const participants = await this.chatService.getConversationParticipants(conversationId);
-        const sender = socket.user!;
-        const senderName = `${sender.firstName} ${sender.lastName || ''}`.trim();
+          // Notify sender that message was delivered
+          socket.emit('message-delivered', {
+            messageId: message.id,
+            status: 'delivered',
+            deliveredAt: new Date(),
+          });
 
-        for (const participant of participants) {
-          if (participant.userId !== socket.userId && participant.user?.pushToken) {
+          // Also broadcast to conversation room
+          this.io.to(`conversation:${conversationId}`).emit('message-delivered', {
+            messageId: message.id,
+            deliveredAt: new Date(),
+          });
+        } else {
+          // Recipient is NOT viewing the conversation (might be elsewhere in app or offline)
+          // Send push notification if they have a token
+          if (participant.user?.pushToken) {
             await pushNotificationService.sendNewMessageNotification(
               participant.user.pushToken,
               participant.userId,
@@ -462,7 +475,11 @@ export class WebSocketService {
   /**
    * Broadcast user's online/offline status to all their conversations
    */
-  private async broadcastUserOnlineStatus(userId: string, isOnline: boolean) {
+  private async broadcastUserOnlineStatus(
+    userId: string,
+    isOnline: boolean,
+    updateDB: boolean = true
+  ) {
     try {
       const now = new Date();
 
@@ -471,14 +488,16 @@ export class WebSocketService {
 
       // Update status in all conversations
       for (const conversation of conversations) {
-        await this.chatService.updateParticipantStatus(
-          userId,
-          conversation.id,
-          {
-            isOnline,
-            lastSeen: isOnline ? now : now, // Update lastSeen on both connect and disconnect
-          }
-        );
+        if (updateDB) {
+          await this.chatService.updateParticipantStatus(
+            userId,
+            conversation.id,
+            {
+              isOnline,
+              lastSeen: now, // Update lastSeen accurately
+            }
+          );
+        }
 
         // Broadcast to conversation participants
         this.io.to(`conversation:${conversation.id}`).emit('user-status-changed', {

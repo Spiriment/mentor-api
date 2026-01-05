@@ -62,7 +62,7 @@ export class NotificationSchedulerService {
       userId,
       pushToken,
       type: 'welcome',
-      title: '🌟 Welcome to Spiriment!',
+      title: 'Welcome to Spiriment!',
       body: `Hi ${firstName}, we're glad to have you! Explore the app to find your perfect mentorship match.`,
       data: {
         screen: 'Home',
