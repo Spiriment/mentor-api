@@ -26,6 +26,7 @@ import {
 } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
+import { pushNotificationService } from './pushNotification.service';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -222,6 +223,21 @@ export class SessionService {
         });
       } catch (notifError: any) {
         logger.error('Failed to create in-app notification', notifError);
+      }
+
+      // Send push notification to mentor
+      try {
+        if (mentor.pushToken) {
+          const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+          await pushNotificationService.sendSessionRequestNotification(
+            mentor.pushToken,
+            mentor.id,
+            `${mentee.firstName} ${mentee.lastName}`,
+            scheduledTimeFormatted
+          );
+        }
+      } catch (pushError: any) {
+        logger.error('Failed to send session request push notification', pushError);
       }
 
       return savedSession;
@@ -1043,6 +1059,22 @@ export class SessionService {
         logger.error('Failed to create in-app notification', notifError);
       }
 
+      // Send push notification to mentee
+      try {
+        if (session.mentee?.pushToken) {
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          await pushNotificationService.sendSessionStatusNotification(
+            session.mentee.pushToken,
+            session.mentee.id,
+            `${session.mentor.firstName} ${session.mentor.lastName}`,
+            'accepted',
+            scheduledTimeFormatted
+          );
+        }
+      } catch (pushError: any) {
+        logger.error('Failed to send session acceptance push notification', pushError);
+      }
+
       return updatedSession;
     } catch (error: any) {
       logger.error('Error accepting session', error);
@@ -1135,6 +1167,22 @@ export class SessionService {
         });
       } catch (notifError: any) {
         logger.error('Failed to create in-app notification', notifError);
+      }
+
+      // Send push notification to mentee
+      try {
+        if (session.mentee?.pushToken) {
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          await pushNotificationService.sendSessionStatusNotification(
+            session.mentee.pushToken,
+            session.mentee.id,
+            `${session.mentor.firstName} ${session.mentor.lastName}`,
+            'declined',
+            scheduledTimeFormatted
+          );
+        }
+      } catch (pushError: any) {
+        logger.error('Failed to send session decline push notification', pushError);
       }
 
       return updatedSession;
@@ -1498,12 +1546,26 @@ export class SessionService {
           },
         });
       } catch (notifError: any) {
-        logger.error('Failed to create in-app notification', notifError);
+        logger.error('Failed to create in-app notification for acceptance', notifError);
+      }
+
+      // Send push notification to mentee
+      try {
+        if (finalSession.mentee?.pushToken) {
+          const scheduledTimeFormatted = formatSessionTime(finalSession.scheduledAt);
+          await pushNotificationService.sendSessionStatusNotification(
+            finalSession.mentee.pushToken,
+            finalSession.mentee.id,
+            `${finalSession.mentor.firstName} ${finalSession.mentor.lastName}`,
+            'accepted',
+            scheduledTimeFormatted
+          );
+        }
+      } catch (pushError: any) {
+        logger.error('Failed to send session acceptance push notification', pushError);
       }
 
       return finalSession;
-
-      return updatedSession;
     } catch (error: any) {
       logger.error('Error accepting session reschedule', error);
       throw error;
@@ -1599,6 +1661,22 @@ export class SessionService {
         });
       } catch (notifError: any) {
         logger.error('Failed to create in-app notification', notifError);
+      }
+
+      // Send push notification to mentee
+      try {
+        if (session.mentee?.pushToken) {
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          await pushNotificationService.sendSessionStatusNotification(
+            session.mentee.pushToken,
+            session.mentee.id,
+            `${session.mentor.firstName} ${session.mentor.lastName}`,
+            'declined',
+            scheduledTimeFormatted
+          );
+        }
+      } catch (pushError: any) {
+        logger.error('Failed to send session reschedule decline push notification', pushError);
       }
 
       return updatedSession;

@@ -3,6 +3,7 @@ import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
+import { pushNotificationService } from './pushNotification.service';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -147,6 +148,15 @@ export class MentorProfileService {
 
       this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
 
+      // Send push notification for auto-approval
+      if (completedProfile.user?.pushToken) {
+        await pushNotificationService.sendMentorApprovalNotification(
+          completedProfile.user.pushToken,
+          userId,
+          completedProfile.user.firstName || 'Mentor'
+        );
+      }
+
       return completedProfile;
     } catch (error) {
       this.logger.error('Error completing mentor onboarding', error instanceof Error ? error : new Error(String(error)));
@@ -237,6 +247,15 @@ export class MentorProfileService {
 
       const approvedProfile = await this.mentorProfileRepository.save(profile);
       this.logger.info(`Approved mentor profile for user ${userId}`);
+
+      // Send push notification
+      if (approvedProfile.user?.pushToken) {
+        await pushNotificationService.sendMentorApprovalNotification(
+          approvedProfile.user.pushToken,
+          userId,
+          approvedProfile.user.firstName || 'Mentor'
+        );
+      }
 
       return approvedProfile;
     } catch (error) {
