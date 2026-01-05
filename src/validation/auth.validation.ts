@@ -139,6 +139,7 @@ export const updateProfileSchema = z.object({
   country: z.string().min(1, 'Country is required'),
   countryCode: z.string().min(2, 'Country code is required'),
   birthday: z.string().min(1, 'Birthday is required'),
+  timezone: z.string().optional(),
 });
 
 export const selectRoleSchema = z.object({

@@ -650,6 +650,7 @@ export class AuthController {
         'country',
         'countryCode',
         'birthday',
+        'timezone',
       ];
 
       // Filter only allowed fields

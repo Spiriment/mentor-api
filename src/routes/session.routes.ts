@@ -8,6 +8,7 @@ import {
   cancelSessionSchema,
   createAvailabilitySchema,
   updateSessionStatusSchema,
+  addSessionNotesSchema,
   sessionQuerySchema,
   dateParamSchema,
 } from '@/validation/session.validation';
@@ -51,6 +52,13 @@ router.patch(
   '/:sessionId/status',
   validate(updateSessionStatusSchema),
   sessionController.updateSessionStatus
+);
+
+router.patch(
+  '/:sessionId/notes',
+  requireRole(['mentor']),
+  validate(addSessionNotesSchema),
+  sessionController.addSessionNotes
 );
 
 // Accept/Decline session (mentor only)

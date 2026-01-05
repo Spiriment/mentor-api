@@ -433,6 +433,47 @@ export class SessionController {
   };
 
   /**
+   * Add session notes, summary, and assignments
+   * PATCH /api/sessions/:sessionId/notes
+   */
+  addSessionNotes = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+      const { notes, summary, assignments } = req.body;
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      const updateData: UpdateSessionDTO = {
+        mentorNotes: notes,
+        sessionSummary: summary,
+        assignments: assignments,
+      };
+
+      const session = await this.sessionService.updateSession(
+        sessionId,
+        updateData,
+        user.id
+      );
+
+      this.logger.info('Session notes added successfully', {
+        sessionId,
+        mentorId: user.id,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session notes added successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error adding session notes', error);
+      next(error);
+    }
+  };
+
+  /**
    * Accept a session request (mentor only)
    * POST /api/sessions/:sessionId/accept
    */
