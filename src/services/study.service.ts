@@ -1,4 +1,4 @@
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { StudyProgress } from '@/database/entities/studyProgress.entity';
 import { StudySession } from '@/database/entities/studySession.entity';
 import { StudyReflection } from '@/database/entities/studyReflection.entity';
@@ -83,6 +83,8 @@ export class StudyService {
       book?: string;
       page?: number;
       limit?: number;
+      startDate?: string;
+      endDate?: string;
     }
   ): Promise<{
     reflections: StudyReflection[];
@@ -101,6 +103,13 @@ export class StudyService {
     const where: any = { userId };
     if (options?.book) {
       where.book = options.book;
+    }
+    if (options?.startDate && options?.endDate) {
+      where.createdAt = Between(new Date(options.startDate), new Date(options.endDate));
+    } else if (options?.startDate) {
+      where.createdAt = MoreThanOrEqual(new Date(options.startDate));
+    } else if (options?.endDate) {
+      where.createdAt = LessThanOrEqual(new Date(options.endDate));
     }
 
     // Get total count
