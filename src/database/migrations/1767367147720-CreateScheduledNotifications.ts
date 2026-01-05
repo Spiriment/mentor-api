@@ -8,14 +8,14 @@ export class CreateScheduledNotifications1767367147720 implements MigrationInter
         columns: [
           {
             name: 'id',
-            type: 'uuid',
+            type: 'varchar',
+            length: '36',
             isPrimary: true,
-            generationStrategy: 'uuid',
-            default: 'uuid_generate_v4()',
           },
           {
             name: 'userId',
-            type: 'uuid',
+            type: 'varchar',
+            length: '36',
             isNullable: false,
           },
           {
@@ -44,12 +44,12 @@ export class CreateScheduledNotifications1767367147720 implements MigrationInter
           },
           {
             name: 'data',
-            type: 'jsonb',
+            type: 'json',
             isNullable: true,
           },
           {
             name: 'scheduledFor',
-            type: 'timestamp',
+            type: 'datetime',
             isNullable: false,
           },
           {
@@ -61,7 +61,7 @@ export class CreateScheduledNotifications1767367147720 implements MigrationInter
           },
           {
             name: 'sentAt',
-            type: 'timestamp',
+            type: 'datetime',
             isNullable: true,
           },
           {
@@ -77,14 +77,15 @@ export class CreateScheduledNotifications1767367147720 implements MigrationInter
           },
           {
             name: 'createdAt',
-            type: 'timestamp',
-            default: 'now()',
+            type: 'datetime',
+            default: 'CURRENT_TIMESTAMP',
             isNullable: false,
           },
           {
             name: 'updatedAt',
-            type: 'timestamp',
-            default: 'now()',
+            type: 'datetime',
+            default: 'CURRENT_TIMESTAMP',
+            onUpdate: 'CURRENT_TIMESTAMP',
             isNullable: false,
           },
         ],

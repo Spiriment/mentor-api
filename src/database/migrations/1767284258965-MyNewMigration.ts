@@ -4,6 +4,11 @@ export class MyNewMigration1767284258965 implements MigrationInterface {
     name = 'MyNewMigration1767284258965'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        // Drop foreign keys first to avoid ER_DROP_INDEX_FK
+        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_c63848de9a345d16698e56aa809\``);
+        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_da84943e34461834ce82b0b5c19\``);
+        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_b8a51c2490a5c8ca2e14c0c87e6\``);
+
         await queryRunner.query(`DROP INDEX \`IDX_session_reviews_menteeId\` ON \`session_reviews\``);
         await queryRunner.query(`DROP INDEX \`IDX_session_reviews_mentorId\` ON \`session_reviews\``);
         await queryRunner.query(`DROP INDEX \`IDX_session_reviews_sessionId\` ON \`session_reviews\``);
@@ -17,9 +22,6 @@ export class MyNewMigration1767284258965 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX \`IDX_mentorship_requests_mentor_mentee_unique\` ON \`mentorship_requests\``);
         await queryRunner.query(`ALTER TABLE \`sessions\` DROP COLUMN \`timezone\``);
         await queryRunner.query(`ALTER TABLE \`sessions\` ADD \`timezone\` varchar(255) NOT NULL DEFAULT 'UTC'`);
-        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_c63848de9a345d16698e56aa809\``);
-        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_da84943e34461834ce82b0b5c19\``);
-        await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP FOREIGN KEY \`FK_b8a51c2490a5c8ca2e14c0c87e6\``);
         await queryRunner.query(`ALTER TABLE \`session_reviews\` DROP COLUMN \`sessionId\``);
         await queryRunner.query(`ALTER TABLE \`session_reviews\` ADD \`sessionId\` varchar(255) NULL`);
         await queryRunner.query(`ALTER TABLE \`session_reviews\` ADD UNIQUE INDEX \`IDX_c63848de9a345d16698e56aa80\` (\`sessionId\`)`);

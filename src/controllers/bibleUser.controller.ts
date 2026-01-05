@@ -11,7 +11,8 @@ export class BibleUserController {
   addBookmark = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleBookmark);
-      const entity = repo.create({ userId: req.user!.id, ...req.body });
+      const userId = req.user!.id as string;
+      const entity = repo.create({ userId, ...req.body });
       const saved = await repo.save(entity);
       res.json({ success: true, data: saved });
     } catch (err) {
@@ -29,7 +30,8 @@ export class BibleUserController {
       const skip = (pageNum - 1) * limitNum;
 
       // Build where clause
-      const where: any = { userId: req.user!.id };
+      const userId = req.user!.id as string;
+      const where: any = { userId };
       if (book) {
         where.book = book as string;
       }
