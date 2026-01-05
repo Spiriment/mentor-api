@@ -247,7 +247,7 @@ export class PushNotificationService {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '🌟 Welcome to Spiriment!',
+      title: 'Welcome to Spiriment!',
       body: `Hi ${userName}, we're glad to have you! Explore the app to find your perfect mentorship match.`,
       data: { type: 'welcome' },
       channelId: 'default',

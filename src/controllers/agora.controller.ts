@@ -5,15 +5,19 @@ import { Logger } from '@/common';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { SessionService } from '../services/session.service';
+import { ChatService } from '../services/chat.service';
+import { AppDataSource } from '@/config/data-source';
 
 export class AgoraController {
   private agoraService: AgoraService;
   private sessionService: SessionService;
+  private chatService: ChatService;
   private logger: Logger;
 
   constructor() {
     this.agoraService = new AgoraService();
     this.sessionService = new SessionService();
+    this.chatService = new ChatService(AppDataSource);
     this.logger = new Logger({
       service: 'agora-controller',
       level: process.env.LOG_LEVEL || 'info',
@@ -38,14 +42,31 @@ export class AgoraController {
         throw new AppError('Session ID is required', StatusCodes.BAD_REQUEST);
       }
 
-      // Verify user is part of this session
-      const session = await this.sessionService.getSessionById(
-        sessionId,
-        user.id
-      );
+      // 1. First, try to find a mentorship session
+      let session = null;
+      try {
+        session = await this.sessionService.getSessionById(
+          sessionId,
+          user.id
+        );
+      } catch (error) {
+        // If it's not a session, we'll try to find a conversation next
+        this.logger.debug('ID is not a session ID, checking conversation', { sessionId });
+      }
 
+      // 2. If no session, check if it's a conversation
       if (!session) {
-        throw new AppError('Session not found', StatusCodes.NOT_FOUND);
+        const isParticipant = await this.chatService.isUserParticipant(
+          user.id,
+          sessionId
+        );
+
+        if (!isParticipant) {
+          throw new AppError(
+            'You do not have permission to join this call (not a session or conversation participant)',
+            StatusCodes.FORBIDDEN
+          );
+        }
       }
 
       // Use session ID as channel name
