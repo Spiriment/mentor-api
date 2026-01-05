@@ -11,6 +11,7 @@ bibleUserRoutes.use(authenticateToken);
 bibleUserRoutes.get('/bookmarks/books', controller.getBookmarkBooks);
 bibleUserRoutes.get('/bookmarks', controller.getBookmarks);
 bibleUserRoutes.post('/bookmarks', controller.addBookmark);
+bibleUserRoutes.delete('/bookmarks/:id', controller.deleteBookmark);
 
 // Highlights
 bibleUserRoutes.get('/highlights', controller.getHighlights);
