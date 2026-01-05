@@ -32,6 +32,8 @@ export enum AppNotificationType {
   STREAK_FREEZE_USED = 'streak_freeze_used',
   STREAK_BROKEN = 'streak_broken',
   MESSAGE = 'message',
+  WELCOME = 'welcome',
+  MENTOR_APPROVAL = 'mentor_approval',
   SYSTEM = 'system',
 }
 

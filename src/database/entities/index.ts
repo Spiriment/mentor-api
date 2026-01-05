@@ -21,6 +21,7 @@ export * from './bibleBookmark.entity';
 export * from './bibleHighlight.entity';
 export * from './bibleReflection.entity';
 export * from './bibleProgress.entity';
+
 // Study entities
 export * from './studyProgress.entity';
 export * from './studySession.entity';
@@ -32,9 +33,11 @@ export * from './message.entity';
 export * from './conversationParticipant.entity';
 export * from './scheduledNotification.entity';
 
-
 // Notification entities
 export * from './appNotification.entity';
 
 // Review entities
 export * from './review.entity';
+
+export * from './base.entity';
+export * from './baseInt.entity';

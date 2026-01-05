@@ -1,9 +1,9 @@
 import { Entity, Column, ManyToOne, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { BaseEntityInt } from './baseInt.entity';
 import { User } from './user.entity';
 
 @Entity('study_sessions')
-export class StudySession extends BaseEntity {
+export class StudySession extends BaseEntityInt {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   user!: User;
 

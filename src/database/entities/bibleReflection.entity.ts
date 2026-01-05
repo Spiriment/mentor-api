@@ -1,8 +1,8 @@
 import { Column, Entity, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { BaseEntityInt } from './baseInt.entity';
 
 @Entity('bible_reflections')
-export class BibleReflection extends BaseEntity {
+export class BibleReflection extends BaseEntityInt {
   @Index()
   @Column('varchar')
   userId!: string;

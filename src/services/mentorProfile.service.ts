@@ -4,6 +4,8 @@ import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
 import { pushNotificationService } from './pushNotification.service';
+import { getAppNotificationService } from './appNotification.service';
+import { AppNotificationType } from '../database/entities/appNotification.entity';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -157,6 +159,20 @@ export class MentorProfileService {
         );
       }
 
+      // Create in-app notification for auto-approval
+      try {
+        const notificationService = getAppNotificationService();
+        await notificationService.createNotification({
+          userId,
+          type: AppNotificationType.MENTOR_APPROVAL,
+          title: '🎉 Welcome, Mentor!',
+          message: 'Your profile has been approved. You can now start receiving session requests.',
+          data: { type: 'mentor_approval' },
+        });
+      } catch (notifError: any) {
+        this.logger.error('Failed to create in-app notification for mentor approval', notifError);
+      }
+
       return completedProfile;
     } catch (error) {
       this.logger.error('Error completing mentor onboarding', error instanceof Error ? error : new Error(String(error)));
@@ -255,6 +271,20 @@ export class MentorProfileService {
           userId,
           approvedProfile.user.firstName || 'Mentor'
         );
+      }
+
+      // Create in-app notification
+      try {
+        const notificationService = getAppNotificationService();
+        await notificationService.createNotification({
+          userId,
+          type: AppNotificationType.MENTOR_APPROVAL,
+          title: '🎉 Profile Approved',
+          message: 'An admin has reviewed and approved your mentor profile. Welcome to the team!',
+          data: { type: 'mentor_approval' },
+        });
+      } catch (notifError: any) {
+        this.logger.error('Failed to create in-app notification for admin approval', notifError);
       }
 
       return approvedProfile;
