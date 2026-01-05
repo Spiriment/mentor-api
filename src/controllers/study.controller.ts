@@ -127,4 +127,21 @@ studyRoutes.post(
   }
 );
 
+studyRoutes.delete(
+  '/reflections/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = (req as any).user?.id as string;
+      const { id } = req.params;
+      const success = await studyService.deleteReflection(userId, id);
+      if (!success) {
+        return res.status(404).json({ success: false, message: 'Reflection not found' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default studyRoutes;

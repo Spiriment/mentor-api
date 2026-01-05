@@ -145,4 +145,12 @@ export class StudyService {
     const books = Array.from(new Set(reflections.map(r => r.book)));
     return books.sort();
   }
+
+  async deleteReflection(userId: string, reflectionId: string): Promise<boolean> {
+    const result = await this.reflectionRepo.delete({
+      id: reflectionId,
+      userId,
+    });
+    return (result.affected || 0) > 0;
+  }
 }

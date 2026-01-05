@@ -219,4 +219,22 @@ export class BibleUserController {
       next(err);
     }
   };
+
+  deleteBookmark = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const repo = AppDataSource.getRepository(BibleBookmark);
+      const userId = req.user!.id as string;
+      const { id } = req.params;
+      
+      const result = await repo.delete({ id, userId });
+      
+      if (result.affected === 0) {
+        return res.status(404).json({ success: false, message: 'Bookmark not found' });
+      }
+      
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
