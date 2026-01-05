@@ -76,12 +76,14 @@ studyRoutes.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id as string;
-      const { book, page, limit } = req.query;
+      const { book, page, limit, startDate, endDate } = req.query;
 
       const result = await studyService.listReflections(userId, {
         book: book as string | undefined,
         page: page ? parseInt(page as string) : undefined,
         limit: limit ? parseInt(limit as string) : undefined,
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined,
       });
 
       res.json({

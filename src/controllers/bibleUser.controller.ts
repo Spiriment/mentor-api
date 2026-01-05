@@ -6,6 +6,7 @@ import {
   BibleReflection,
   BibleProgress,
 } from '@/database/entities';
+import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 
 export class BibleUserController {
   addBookmark = async (req: Request, res: Response, next: NextFunction) => {
@@ -23,7 +24,7 @@ export class BibleUserController {
   getBookmarks = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleBookmark);
-      const { book, page, limit } = req.query;
+      const { book, page, limit, startDate, endDate } = req.query;
 
       const pageNum = page ? parseInt(page as string) : 1;
       const limitNum = limit ? parseInt(limit as string) : 20;
@@ -34,6 +35,13 @@ export class BibleUserController {
       const where: any = { userId };
       if (book) {
         where.book = book as string;
+      }
+      if (startDate && endDate) {
+        where.createdAt = Between(new Date(startDate as string), new Date(endDate as string));
+      } else if (startDate) {
+        where.createdAt = MoreThanOrEqual(new Date(startDate as string));
+      } else if (endDate) {
+        where.createdAt = LessThanOrEqual(new Date(endDate as string));
       }
 
       // Get total count
@@ -92,8 +100,37 @@ export class BibleUserController {
   getHighlights = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleHighlight);
-      const list = await repo.find({ where: { userId: req.user!.id } });
-      res.json({ success: true, data: list });
+      const { book, page, limit } = req.query;
+
+      const pageNum = page ? parseInt(page as string) : 1;
+      const limitNum = limit ? parseInt(limit as string) : 20;
+      const skip = (pageNum - 1) * limitNum;
+
+      const userId = req.user!.id as string;
+      const where: any = { userId };
+      if (book) {
+        where.book = book as string;
+      }
+
+      const total = await repo.count({ where });
+
+      const list = await repo.find({
+        where,
+        order: { createdAt: 'DESC' },
+        take: limitNum,
+        skip,
+      });
+
+      res.json({
+        success: true,
+        data: list,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -113,8 +150,37 @@ export class BibleUserController {
   getReflections = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleReflection);
-      const list = await repo.find({ where: { userId: req.user!.id } });
-      res.json({ success: true, data: list });
+      const { book, page, limit } = req.query;
+
+      const pageNum = page ? parseInt(page as string) : 1;
+      const limitNum = limit ? parseInt(limit as string) : 20;
+      const skip = (pageNum - 1) * limitNum;
+
+      const userId = req.user!.id as string;
+      const where: any = { userId };
+      if (book) {
+        where.book = book as string;
+      }
+
+      const total = await repo.count({ where });
+
+      const list = await repo.find({
+        where,
+        order: { createdAt: 'DESC' },
+        take: limitNum,
+        skip,
+      });
+
+      res.json({
+        success: true,
+        data: list,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+        },
+      });
     } catch (err) {
       next(err);
     }
