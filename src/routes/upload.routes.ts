@@ -4,6 +4,7 @@ import {
   uploadProfileImage,
   uploadVideoIntroduction,
   uploadFiles,
+  uploadChatAttachment,
   handleUploadError,
 } from '../middleware/upload.middleware';
 
@@ -32,6 +33,14 @@ router.post(
   uploadFiles,
   handleUploadError,
   uploadController.uploadFiles
+);
+
+// Upload chat attachment
+router.post(
+  '/attachment',
+  uploadChatAttachment,
+  handleUploadError,
+  uploadController.uploadChatAttachment
 );
 
 // Serve uploaded files

@@ -6,6 +6,7 @@ import { Conversation } from './conversation.entity';
 export enum MESSAGE_TYPE {
   TEXT = 'text',
   IMAGE = 'image',
+  AUDIO = 'audio',
   FILE = 'file',
   SYSTEM = 'system',
   REACTION = 'reaction',
