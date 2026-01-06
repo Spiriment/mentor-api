@@ -55,6 +55,16 @@ export class CronService {
               error instanceof Error ? error : new Error(String(error))
             );
           }
+
+          // Run "Starting Now" reminders
+          try {
+            await this.sessionReminderService?.sendStartReminders();
+          } catch (error) {
+            logger.error(
+              'Error in "Starting Now" session reminder cron job:',
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
         },
         {
           timezone: "UTC",

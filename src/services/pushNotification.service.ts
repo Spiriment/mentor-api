@@ -147,11 +147,13 @@ export class PushNotificationService {
   ): Promise<boolean> {
     const title = minutesBefore === 60
       ? '⏰ Session Starting Soon'
-      : '⏰ Session Starting in 15 Minutes';
+      : (minutesBefore === 15 ? '⏰ Session Starting in 15 Minutes' : '🔔 Session Starting Now');
 
     const body = minutesBefore === 60
       ? `Your session with ${mentorName} starts in 1 hour at ${sessionTime}`
-      : `Your session with ${mentorName} starts in 15 minutes at ${sessionTime}`;
+      : (minutesBefore === 15 
+          ? `Your session with ${mentorName} starts in 15 minutes at ${sessionTime}`
+          : `Your session with ${mentorName} is starting now! Tap to join.`);
 
     return this.sendToUser({
       userId,
