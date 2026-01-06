@@ -651,6 +651,8 @@ export class AuthController {
         'countryCode',
         'birthday',
         'timezone',
+        'notificationPreferences',
+        'pushNotificationsEnabled',
       ];
 
       // Filter only allowed fields

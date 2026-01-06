@@ -54,6 +54,9 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'menteeCalling', type: 'json', nullable: true })
   menteeCalling?: string[];
 
+  @Column({ name: 'spiritualExpertise', type: 'json', nullable: true })
+  spiritualExpertise?: string[];
+
   @Column({ name: 'videoIntroduction', nullable: true })
   videoIntroduction?: string;
 

@@ -26,6 +26,7 @@ export enum AppNotificationType {
   GROUP_SESSION_RESPONSE = 'group_session_response',
   GROUP_SESSION_REMINDER = 'group_session_reminder',
   GROUP_SESSION_CANCELLED = 'group_session_cancelled',
+  GROUP_SESSION_STARTED = 'group_session_started',
   STREAK_REMINDER = 'streak_reminder',
   STREAK_MILESTONE = 'streak_milestone',
   STREAK_FREEZE_AWARDED = 'streak_freeze_awarded',

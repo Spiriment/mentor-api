@@ -154,6 +154,10 @@ const createRootRoutes = () => {
   // Push token routes
   rootRouter.use('/api/users/push-token', pushTokenRoutes);
 
+  // Admin routes
+  const adminRoutes = require('./admin.routes').default;
+  rootRouter.use('/api/admin', adminRoutes);
+
   // Serve uploaded files statically
   rootRouter.use('/uploads', (req, res, next) => {
     const uploadsPath = path.join(process.cwd(), 'uploads');

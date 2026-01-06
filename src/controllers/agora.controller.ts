@@ -6,18 +6,21 @@ import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { SessionService } from '../services/session.service';
 import { ChatService } from '../services/chat.service';
+import { GroupSessionService } from '../services/groupSession.service';
 import { AppDataSource } from '@/config/data-source';
 
 export class AgoraController {
   private agoraService: AgoraService;
   private sessionService: SessionService;
   private chatService: ChatService;
+  private groupSessionService: GroupSessionService;
   private logger: Logger;
 
   constructor() {
     this.agoraService = new AgoraService();
     this.sessionService = new SessionService();
     this.chatService = new ChatService(AppDataSource);
+    this.groupSessionService = new GroupSessionService();
     this.logger = new Logger({
       service: 'agora-controller',
       level: process.env.LOG_LEVEL || 'info',
@@ -54,7 +57,22 @@ export class AgoraController {
         this.logger.debug('ID is not a session ID, checking conversation', { sessionId });
       }
 
-      // 2. If no session, check if it's a conversation
+      // 2. If no session, check if it's a group session
+      if (!session) {
+        try {
+          const groupSession = await this.groupSessionService.getGroupSession(
+            sessionId,
+            user.id
+          );
+          if (groupSession) {
+            session = groupSession;
+          }
+        } catch (error) {
+          this.logger.debug('ID is not a group session ID', { sessionId });
+        }
+      }
+
+      // 3. If still no session, check if it's a conversation
       if (!session) {
         const isParticipant = await this.chatService.isUserParticipant(
           user.id,
@@ -63,7 +81,7 @@ export class AgoraController {
 
         if (!isParticipant) {
           throw new AppError(
-            'You do not have permission to join this call (not a session or conversation participant)',
+            'You do not have permission to join this call (not a session, group session or conversation participant)',
             StatusCodes.FORBIDDEN
           );
         }
