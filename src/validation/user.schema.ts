@@ -15,6 +15,8 @@ export const updateUserSchema = z.object({
   role: z.string().min(2).max(100).optional(),
   clientId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
+  notificationPreferences: z.array(z.string()).optional(),
+  pushNotificationsEnabled: z.boolean().optional(),
 });
 
 export const updateUserRoleSchema = z.object({

@@ -157,10 +157,16 @@ export class MenteeProfileService {
 
       const completedProfile = await this.menteeProfileRepository.save(profile);
       
-      // Also update the User table to mark onboarding as complete
-      await this.userRepository.update(userId, {
+      // Also update the User table to mark onboarding as complete and save notification preferences
+      const userUpdateData: any = {
         isOnboardingComplete: true,
-      });
+      };
+
+      if (data.notificationPreferences) {
+        userUpdateData.notificationPreferences = data.notificationPreferences;
+      }
+
+      await this.userRepository.update(userId, userUpdateData);
       
       this.logger.info(`Completed mentee onboarding for user ${userId}`);
 

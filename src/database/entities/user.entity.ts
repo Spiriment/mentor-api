@@ -135,4 +135,11 @@ export class User extends BaseEntity {
     day7?: Date;
     day30?: Date;
   };
+
+  // Notification preferences
+  @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
+  notificationPreferences?: string[]; // ['messages', 'session_reminders', 'mentorship_requests', 'study_reminders']
+
+  @Column({ name: 'pushNotificationsEnabled', type: 'boolean', default: true })
+  pushNotificationsEnabled!: boolean;
 }

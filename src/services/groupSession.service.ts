@@ -663,6 +663,11 @@ export class GroupSessionService {
 
       await this.groupSessionRepository.save(groupSession);
 
+      // Notify all accepted participants
+      this.sendStartNotifications(groupSession).catch(err => {
+        logger.error('Failed to send start notifications:', err);
+      });
+
       logger.info(`Group session started: ${id}`);
       return groupSession;
     } catch (error: any) {
@@ -811,6 +816,57 @@ export class GroupSessionService {
         'Failed to submit session summary',
         StatusCodes.INTERNAL_SERVER_ERROR
       );
+    }
+  }
+
+  /**
+   * Send notifications when group session starts
+   */
+  private async sendStartNotifications(groupSession: GroupSession): Promise<void> {
+    try {
+      // Reload participants to get mentees
+      const session = await this.groupSessionRepository.findOne({
+        where: { id: groupSession.id },
+        relations: ['participants', 'participants.mentee', 'mentor'],
+      });
+
+      if (!session) return;
+
+      const notificationService = getAppNotificationService();
+
+      for (const participant of session.participants) {
+        if (participant.invitationStatus === INVITATION_STATUS.ACCEPTED) {
+          const mentee = participant.mentee;
+
+          // App Notification
+          await notificationService.createNotification({
+            userId: mentee.id,
+            type: AppNotificationType.GROUP_SESSION_STARTED,
+            title: 'Group Session Started!',
+            message: `The group session "${session.title}" has started. Join now!`,
+            data: {
+              groupSessionId: session.id,
+            },
+          });
+
+          // Push Notification
+          if (mentee.pushToken) {
+            await pushNotificationService.sendToUser({
+              userId: mentee.id,
+              pushToken: mentee.pushToken,
+              title: '📹 Group Session Started!',
+              body: `"${session.title}" has started. Tap to join the call!`,
+              data: {
+                type: 'group_session_started',
+                groupSessionId: session.id,
+              },
+              channelId: 'session-reminders',
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      logger.error('Error in sendStartNotifications:', error);
     }
   }
 }
