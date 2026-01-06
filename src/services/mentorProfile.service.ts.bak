@@ -171,7 +171,7 @@ export class MentorProfileService {
         await notificationService.createNotification({
           userId,
           type: AppNotificationType.MENTOR_APPROVAL,
-          title: 'Welcome, Mentor!',
+          title: '🎉 Welcome, Mentor!',
           message: 'Your profile has been approved. You can now start receiving session requests.',
           data: { type: 'mentor_approval' },
         });
