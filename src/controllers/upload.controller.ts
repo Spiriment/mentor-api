@@ -165,12 +165,67 @@ export class UploadController {
     }
   };
 
+  // Upload chat attachment (generic)
+  uploadChatAttachment = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'No file provided',
+            code: 'NO_FILE_PROVIDED',
+          },
+        });
+      }
+
+      // Upload to Cloudinary
+      const filePath = path.join(req.file.destination, req.file.filename);
+      // Determine resource type based on mimetype
+      const resourceType = req.file.mimetype.startsWith('video/') || req.file.mimetype.startsWith('audio/') 
+        ? 'video' 
+        : 'image';
+
+      const uploadResult = await this.fileUploadService.uploadFile(filePath, {
+        folder: 'mentor-app/chat-attachments',
+        resource_type: resourceType,
+      });
+
+      // Delete local file after successful Cloudinary upload
+      deleteFile(filePath);
+
+      this.logger.info('Chat attachment uploaded successfully to Cloudinary', {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        cloudinaryUrl: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          filename: req.file.filename,
+          originalName: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+        },
+        message: 'File uploaded successfully',
+      });
+    } catch (error) {
+      this.logger.error('Error uploading chat attachment', error instanceof Error ? error : new Error(String(error)));
+      next(error);
+    }
+  };
+
   // Serve uploaded files
   serveFile = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { type, filename } = req.params;
 
-      if (!['profile-images', 'video-introductions'].includes(type)) {
+      if (!['profile-images', 'video-introductions', 'chat-attachments'].includes(type)) {
         return res.status(400).json({
           success: false,
           error: {

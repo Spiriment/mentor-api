@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { GENDER, USER_ROLE } from '@/common/constants';
 
 export const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z
+    .string()
+    .email('Invalid email address')
+    .regex(
+      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+      'Invalid email format (e.g., user@example.com)'
+    ),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters')
@@ -121,7 +127,13 @@ export type SendVerificationDTO = z.infer<typeof sendVerificationSchema>;
 export type VerifyEmailDTO = z.infer<typeof verifyEmailSchema>;
 // Mentor App specific schemas
 export const emailRegistrationSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z
+    .string()
+    .email('Invalid email address')
+    .regex(
+      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+      'Invalid email format (e.g., user@example.com)'
+    ),
 });
 
 export const verifyOtpSchema = z.object({

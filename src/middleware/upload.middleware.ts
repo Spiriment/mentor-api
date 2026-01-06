@@ -13,8 +13,9 @@ const logger = new Logger({
 const uploadDir = path.join(process.cwd(), 'uploads');
 const profileImagesDir = path.join(uploadDir, 'profile-images');
 const videoIntroductionsDir = path.join(uploadDir, 'video-introductions');
+const chatAttachmentsDir = path.join(uploadDir, 'chat-attachments');
 
-[uploadDir, profileImagesDir, videoIntroductionsDir].forEach((dir) => {
+[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     logger.info(`Created upload directory: ${dir}`);
@@ -30,6 +31,8 @@ const storage = multer.diskStorage({
       uploadPath = profileImagesDir;
     } else if (file.fieldname === 'videoIntroduction') {
       uploadPath = videoIntroductionsDir;
+    } else if (file.fieldname === 'file') {
+      uploadPath = chatAttachmentsDir;
     }
 
     cb(null, uploadPath);
@@ -61,6 +64,17 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: Function) => {
     } else {
       cb(new Error('Video introduction must be a video file'), false);
     }
+  } else if (fieldname === 'file') {
+    // Allow images, audio, and video
+    if (
+      file.mimetype.startsWith('image/') ||
+      file.mimetype.startsWith('audio/') ||
+      file.mimetype.startsWith('video/')
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type for chat attachment'), false);
+    }
   } else {
     cb(new Error('Invalid field name'), false);
   }
@@ -87,6 +101,9 @@ export const uploadFiles = upload.fields([
   { name: 'profileImage', maxCount: 1 },
   { name: 'videoIntroduction', maxCount: 1 },
 ]);
+
+// Middleware for chat attachment
+export const uploadChatAttachment = upload.single('file');
 
 // Error handling middleware
 export const handleUploadError = (
@@ -147,6 +164,16 @@ export const handleUploadError = (
     });
   }
 
+  if (error.message.includes('Invalid file type for chat attachment')) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        message: 'Invalid file type. Allowed: Image, Audio, Video',
+        code: 'INVALID_ATTACHMENT_TYPE',
+      },
+    });
+  }
+
   logger.error('Upload error:', error);
   next(error);
 };
@@ -159,7 +186,11 @@ export const getFileUrl = (
 ): string => {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
   const uploadPath =
-    fieldname === 'profileImage' ? 'profile-images' : 'video-introductions';
+    fieldname === 'profileImage'
+      ? 'profile-images'
+      : fieldname === 'videoIntroduction'
+      ? 'video-introductions'
+      : 'chat-attachments';
   return `${baseUrl}/uploads/${uploadPath}/${filename}`;
 };
 
