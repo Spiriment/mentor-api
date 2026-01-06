@@ -237,4 +237,26 @@ export class BibleUserController {
       next(err);
     }
   };
+
+  updateBookmark = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const repo = AppDataSource.getRepository(BibleBookmark);
+      const userId = req.user!.id as string;
+      const { id } = req.params;
+      const { note } = req.body;
+
+      const bookmark = await repo.findOne({ where: { id, userId } });
+
+      if (!bookmark) {
+        return res.status(404).json({ success: false, message: 'Bookmark not found' });
+      }
+
+      bookmark.note = note;
+      const saved = await repo.save(bookmark);
+
+      res.json({ success: true, data: saved });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
