@@ -186,6 +186,95 @@ export class SessionReminderService {
   }
 
   /**
+   * Send "Starting Now" reminders for sessions starting in the next 2 minutes
+   * This method is called by the cron job every minute
+   */
+  async sendStartReminders(): Promise<void> {
+    try {
+      const now = new Date();
+
+      // Find sessions that start in the next 2 minutes
+      // Use 1 to 3 minutes to ensure we catch them exactly once
+      const startTime = addMinutes(now, 1);
+      const endTime = addMinutes(now, 3);
+
+      const sessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .select([
+          'session.id',
+          'session.mentorId',
+          'session.menteeId',
+          'session.status',
+          'session.type',
+          'session.duration',
+          'session.scheduledAt',
+          'session.title',
+          'session.description',
+          'session.location',
+          'session.reminders',
+        ])
+        .leftJoinAndSelect('session.mentor', 'mentor')
+        .leftJoinAndSelect('session.mentee', 'mentee')
+        .where('session.status IN (:...statuses)', {
+          statuses: [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED],
+        })
+        .andWhere('session.scheduledAt >= :startTime', {
+          startTime: startTime,
+        })
+        .andWhere('session.scheduledAt <= :endTime', {
+          endTime: endTime,
+        })
+        .getMany();
+
+      if (sessions.length > 0) {
+        logger.info(`Found ${sessions.length} sessions starting now`);
+      }
+
+      for (const session of sessions) {
+        // Edge Case: Skip if session is already in progress
+        if (session.status === SESSION_STATUS.IN_PROGRESS) {
+          logger.info(`Session ${session.id} is already in progress, skipping "Starting Now" reminder`);
+          continue;
+        }
+
+        // Check if start reminder already sent
+        if (session.reminders?.sentStartNow) {
+          continue;
+        }
+
+        try {
+          // Send reminder to mentor
+          if (session.mentor) {
+            await this.sendReminderToMentor(session, 'now');
+          }
+
+          // Send reminder to mentee
+          if (session.mentee) {
+            await this.sendReminderToMentee(session, 'now');
+          }
+
+          // Update session reminders field
+          await this.updateSessionReminders(session.id, {
+            sentStartNow: true,
+          });
+
+          logger.info(`"Starting now" reminder sent for session ${session.id}`);
+        } catch (error) {
+          logger.error(
+            `Error sending start reminder for session ${session.id}:`,
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      }
+    } catch (error) {
+      logger.error(
+        'Error in sendStartReminders:',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+
+  /**
    * Send reminder email to mentor
    */
   private async sendReminderToMentor(
@@ -221,6 +310,15 @@ export class SessionReminderService {
     };
     const sessionType = sessionTypeMap[session.type] || session.type;
 
+    // Check notification preferences
+    const pushEnabled = mentor.pushNotificationsEnabled !== false;
+    const remindersEnabled = !mentor.notificationPreferences || mentor.notificationPreferences.includes('session_reminders');
+
+    if (!remindersEnabled) {
+      logger.info(`Mentor ${mentor.email} has disabled session reminders, skipping email/push`);
+      return;
+    }
+
     // Send email reminder
     await this.emailService.sendSessionReminderEmail(
       mentor.email,
@@ -239,9 +337,9 @@ export class SessionReminderService {
       `${timeUntil} reminder email sent to mentor ${mentor.email} for session ${session.id}`
     );
 
-    // Send push notification if mentor has a push token
-    if (mentor.pushToken) {
-      const minutesBefore = timeUntil === '1 hour' ? 60 : 15;
+    // Send push notification if mentor has a push token and has enabled them
+    if (mentor.pushToken && pushEnabled) {
+      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : 0);
       await pushNotificationService.sendSessionReminder(
         mentor.pushToken,
         mentor.id,
@@ -291,6 +389,15 @@ export class SessionReminderService {
     };
     const sessionType = sessionTypeMap[session.type] || session.type;
 
+    // Check notification preferences
+    const pushEnabled = mentee.pushNotificationsEnabled !== false;
+    const remindersEnabled = !mentee.notificationPreferences || mentee.notificationPreferences.includes('session_reminders');
+
+    if (!remindersEnabled) {
+      logger.info(`Mentee ${mentee.email} has disabled session reminders, skipping email/push`);
+      return;
+    }
+
     // Send email reminder
     await this.emailService.sendSessionReminderEmail(
       mentee.email,
@@ -309,9 +416,9 @@ export class SessionReminderService {
       `${timeUntil} reminder email sent to mentee ${mentee.email} for session ${session.id}`
     );
 
-    // Send push notification if mentee has a push token
-    if (mentee.pushToken) {
-      const minutesBefore = timeUntil === '1 hour' ? 60 : 15;
+    // Send push notification if mentee has a push token and has enabled them
+    if (mentee.pushToken && pushEnabled) {
+      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : 0);
       await pushNotificationService.sendSessionReminder(
         mentee.pushToken,
         mentee.id,
@@ -334,6 +441,7 @@ export class SessionReminderService {
       sent15min?: boolean;
       sent1h?: boolean;
       sent24h?: boolean;
+      sentStartNow?: boolean;
     }
   ): Promise<void> {
     const session = await this.sessionRepository.findOne({
