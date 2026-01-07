@@ -268,6 +268,13 @@ export class MentorProfileService {
       profile.approvedAt = new Date();
 
       const approvedProfile = await this.mentorProfileRepository.save(profile);
+
+      // IMPORTANT: Also update User table to sync mentorApprovalStatus
+      await this.userRepository.update(userId, {
+        mentorApprovalStatus: MENTOR_APPROVAL_STATUS.APPROVED,
+        mentorApprovedAt: new Date(),
+      });
+
       this.logger.info(`Approved mentor profile for user ${userId}`);
 
       // Send push notification
