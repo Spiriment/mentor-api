@@ -27,7 +27,10 @@
     "db-seed:staging": "NODE_ENV=staging node database/seeders/seed-runner.js",
     "build-and-seed:prod": "npm run build:main && npm run db-seed:prod",
     "check:dist": "node -e \"const fs = require('fs'); const path = './dist/config/data-source.js'; if (fs.existsSync(path)) { console.log('✅ Found:', path); } else { console.error('❌ Missing:', path); process.exit(1); }\"",
-    "db:clear": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/clear-database.ts"
+    "db:clear": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/clear-database.ts",
+    "db:backup": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/backup-database.ts",
+    "db:backup:staging": "cross-env NODE_ENV=staging ts-node -r tsconfig-paths/register scripts/backup-database.ts",
+    "db:backup:prod": "cross-env NODE_ENV=production ts-node -r tsconfig-paths/register scripts/backup-database.ts"
   },
   "dependencies": {
     "agora-token": "^2.0.3",
