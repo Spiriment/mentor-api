@@ -40,9 +40,12 @@ export const AppDataSource = new DataSource({
   logging: false,
   ssl: Config.database.ssl,
   extra: {
-    connectionLimit: 5,
-    maxIdle: 5,
-    idleTimeout: 10000,
+    // Connection pool configuration
+    // Development: 5 connections (single developer)
+    // Production: 20 connections (handles 100-500 concurrent users)
+    connectionLimit: process.env.NODE_ENV === 'production' ? 20 : 5,
+    maxIdle: 10, // Maximum idle connections to keep
+    idleTimeout: 60000, // 60 seconds (increased from 10 seconds for better connection reuse)
   },
   entities: [
     RefreshToken,
