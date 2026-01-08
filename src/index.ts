@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { createServer } from 'http';
+import rateLimit from 'express-rate-limit';
 import { AppDataSource } from './config/data-source';
 import { logger } from './config/int-services';
 import { createRootRoutes } from './routes/root.route';
@@ -14,6 +15,21 @@ import { WebSocketService } from './services/websocket.service';
 const app = express();
 const httpServer = createServer(app);
 
+// Rate limiting configuration - protects against brute force and DDoS attacks
+const limiter = rateLimit({
+  windowMs: Config.rateLimit.windowMs, // Time window (default: 15 minutes)
+  max: Config.rateLimit.max, // Max requests per window (default: 100)
+  message: {
+    status: 'error',
+    message: 'Too many requests from this IP, please try again later.',
+    code: 'TOO_MANY_REQUESTS'
+  },
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+  // Skip rate limiting for health check endpoints
+  skip: (req) => req.path === '/health' || req.path === '/api/health',
+});
+
 // Configure CORS to allow requests from any origin (for development)
 // In production, you should restrict this to specific origins
 app.use(cors({
@@ -21,8 +37,33 @@ app.use(cors({
   credentials: true,
 }));
 
+// Apply rate limiting to all API routes
+app.use('/api/', limiter);
+
 // Request logging middleware (for debugging)
 app.use((req, res, next) => {
+  // Helper function to redact sensitive fields in production
+  const getBodyPreview = (body: any): string | null => {
+    if (!body) return null;
+
+    // In development, show everything
+    if (process.env.NODE_ENV === 'development') {
+      return JSON.stringify(body).substring(0, 200);
+    }
+
+    // In production, redact sensitive fields
+    const sensitiveFields = ['password', 'token', 'otp', 'refreshToken', 'accessToken', 'secret', 'cardNumber', 'cvv', 'pin'];
+    const redactedBody = { ...body };
+
+    sensitiveFields.forEach(field => {
+      if (redactedBody[field]) {
+        redactedBody[field] = '[REDACTED]';
+      }
+    });
+
+    return JSON.stringify(redactedBody).substring(0, 200);
+  };
+
   logger.info('📥 Incoming Request', {
     method: req.method,
     url: req.url,
@@ -31,7 +72,7 @@ app.use((req, res, next) => {
     userAgent: req.get('user-agent'),
     timestamp: new Date().toISOString(),
     hasBody: !!req.body,
-    bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : null,
+    bodyPreview: getBodyPreview(req.body),
   });
   next();
 });

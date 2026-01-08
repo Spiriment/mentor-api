@@ -106,7 +106,7 @@ export class ValidationError extends AppError {
 }
 export class InternalServerError extends AppError {
   constructor(message: string, details?: unknown) {
-    super(message, 400, "VALIDATION_ERROR", details);
+    super(message, 500, "INTERNAL_SERVER_ERROR", details);
   }
 }
 
