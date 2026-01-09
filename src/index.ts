@@ -15,6 +15,10 @@ import { WebSocketService } from './services/websocket.service';
 const app = express();
 const httpServer = createServer(app);
 
+// Trust proxy - required when behind cPanel/nginx/Apache reverse proxy
+// This allows Express to correctly identify client IPs from X-Forwarded-For header
+app.set('trust proxy', true);
+
 // Rate limiting configuration - protects against brute force and DDoS attacks
 const limiter = rateLimit({
   windowMs: Config.rateLimit.windowMs, // Time window (default: 15 minutes)
