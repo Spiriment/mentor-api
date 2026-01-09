@@ -61,7 +61,7 @@ export class WebSocketService {
   constructor(httpServer: HttpServer, dataSource: DataSource) {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: true, // Allow all origins for mobile app compatibility
         methods: ['GET', 'POST'],
         credentials: true,
       },
@@ -87,7 +87,7 @@ export class WebSocketService {
           return next(new Error('Authentication token required'));
         }
 
-        const decoded = jwt.verify(token, Config.jwt.privateKey) as any;
+        const decoded = jwt.verify(token, Config.jwt.publicKey) as any;
         socket.userId = decoded.userId;
 
         // Optionally fetch full user data
