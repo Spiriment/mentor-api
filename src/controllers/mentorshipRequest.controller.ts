@@ -29,14 +29,18 @@ export class MentorshipRequestController {
 
       // Prevent requesting yourself
       if (mentorId === user.id) {
-        throw new AppError('You cannot send a mentorship request to yourself', StatusCodes.BAD_REQUEST);
+        throw new AppError(
+          'You cannot send a mentorship request to yourself',
+          StatusCodes.BAD_REQUEST
+        );
       }
 
-      const { request, alreadyExists } = await this.requestService.createRequest({
-        mentorId,
-        menteeId: user.id,
-        message,
-      });
+      const { request, alreadyExists } =
+        await this.requestService.createRequest({
+          mentorId,
+          menteeId: user.id,
+          message,
+        });
 
       logger.info('Mentorship request processed', {
         requestId: request.id,
@@ -49,7 +53,7 @@ export class MentorshipRequestController {
         res,
         {
           request,
-          message: alreadyExists 
+          message: alreadyExists
             ? 'You already have a pending mentorship request with this mentor.'
             : 'Mentorship request sent successfully',
           alreadyExists,
@@ -77,7 +81,11 @@ export class MentorshipRequestController {
       const { requestId } = req.params;
       const { responseMessage } = req.body;
 
-      const request = await this.requestService.acceptRequest(requestId, user.id, responseMessage);
+      const request = await this.requestService.acceptRequest(
+        requestId,
+        user.id,
+        responseMessage
+      );
 
       logger.info('Mentorship request accepted successfully', {
         requestId,
@@ -109,7 +117,11 @@ export class MentorshipRequestController {
       const { requestId } = req.params;
       const { responseMessage } = req.body;
 
-      const request = await this.requestService.declineRequest(requestId, user.id, responseMessage);
+      const request = await this.requestService.declineRequest(
+        requestId,
+        user.id,
+        responseMessage
+      );
 
       logger.info('Mentorship request declined successfully', {
         requestId,
@@ -140,7 +152,10 @@ export class MentorshipRequestController {
 
       const { requestId } = req.params;
 
-      const request = await this.requestService.cancelRequest(requestId, user.id);
+      const request = await this.requestService.cancelRequest(
+        requestId,
+        user.id
+      );
 
       logger.info('Mentorship request cancelled successfully', {
         requestId,
@@ -161,7 +176,11 @@ export class MentorshipRequestController {
    * Get mentorship request status with a specific mentor
    * GET /api/mentorship-requests/status/:mentorId
    */
-  getRequestStatus = async (req: Request, res: Response, next: NextFunction) => {
+  getRequestStatus = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
     try {
       const user = req.user;
 
@@ -171,7 +190,10 @@ export class MentorshipRequestController {
 
       const { mentorId } = req.params;
 
-      const request = await this.requestService.getRequestStatus(mentorId, user.id);
+      const request = await this.requestService.getRequestStatus(
+        mentorId,
+        user.id
+      );
 
       logger.info('Mentorship request status fetched successfully', {
         mentorId,
@@ -181,7 +203,8 @@ export class MentorshipRequestController {
 
       return sendSuccessResponse(res, {
         request,
-        hasActiveMentorship: request?.status === MENTORSHIP_REQUEST_STATUS.ACCEPTED,
+        hasActiveMentorship:
+          request?.status === MENTORSHIP_REQUEST_STATUS.ACCEPTED,
       });
     } catch (error: any) {
       logger.error('Error fetching mentorship request status', error);
@@ -219,8 +242,14 @@ export class MentorshipRequestController {
       } else {
         // Default: return both
         const [mentorRequests, menteeRequests] = await Promise.all([
-          this.requestService.getMentorRequests(user.id, status as MENTORSHIP_REQUEST_STATUS | undefined),
-          this.requestService.getMenteeRequests(user.id, status as MENTORSHIP_REQUEST_STATUS | undefined),
+          this.requestService.getMentorRequests(
+            user.id,
+            status as MENTORSHIP_REQUEST_STATUS | undefined
+          ),
+          this.requestService.getMenteeRequests(
+            user.id,
+            status as MENTORSHIP_REQUEST_STATUS | undefined
+          ),
         ]);
 
         requests = {
@@ -248,7 +277,11 @@ export class MentorshipRequestController {
    * Check if mentee has active mentorship with mentor
    * GET /api/mentorship-requests/check/:mentorId
    */
-  checkActiveMentorship = async (req: Request, res: Response, next: NextFunction) => {
+  checkActiveMentorship = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
     try {
       const user = req.user;
 
@@ -258,7 +291,10 @@ export class MentorshipRequestController {
 
       const { mentorId } = req.params;
 
-      const hasActiveMentorship = await this.requestService.hasActiveMentorship(mentorId, user.id);
+      const hasActiveMentorship = await this.requestService.hasActiveMentorship(
+        mentorId,
+        user.id
+      );
 
       logger.info('Active mentorship check completed', {
         mentorId,
