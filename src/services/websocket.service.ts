@@ -84,8 +84,12 @@ export class WebSocketService {
           socket.handshake.headers.authorization?.replace('Bearer ', '');
 
         if (!token) {
+          logger.error('WebSocket connection attempt without token');
           return next(new Error('Authentication token required'));
         }
+
+        // Log token format for debugging (first 20 chars only)
+        logger.debug(`WebSocket auth attempt with token: ${token.substring(0, 20)}...`);
 
         const decoded = jwt.verify(token, Config.jwt.publicKey) as any;
         socket.userId = decoded.userId;
@@ -98,16 +102,17 @@ export class WebSocketService {
         });
 
         if (!user) {
+          logger.error(`WebSocket user not found for userId: ${decoded.userId}`);
           return next(new Error('User not found'));
         }
 
         socket.user = user as User;
 
-        logger.info(`User ${socket.user.email} connected via WebSocket`);
+        logger.info(`User ${socket.user.email} (${socket.user.id}) connected via WebSocket`);
         next();
       } catch (error: any) {
-        logger.error('WebSocket authentication failed:', error);
-        next(new Error('Invalid authentication token'));
+        logger.error(`WebSocket authentication failed: ${error.message} (${error.name})`, error);
+        next(new Error(`Authentication failed: ${error.message}`));
       }
     });
   }

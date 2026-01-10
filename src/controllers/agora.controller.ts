@@ -28,7 +28,7 @@ export class AgoraController {
   }
 
   /**
-   * Generate Agora token for a session
+   * Generate Agora token for a session or direct call
    * POST /api/agora/token
    */
   generateToken = async (req: Request, res: Response, next: NextFunction) => {
@@ -39,56 +39,76 @@ export class AgoraController {
         throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
       }
 
-      const { sessionId } = req.body;
+      const { sessionId, targetUserId } = req.body;
 
-      if (!sessionId) {
-        throw new AppError('Session ID is required', StatusCodes.BAD_REQUEST);
+      // For direct calls without a sessionId, we need targetUserId
+      if (!sessionId && !targetUserId) {
+        throw new AppError('Either sessionId or targetUserId is required', StatusCodes.BAD_REQUEST);
       }
 
-      // 1. First, try to find a mentorship session
-      let session = null;
-      try {
-        session = await this.sessionService.getSessionById(
-          sessionId,
-          user.id
-        );
-      } catch (error) {
-        // If it's not a session, we'll try to find a conversation next
-        this.logger.debug('ID is not a session ID, checking conversation', { sessionId });
-      }
+      // Determine channel name based on call type
+      let channelName: string;
 
-      // 2. If no session, check if it's a group session
-      if (!session) {
+      if (sessionId) {
+        // Scheduled session or group session call
+        // 1. First, try to find a mentorship session
+        let session = null;
         try {
-          const groupSession = await this.groupSessionService.getGroupSession(
+          session = await this.sessionService.getSessionById(
             sessionId,
             user.id
           );
-          if (groupSession) {
-            session = groupSession;
-          }
         } catch (error) {
-          this.logger.debug('ID is not a group session ID', { sessionId });
+          // If it's not a session, we'll try to find a conversation next
+          this.logger.debug('ID is not a session ID, checking group session', { sessionId });
         }
-      }
 
-      // 3. If still no session, check if it's a conversation
-      if (!session) {
-        const isParticipant = await this.chatService.isUserParticipant(
-          user.id,
-          sessionId
-        );
+        // 2. If no session, check if it's a group session
+        if (!session) {
+          try {
+            const groupSession = await this.groupSessionService.getGroupSession(
+              sessionId,
+              user.id
+            );
+            if (groupSession) {
+              session = groupSession;
+            }
+          } catch (error) {
+            this.logger.debug('ID is not a group session ID', { sessionId });
+          }
+        }
 
-        if (!isParticipant) {
-          throw new AppError(
-            'You do not have permission to join this call (not a session, group session or conversation participant)',
-            StatusCodes.FORBIDDEN
+        // 3. If still no session, check if it's a conversation
+        if (!session) {
+          const isParticipant = await this.chatService.isUserParticipant(
+            user.id,
+            sessionId
           );
-        }
-      }
 
-      // Use session ID as channel name
-      const channelName = sessionId;
+          if (!isParticipant) {
+            throw new AppError(
+              'You do not have permission to join this call (not a session, group session or conversation participant)',
+              StatusCodes.FORBIDDEN
+            );
+          }
+        }
+
+        // Use session ID as channel name
+        channelName = sessionId;
+      } else if (targetUserId) {
+        // Direct call from chat - generate channel name from user IDs
+        // Sort IDs to ensure consistent channel names regardless of who initiates
+        const sortedIds = [user.id, targetUserId].sort();
+        channelName = `chat_${sortedIds[0]}_${sortedIds[1]}`.replace(/[^a-zA-Z0-9]/g, '_');
+
+        this.logger.info('Generating token for direct call', {
+          caller: user.id,
+          target: targetUserId,
+          channelName,
+        });
+      } else {
+        throw new AppError('Invalid call parameters', StatusCodes.BAD_REQUEST);
+      }
       const userId = user.id;
       const role = 'publisher'; // Both mentor and mentee can publish (video/audio)
 
