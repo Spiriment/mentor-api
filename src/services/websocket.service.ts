@@ -66,6 +66,11 @@ export class WebSocketService {
         credentials: true,
       },
       transports: ['websocket', 'polling'],
+      // Heartbeat configuration to detect stale connections
+      pingInterval: 25000, // Send ping every 25 seconds
+      pingTimeout: 20000, // Wait 20 seconds for pong response before considering connection dead
+      upgradeTimeout: 10000, // 10 seconds to upgrade from polling to websocket
+      connectTimeout: 45000, // 45 seconds for initial connection timeout
     });
 
     this.chatService = new ChatService(dataSource);
@@ -99,14 +104,37 @@ export class WebSocketService {
           address: socket.handshake.address
         });
 
-        const decoded = jwt.verify(token, Config.jwt.publicKey) as any;
+        let decoded: any;
+        try {
+          decoded = jwt.verify(token, Config.jwt.publicKey) as any;
+        } catch (jwtError: any) {
+          // Handle specific JWT errors
+          if (jwtError.name === 'TokenExpiredError') {
+            logger.warn('WebSocket connection attempt with expired token', {
+              socketId: socket.id,
+              expiredAt: jwtError.expiredAt,
+            });
+            return next(new Error('Token expired. Please login again.'));
+          } else if (jwtError.name === 'JsonWebTokenError') {
+            logger.error('WebSocket connection attempt with invalid token', jwtError, {
+              socketId: socket.id,
+            });
+            return next(new Error('Invalid authentication token'));
+          } else {
+            logger.error('WebSocket JWT verification failed', jwtError, {
+              socketId: socket.id,
+            });
+            return next(new Error('Authentication failed'));
+          }
+        }
+
         socket.userId = decoded.userId;
 
-        // Optionally fetch full user data
+        // Fetch full user data
         const userRepository = this.chatService.getUserRepository();
         const user = await userRepository.findOne({
           where: { id: decoded.userId },
-          select: ['id', 'email', 'firstName', 'lastName', 'role'],
+          select: ['id', 'email', 'firstName', 'lastName', 'role', 'isActive'],
         });
 
         if (!user) {
@@ -114,9 +142,14 @@ export class WebSocketService {
           return next(new Error('User not found'));
         }
 
+        if (!user.isActive) {
+          logger.warn(`WebSocket connection attempt by inactive user: ${user.email}`);
+          return next(new Error('Account is inactive'));
+        }
+
         socket.user = user as User;
 
-        logger.info(`User ${socket.user.email} (${socket.user.id}) connected via WebSocket`);
+        logger.info(`✅ User ${socket.user.email} (${socket.user.id}) authenticated via WebSocket`);
         next();
       } catch (error: any) {
         logger.error(`WebSocket authentication failed: ${error.message} (${error.name})`, error);
@@ -138,11 +171,15 @@ export class WebSocketService {
     // Store user connection
     this.connectedUsers.set(userId, socket.id);
 
+    // Join user to their personal room for direct messages (call invites, notifications, etc.)
+    socket.join(`user:${userId}`);
+
     logger.info(`✅ User ${user.email} connected`, {
       userId,
       socketId: socket.id,
       transport: socket.conn.transport.name,
-      totalConnected: this.connectedUsers.size
+      totalConnected: this.connectedUsers.size,
+      joinedRooms: Array.from(socket.rooms)
     });
 
     // Listen for transport changes (e.g., polling to websocket upgrade)
