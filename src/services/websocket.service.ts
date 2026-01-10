@@ -84,12 +84,20 @@ export class WebSocketService {
           socket.handshake.headers.authorization?.replace('Bearer ', '');
 
         if (!token) {
-          logger.error('WebSocket connection attempt without token');
+          logger.error('❌ WebSocket connection attempt without token', undefined, {
+            id: socket.id,
+            headers: socket.handshake.headers,
+            query: socket.handshake.query,
+            address: socket.handshake.address
+          });
           return next(new Error('Authentication token required'));
         }
 
-        // Log token format for debugging (first 20 chars only)
-        logger.debug(`WebSocket auth attempt with token: ${token.substring(0, 20)}...`);
+        logger.debug(`🔍 WebSocket handshake attempt: ${socket.id}`, {
+          tokenPreview: token.substring(0, 10) + '...',
+          transport: socket.conn.transport.name,
+          address: socket.handshake.address
+        });
 
         const decoded = jwt.verify(token, Config.jwt.publicKey) as any;
         socket.userId = decoded.userId;
@@ -130,14 +138,17 @@ export class WebSocketService {
     // Store user connection
     this.connectedUsers.set(userId, socket.id);
 
-    // Join user to their personal room for notifications
-    socket.join(`user:${userId}`);
+    logger.info(`✅ User ${user.email} connected`, {
+      userId,
+      socketId: socket.id,
+      transport: socket.conn.transport.name,
+      totalConnected: this.connectedUsers.size
+    });
 
-    // Broadcast user online status via socket only (not DB)
-    // to update status indicators without breaking push notification logic.
-    await this.broadcastUserOnlineStatus(userId, true, false);
-
-    logger.info(`User ${user.email} connected (socket: ${socket.id})`);
+    // Listen for transport changes (e.g., polling to websocket upgrade)
+    socket.conn.on('upgrade', (transport) => {
+      logger.info(`🚀 Socket ${socket.id} upgraded to ${transport.name}`);
+    });
 
     // Handle conversation joining
     socket.on('join-conversation', async (conversationId: string) => {
@@ -474,7 +485,11 @@ export class WebSocketService {
     // Update lastSeen and broadcast offline status
     await this.broadcastUserOnlineStatus(userId, false);
 
-    logger.info(`User ${userId} disconnected (socket: ${socket.id})`);
+    logger.info(`🔌 User ${userId} disconnected`, {
+      socketId: socket.id,
+      reason: 'unknown', // Socket.io disconnect event will provide this but we need to pass it from the handler
+      remainingConnected: this.connectedUsers.size
+    });
   }
 
   /**

@@ -17,7 +17,8 @@ const httpServer = createServer(app);
 
 // Trust proxy - required when behind cPanel/nginx/Apache reverse proxy
 // This allows Express to correctly identify client IPs from X-Forwarded-For header
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
+logger.info(`✅ Trust proxy configured: ${app.get('trust proxy')}`);
 
 // Rate limiting configuration - protects against brute force and DDoS attacks
 const limiter = rateLimit({
