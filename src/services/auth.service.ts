@@ -732,6 +732,15 @@ export class AuthService {
     // Generate and return tokens
     const tokens = this.generateTokens(User);
     
+    this.logger.info('🔍 DIAGNOSTIC: verifyOtp state check', {
+      email: User.email,
+      userId: User.id,
+      role: User.role,
+      userTableOnboarding: User.isOnboardingComplete,
+      finalOnboardingStatus: isOnboardingComplete,
+      profileCheckRun: !!User.role && !User.isOnboardingComplete
+    });
+    
     // Return user data for existing users (login flow) so frontend knows role and onboarding status
     const response: any = {
       ...tokens,
