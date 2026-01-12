@@ -26,6 +26,7 @@ export * from './bibleProgress.entity';
 export * from './studyProgress.entity';
 export * from './studySession.entity';
 export * from './studyReflection.entity';
+export * from './monthlySummary.entity';
 
 // Chat entities
 export * from './conversation.entity';
