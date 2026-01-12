@@ -22,6 +22,8 @@ import sessionReviewRoutes from './sessionReview.routes';
 import groupSessionRoutes from './groupSession.routes';
 import mentorshipRequestRoutes from './mentorshipRequest.routes';
 import pushTokenRoutes from './pushToken.routes';
+import { monthlySummaryRoutes } from './monthlySummary.routes';
+import { agoraRoutes } from './agora.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -151,8 +153,14 @@ const createRootRoutes = () => {
   // Mentorship request routes
   rootRouter.use('/api/mentorship-requests', mentorshipRequestRoutes);
 
+  // Report routes
+  rootRouter.use('/api/reports/monthly', monthlySummaryRoutes);
+
   // Push token routes
   rootRouter.use('/api/users/push-token', pushTokenRoutes);
+
+  // Agora video call routes
+  rootRouter.use('/api/agora', agoraRoutes);
 
   // Admin routes
   const adminRoutes = require('./admin.routes').default;
