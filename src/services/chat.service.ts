@@ -274,7 +274,6 @@ export class ChatService {
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.sender', 'sender')
       .where('message.conversationId = :conversationId', { conversationId })
-      .andWhere('message.deletedAt IS NULL')
       .orderBy('message.sentAt', 'DESC');
 
     if (beforeMessageId) {
@@ -425,6 +424,72 @@ export class ChatService {
     metadata.reactions = reactions;
 
     await this.messageRepository.update(messageId, { metadata });
+  }
+
+  async deleteMessage(
+    messageId: string,
+    userId: string,
+    deleteType: 'me' | 'everyone'
+  ): Promise<void> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+    });
+    if (!message) throw new Error('Message not found');
+
+    if (deleteType === 'everyone') {
+      // Verify user is the sender
+      if (message.senderId !== userId) {
+        throw new Error('Not authorized to delete this message for everyone');
+      }
+
+      // Mark as deleted for everyone
+      await this.messageRepository.update(messageId, {
+        deletedAt: new Date(),
+        content: 'This message was deleted',
+      });
+    } else {
+      // For 'me', we'll treat it as a soft delete IF it's the sender, 
+      // or just mark as deleted without changing content.
+      if (message.senderId === userId) {
+        await this.messageRepository.update(messageId, {
+          deletedAt: new Date(),
+        });
+      }
+    }
+  }
+
+  async editMessage(
+    messageId: string,
+    userId: string,
+    newContent: string
+  ): Promise<Message> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+      relations: ['conversation'],
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    if (message.senderId !== userId) {
+      throw new Error('You can only edit your own messages');
+    }
+
+    if (message.deletedAt) {
+      throw new Error('Cannot edit a deleted message');
+    }
+
+    // Enforce 15-minute edit limit
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    if (message.sentAt < fifteenMinutesAgo) {
+      throw new Error('Messages can only be edited within 15 minutes of sending');
+    }
+
+    message.content = newContent;
+    message.editedAt = new Date();
+    
+    return await this.messageRepository.save(message);
   }
 
   // Helper methods

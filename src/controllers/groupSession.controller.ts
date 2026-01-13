@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { StatusCodes } from 'http-status-codes';
 import { GroupSessionService } from '@/services/groupSession.service';
 import {
   CreateGroupSessionDTO,
@@ -369,6 +370,78 @@ export class GroupSessionController {
       res.status(400).json({
         success: false,
         message: error.message || 'Failed to submit session summary',
+      });
+    }
+  };
+
+  /**
+   * GET /api/sessions/group/:id/agora-credentials
+   * Get Agora credentials for joining group video call
+   */
+  public getAgoraCredentials = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+
+      const credentials =
+        await this.groupSessionService.getGroupSessionAgoraCredentials(
+          id,
+          userId
+        );
+
+      res.status(200).json({
+        success: true,
+        data: credentials,
+      });
+    } catch (error: any) {
+      console.error('Error getting Agora credentials:', error);
+      const statusCode = error.message.includes('not found')
+        ? 404
+        : error.message.includes('Unauthorized')
+          ? 403
+          : 500;
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Failed to get Agora credentials',
+      });
+    }
+  };
+
+  /**
+   * POST /api/sessions/group/:id/create-chat
+   * Create a group chat for a completed group session
+   */
+  public createGroupChat = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+
+      const conversation = await this.groupSessionService.createGroupChat(
+        id,
+        userId
+      );
+
+      res.status(StatusCodes.CREATED).json({
+        success: true,
+        data: conversation,
+      });
+    } catch (error: any) {
+      console.error('Error creating group chat:', error);
+      const statusCode = error.message.includes('not found')
+        ? StatusCodes.NOT_FOUND
+        : error.message.includes('Bad Request') || error.message.includes('only be created for completed sessions')
+          ? StatusCodes.BAD_REQUEST
+          : StatusCodes.INTERNAL_SERVER_ERROR;
+
+      res.status(statusCode).json({
+        success: false,
+        message: error.message || 'Failed to create group chat',
       });
     }
   };

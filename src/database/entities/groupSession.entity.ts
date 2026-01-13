@@ -84,6 +84,9 @@ export class GroupSession extends BaseEntity {
   @Column({ type: 'text', nullable: true, name: 'cancellationReason' })
   cancellationReason?: string;
 
+  @Column({ type: 'varchar', length: 36, nullable: true, name: 'conversationId' })
+  conversationId?: string;
+
   @Column({ type: 'json', nullable: true })
   reminders?: {
     sent24h?: boolean;

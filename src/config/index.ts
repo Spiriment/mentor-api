@@ -42,8 +42,8 @@ const configSchema = z.object({
     expiresIn: z.string().default('1d'),
   }),
   rateLimit: z.object({
-    windowMs: z.string().transform(Number).default('900000'),
-    max: z.string().transform(Number).default('100'),
+    windowMs: z.string().transform(Number).default('60000'),
+    max: z.string().transform(Number).default('1000'),
   }),
   encryption: z.object({
     algorithm: z.string(),

@@ -56,6 +56,12 @@ router.put(
   ChatController.markMessageRead
 );
 
+router.put(
+  '/messages/:messageId',
+  validate(messageIdSchema),
+  ChatController.editMessage
+);
+
 // Reaction routes
 router.post(
   '/messages/:messageId/reactions',
@@ -66,6 +72,12 @@ router.delete(
   '/messages/:messageId/reactions',
   validate(messageIdSchema),
   ChatController.removeReaction
+);
+
+router.delete(
+  '/messages/:messageId',
+  validate(messageIdSchema),
+  ChatController.deleteMessage
 );
 
 export default router;
