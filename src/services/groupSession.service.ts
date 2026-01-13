@@ -19,6 +19,18 @@ import { getEmailService } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { pushNotificationService } from './pushNotification.service';
+import { AgoraService } from '@/core/agora.service';
+import {
+  Conversation,
+  CONVERSATION_TYPE,
+  CONVERSATION_STATUS,
+} from '@/database/entities/conversation.entity';
+import {
+  ConversationParticipant,
+  PARTICIPANT_ROLE,
+  PARTICIPANT_STATUS,
+} from '@/database/entities/conversationParticipant.entity';
+import { Message, MESSAGE_TYPE } from '@/database/entities/message.entity';
 
 export interface CreateGroupSessionDTO {
   mentorId: string;
@@ -49,6 +61,10 @@ export class GroupSessionService {
   private participantRepository = AppDataSource.getRepository(GroupSessionParticipant);
   private userRepository = AppDataSource.getRepository(User);
   private sessionRepository = AppDataSource.getRepository(Session);
+  private agoraService = new AgoraService();
+  private conversationRepository = AppDataSource.getRepository(Conversation);
+  private chatParticipantRepository = AppDataSource.getRepository(ConversationParticipant);
+  private messageRepository = AppDataSource.getRepository(Message);
 
   /**
    * Get eligible mentees for a mentor (mentees who have completed at least one session)
@@ -179,6 +195,10 @@ export class GroupSessionService {
         );
       }
 
+      // Generate Agora channel name and meeting credentials
+      const channelName = `group_${Date.now()}_${data.mentorId.substring(0, 8)}`;
+      const meetingId = channelName;
+
       // Create group session
       const groupSession = this.groupSessionRepository.create({
         mentorId: data.mentorId,
@@ -187,6 +207,8 @@ export class GroupSessionService {
         scheduledAt: data.scheduledAt,
         duration: data.duration || GROUP_SESSION_DURATION.ONE_HOUR,
         status: GROUP_SESSION_STATUS.INVITES_SENT,
+        meetingId: meetingId,
+        meetingLink: channelName, // Store channel name for easy access
       });
 
       await this.groupSessionRepository.save(groupSession);
@@ -867,6 +889,229 @@ export class GroupSessionService {
       }
     } catch (error: any) {
       logger.error('Error in sendStartNotifications:', error);
+    }
+  }
+
+  /**
+   * Get Agora credentials for group session video call
+   */
+  async getGroupSessionAgoraCredentials(
+    groupSessionId: string,
+    userId: string
+  ): Promise<{
+    appId: string;
+    channelName: string;
+    token: string;
+    uid: number;
+  }> {
+    try {
+      const groupSession = await this.groupSessionRepository.findOne({
+        where: { id: groupSessionId },
+        relations: ['participants'],
+      });
+
+      if (!groupSession) {
+        throw new AppError('Group session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // Check if user is mentor or participant
+      const isMentor = groupSession.mentorId === userId;
+      const isParticipant = groupSession.participants.some(
+        (p) => p.menteeId === userId && p.invitationStatus === INVITATION_STATUS.ACCEPTED
+      );
+
+      if (!isMentor && !isParticipant) {
+        throw new AppError('Unauthorized', StatusCodes.FORBIDDEN);
+      }
+
+      // Use meetingLink as channel name (set during creation)
+      const channelName = groupSession.meetingLink || groupSession.id;
+
+      // Generate Agora token
+      const token = this.agoraService.generateRtcToken(
+        channelName,
+        userId,
+        'publisher',
+        7200 // 2 hours
+      );
+
+      const uid = this.agoraService.hashUserId(userId);
+      const appId = this.agoraService.getAppId();
+
+      logger.info(`Generated Agora credentials for group session ${groupSessionId}`, {
+        userId,
+        channelName,
+      });
+
+      return {
+        appId,
+        channelName,
+        token,
+        uid,
+      };
+    } catch (error: any) {
+      logger.error('Error getting group session Agora credentials:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to get Agora credentials',
+        StatusCodes.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
+   * Create a group chat for a completed group session
+   */
+  async createGroupChat(
+    groupSessionId: string,
+    mentorId: string
+  ): Promise<Conversation> {
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Get the group session with participants
+      const groupSession = await queryRunner.manager.findOne(GroupSession, {
+        where: { id: groupSessionId, mentorId },
+        relations: ['participants', 'participants.mentee'],
+      });
+
+      if (!groupSession) {
+        throw new AppError('Group session not found', StatusCodes.NOT_FOUND);
+      }
+
+      // 2. Validate session status
+      if (groupSession.status !== GROUP_SESSION_STATUS.COMPLETED) {
+        throw new AppError(
+          'Group chat can only be created for completed sessions',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // 3. Check if chat already exists
+      if (groupSession.conversationId) {
+        const existingChat = await queryRunner.manager.findOne(Conversation, {
+          where: { id: groupSession.conversationId },
+          relations: ['participants', 'participants.user'],
+        });
+        if (existingChat) {
+          await queryRunner.rollbackTransaction();
+          return existingChat;
+        }
+      }
+
+      // 4. Get all accepted participants
+      const acceptedParticipants = groupSession.participants.filter(
+        (p) => p.invitationStatus === INVITATION_STATUS.ACCEPTED
+      );
+
+      if (acceptedParticipants.length < 1) {
+        throw new AppError(
+          'Cannot create group chat without any accepted mentees',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // 5. Create conversation
+      const conversation = queryRunner.manager.create(Conversation, {
+        type: CONVERSATION_TYPE.GROUP,
+        title: groupSession.title,
+        description: `Group chat for session: ${groupSession.title}`,
+        status: CONVERSATION_STATUS.ACTIVE,
+      });
+
+      const savedConversation = await queryRunner.manager.save(Conversation, conversation);
+
+      // 6. Add participants
+      const participants: ConversationParticipant[] = [];
+
+      // Add mentor as ADMIN
+      participants.push(
+        queryRunner.manager.create(ConversationParticipant, {
+          conversationId: savedConversation.id,
+          userId: mentorId,
+          role: PARTICIPANT_ROLE.ADMIN,
+          status: PARTICIPANT_STATUS.ACTIVE,
+        })
+      );
+
+      // Add each mentee
+      for (const p of acceptedParticipants) {
+        participants.push(
+          queryRunner.manager.create(ConversationParticipant, {
+            conversationId: savedConversation.id,
+            userId: p.menteeId,
+            role: PARTICIPANT_ROLE.MENTEE,
+            status: PARTICIPANT_STATUS.ACTIVE,
+          })
+        );
+      }
+
+      await queryRunner.manager.save(ConversationParticipant, participants);
+
+      // 7. Update group session with conversation ID
+      groupSession.conversationId = savedConversation.id;
+      await queryRunner.manager.save(GroupSession, groupSession);
+
+      // 8. Create a welcome message
+      const welcomeMessage = queryRunner.manager.create(Message, {
+        conversationId: savedConversation.id,
+        senderId: mentorId,
+        content: `I've created this group chat for our session results and further discussions!`,
+        type: MESSAGE_TYPE.TEXT,
+      });
+      await queryRunner.manager.save(Message, welcomeMessage);
+
+      await queryRunner.commitTransaction();
+
+      // 9. Send notifications (async)
+      this.sendGroupChatNotifications(groupSession, acceptedParticipants).catch(
+        (err) => logger.error('Failed to send group chat notifications:', err)
+      );
+
+      // 10. Return full conversation
+      return (await this.conversationRepository.findOne({
+        where: { id: savedConversation.id },
+        relations: ['participants', 'participants.user'],
+      }))!;
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      logger.error('Error creating group chat:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'Failed to create group chat',
+        StatusCodes.INTERNAL_SERVER_ERROR
+      );
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Send notifications when group chat is created
+   */
+  private async sendGroupChatNotifications(
+    groupSession: GroupSession,
+    participants: GroupSessionParticipant[]
+  ): Promise<void> {
+    const notificationService = getAppNotificationService();
+
+    for (const participant of participants) {
+      try {
+        await notificationService.createNotification({
+          userId: participant.menteeId,
+          type: AppNotificationType.SYSTEM, // Use SYSTEM or add a new type
+          title: 'Group Chat Created',
+          message: `A new group chat has been created for the session "${groupSession.title}"`,
+          data: {
+            conversationId: groupSession.conversationId,
+            groupSessionId: groupSession.id,
+          },
+        });
+      } catch (error: any) {
+        logger.error(`Failed to notify mentee ${participant.menteeId}:`, error);
+      }
     }
   }
 }

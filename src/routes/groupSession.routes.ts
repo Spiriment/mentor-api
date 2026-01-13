@@ -41,6 +41,13 @@ router.post(
   groupSessionController.startGroupSession
 );
 
+// Create group chat (mentor only)
+router.post(
+  '/:id/create-chat',
+  requireRole([USER_ROLE.MENTOR]),
+  groupSessionController.createGroupChat
+);
+
 // End group session (mentor only)
 router.post(
   '/:id/end',
@@ -90,6 +97,9 @@ router.post(
 /**
  * Shared Routes (mentor or mentee)
  */
+
+// Get Agora credentials for video call (mentor or participant)
+router.get('/:id/agora-credentials', groupSessionController.getAgoraCredentials);
 
 // Get group session details (mentor or participant)
 router.get('/:id', groupSessionController.getGroupSession);

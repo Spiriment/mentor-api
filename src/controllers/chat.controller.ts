@@ -344,6 +344,103 @@ export class ChatController {
     }
   }
 
+  // Delete message
+  static async deleteMessage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const { messageId } = req.params;
+      const { deleteType = 'me' } = req.query;
+
+      await chatService.deleteMessage(
+        messageId,
+        userId,
+        deleteType as 'me' | 'everyone'
+      );
+
+      // Broadcast deletion via WebSocket if it's for everyone
+      if (deleteType === 'everyone') {
+        const message = await chatService.getMessageById(messageId);
+        if (message) {
+          const { WebSocketService } = require('@/services/websocket.service');
+          const wsService = WebSocketService.getInstance();
+          if (wsService) {
+            wsService.broadcastMessageDeletion(
+              message.conversationId,
+              messageId,
+              'everyone'
+            );
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Message deleted for ${deleteType} successfully`,
+      });
+    } catch (error: any) {
+      logger.error('Error deleting message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: 'Failed to delete message',
+          details: error.message,
+        },
+      });
+    }
+  }
+
+  // Edit message
+  static async editMessage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const { messageId } = req.params;
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Content is required',
+          },
+        });
+      }
+
+      const updatedMessage = await chatService.editMessage(
+        messageId,
+        userId,
+        content
+      );
+
+      // Broadcast update via WebSocket
+      const { WebSocketService } = require('@/services/websocket.service');
+      const wsService = WebSocketService.getInstance();
+      if (wsService) {
+        wsService.broadcastMessageUpdate(
+          updatedMessage.conversationId,
+          updatedMessage
+        );
+      }
+
+      res.json({
+        success: true,
+        message: 'Message updated successfully',
+        data: {
+          message: updatedMessage,
+        },
+      });
+    } catch (error: any) {
+      const status = error.message.includes('15 minutes') ? 403 : 500;
+      logger.error('Error editing message:', error);
+      res.status(status).json({
+        success: false,
+        error: {
+          message: 'Failed to edit message',
+          details: error.message,
+        },
+      });
+    }
+  }
+
   // Get conversation participants
   static async getConversationParticipants(req: Request, res: Response) {
     try {

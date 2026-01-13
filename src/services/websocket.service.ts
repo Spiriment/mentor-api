@@ -77,6 +77,7 @@ export class WebSocketService {
     this.setupMiddleware();
     this.setupEventHandlers();
 
+    WebSocketService.instance = this;
     logger.info('WebSocket service initialized');
   }
 
@@ -639,5 +640,39 @@ export class WebSocketService {
     this.io
       .to(`conversation:${conversationId}`)
       .emit('conversation-notification', notification);
+  }
+
+  /**
+   * Broadcast message deletion to all participants in a conversation
+   */
+  public broadcastMessageDeletion(
+    conversationId: string,
+    messageId: string,
+    deleteType: 'me' | 'everyone'
+  ) {
+    if (deleteType === 'everyone') {
+      this.io.to(`conversation:${conversationId}`).emit('message-deleted', {
+        messageId,
+        deleteType,
+      });
+      logger.info(`Broadcasted message deletion for everyone: ${messageId} in ${conversationId}`);
+    }
+  }
+
+  /**
+   * Broadcast message update (edit) to all participants in a conversation
+   */
+  public broadcastMessageUpdate(
+    conversationId: string,
+    message: any
+  ) {
+    this.io.to(`conversation:${conversationId}`).emit('message-updated', message);
+    logger.info(`Broadcasted message update: ${message.id} in ${conversationId}`);
+  }
+
+  // Static instance helper for easy access if needed
+  private static instance: WebSocketService;
+  public static getInstance(): WebSocketService {
+    return this.instance;
   }
 }
