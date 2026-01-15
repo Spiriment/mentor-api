@@ -264,6 +264,47 @@ export class ChatService {
     return fullMessage!;
   }
 
+  async createCallLog(data: {
+    conversationId: string;
+    senderId: string;
+    callStatus: 'completed' | 'missed' | 'rejected' | 'failed';
+    duration?: number;
+  }): Promise<Message> {
+    const content = this.formatCallLogContent(data.callStatus, data.duration);
+    
+    return this.createMessage({
+      conversationId: data.conversationId,
+      senderId: data.senderId,
+      content,
+      type: MESSAGE_TYPE.CALL,
+      metadata: {
+        callStatus: data.callStatus,
+        duration: data.duration,
+      },
+    });
+  }
+
+  private formatCallLogContent(status: string, duration?: number): string {
+    switch (status) {
+      case 'completed':
+        return `Video call ended - ${this.formatDuration(duration || 0)}`;
+      case 'missed':
+        return 'Missed video call';
+      case 'rejected':
+        return 'Video call declined';
+      case 'failed':
+        return 'Video call failed';
+      default:
+        return 'Video call';
+    }
+  }
+
+  private formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
   async getConversationMessages(
     conversationId: string,
     limit = 50,
