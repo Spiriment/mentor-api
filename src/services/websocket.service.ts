@@ -659,15 +659,28 @@ export class WebSocketService {
     }
   }
 
-  /**
-   * Broadcast message update (edit) to all participants in a conversation
-   */
   public broadcastMessageUpdate(
     conversationId: string,
     message: any
   ) {
     this.io.to(`conversation:${conversationId}`).emit('message-updated', message);
     logger.info(`Broadcasted message update: ${message.id} in ${conversationId}`);
+  }
+
+  /**
+   * Broadcast message pin/unpin status change to all participants
+   */
+  public broadcastMessagePinStatus(
+    conversationId: string,
+    messageId: string,
+    isPinned: boolean
+  ) {
+    this.io.to(`conversation:${conversationId}`).emit('message-pin-status', {
+      messageId,
+      conversationId,
+      isPinned,
+    });
+    logger.info(`Broadcasted message pin status: ${messageId} isPinned=${isPinned} in ${conversationId}`);
   }
 
   // Static instance helper for easy access if needed
