@@ -43,7 +43,7 @@ app.use(cors({
 }));
 
 // Apply rate limiting to all API routes
-app.use('/api/', limiter);
+// app.use('/api/', limiter);
 
 // Request logging middleware (for debugging)
 app.use((req, res, next) => {

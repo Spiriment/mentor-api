@@ -10,6 +10,7 @@ export enum MESSAGE_TYPE {
   FILE = 'file',
   SYSTEM = 'system',
   REACTION = 'reaction',
+  CALL = 'call',
 }
 
 export enum MESSAGE_STATUS {
