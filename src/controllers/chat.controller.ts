@@ -491,4 +491,80 @@ export class ChatController {
       });
     }
   }
+
+  // Pin message
+  static async pinMessage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const { messageId } = req.params;
+
+      const updatedMessage = await chatService.pinMessage(messageId, userId);
+
+      // Broadcast pin status via WebSocket
+      const { WebSocketService } = require('@/services/websocket.service');
+      const wsService = WebSocketService.getInstance();
+      if (wsService) {
+        wsService.broadcastMessagePinStatus(
+          updatedMessage.conversationId,
+          messageId,
+          true
+        );
+      }
+
+      res.json({
+        success: true,
+        message: 'Message pinned successfully',
+        data: {
+          message: updatedMessage,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error pinning message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: 'Failed to pin message',
+          details: error.message,
+        },
+      });
+    }
+  }
+
+  // Unpin message
+  static async unpinMessage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const { messageId } = req.params;
+
+      const updatedMessage = await chatService.unpinMessage(messageId, userId);
+
+      // Broadcast pin status via WebSocket
+      const { WebSocketService } = require('@/services/websocket.service');
+      const wsService = WebSocketService.getInstance();
+      if (wsService) {
+        wsService.broadcastMessagePinStatus(
+          updatedMessage.conversationId,
+          messageId,
+          false
+        );
+      }
+
+      res.json({
+        success: true,
+        message: 'Message unpinned successfully',
+        data: {
+          message: updatedMessage,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error unpinning message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: 'Failed to unpin message',
+          details: error.message,
+        },
+      });
+    }
+  }
 }

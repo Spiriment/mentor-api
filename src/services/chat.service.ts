@@ -533,6 +533,63 @@ export class ChatService {
     return await this.messageRepository.save(message);
   }
 
+  async pinMessage(messageId: string, userId: string): Promise<Message> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+      relations: ['conversation'],
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    // Verify user is a participant
+    const isParticipant = await this.isUserParticipant(
+      userId,
+      message.conversationId
+    );
+    if (!isParticipant) {
+      throw new Error('Not authorized to pin messages in this conversation');
+    }
+
+    // For simplicity, we'll unpin any existing pinned messages in this conversation
+    // (Optional: support multiple pins later)
+    await this.messageRepository.update(
+      { conversationId: message.conversationId, isPinned: true },
+      { isPinned: false, pinnedAt: undefined }
+    );
+
+    message.isPinned = true;
+    message.pinnedAt = new Date();
+
+    return await this.messageRepository.save(message);
+  }
+
+  async unpinMessage(messageId: string, userId: string): Promise<Message> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+      relations: ['conversation'],
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    // Verify user is a participant
+    const isParticipant = await this.isUserParticipant(
+      userId,
+      message.conversationId
+    );
+    if (!isParticipant) {
+      throw new Error('Not authorized to unpin messages in this conversation');
+    }
+
+    message.isPinned = false;
+    message.pinnedAt = undefined;
+
+    return await this.messageRepository.save(message);
+  }
+
   // Helper methods
   private determineParticipantRole(
     userId: string,

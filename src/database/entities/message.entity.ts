@@ -86,6 +86,12 @@ export class Message extends BaseEntity {
   @Column({ name: 'deletedAt', type: 'datetime', nullable: true })
   deletedAt?: Date;
 
+  @Column({ name: 'isPinned', type: 'boolean', default: false })
+  isPinned!: boolean;
+
+  @Column({ name: 'pinnedAt', type: 'datetime', nullable: true })
+  pinnedAt?: Date;
+
   // Helper methods
   isRead(): boolean {
     return this.readAt !== null;

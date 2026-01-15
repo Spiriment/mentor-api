@@ -80,4 +80,16 @@ router.delete(
   ChatController.deleteMessage
 );
 
+router.post(
+  '/messages/:messageId/pin',
+  validate(messageIdSchema),
+  ChatController.pinMessage
+);
+
+router.post(
+  '/messages/:messageId/unpin',
+  validate(messageIdSchema),
+  ChatController.unpinMessage
+);
+
 export default router;
