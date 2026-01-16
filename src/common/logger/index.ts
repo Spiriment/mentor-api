@@ -27,7 +27,7 @@ export class Logger {
       process.env.NODE_ENV === "production" ||
       process.env.ENABLE_FILE_LOGGING === "true"
     ) {
-      const fileRotateTransport = new winston.transports.DailyRotateFile({
+      const errorRotateTransport = new winston.transports.DailyRotateFile({
         filename: "logs/%DATE%-error.log",
         datePattern: "DD-MM-YYYY",
         zippedArchive: true,
@@ -35,7 +35,17 @@ export class Logger {
         maxFiles: "14d",
         level: "error",
       });
-      transports.push(fileRotateTransport);
+      transports.push(errorRotateTransport);
+
+      const infoRotateTransport = new winston.transports.DailyRotateFile({
+        filename: "logs/%DATE%-info.log",
+        datePattern: "DD-MM-YYYY",
+        zippedArchive: true,
+        maxSize: "20m",
+        maxFiles: "14d",
+        level: "info",
+      });
+      transports.push(infoRotateTransport);
     }
 
     this.logger = winston.createLogger({
