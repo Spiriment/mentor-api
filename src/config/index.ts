@@ -166,5 +166,6 @@ console.log(`🏢 Environment: ${Config.nodeEnv}`);
 console.log(
   `🗄️ Database: ${Config.database.host}:${Config.database.port}/${Config.database.name}`
 );
+console.log(`📱 Expo Access Token: ${Config.expo.accessToken ? 'Present (Starts with ' + Config.expo.accessToken.substring(0, 5) + '...)' : 'MISSING'}`);
 
 export { Config };
