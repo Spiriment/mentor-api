@@ -666,7 +666,6 @@ export class WebSocketService {
     this.io.to(`conversation:${conversationId}`).emit('message-updated', message);
     logger.info(`Broadcasted message update: ${message.id} in ${conversationId}`);
   }
-
   /**
    * Broadcast message pin/unpin status change to all participants
    */
@@ -681,6 +680,22 @@ export class WebSocketService {
       isPinned,
     });
     logger.info(`Broadcasted message pin status: ${messageId} isPinned=${isPinned} in ${conversationId}`);
+  }
+
+  /**
+   * Broadcast message star/unstar status change to all participants
+   */
+  public broadcastMessageStarStatus(
+    conversationId: string,
+    messageId: string,
+    isStarred: boolean
+  ) {
+    this.io.to(`conversation:${conversationId}`).emit('message-star-status', {
+      messageId,
+      conversationId,
+      isStarred,
+    });
+    logger.info(`Broadcasted message star status: ${messageId} isStarred=${isStarred} in ${conversationId}`);
   }
 
   // Static instance helper for easy access if needed

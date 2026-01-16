@@ -92,4 +92,10 @@ router.post(
   ChatController.unpinMessage
 );
 
+router.post(
+  '/messages/:messageId/star',
+  validate(messageIdSchema),
+  ChatController.toggleStarMessage
+);
+
 export default router;
