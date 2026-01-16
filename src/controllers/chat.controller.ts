@@ -567,4 +567,44 @@ export class ChatController {
       });
     }
   }
+
+  // Toggle star message
+  static async toggleStarMessage(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const { messageId } = req.params;
+
+      const result = await chatService.toggleStarMessage(messageId, userId);
+
+      // Broadcast star status via WebSocket
+      const { WebSocketService } = require('@/services/websocket.service');
+      const wsService = WebSocketService.getInstance();
+      if (wsService) {
+        // Find the message to get conversationId
+        const message = await chatService.getMessageById(messageId);
+        if (message) {
+          wsService.broadcastMessageStarStatus(
+            message.conversationId,
+            messageId,
+            result.isStarred
+          );
+        }
+      }
+
+      res.json({
+        success: true,
+        message: result.isStarred ? 'Message starred' : 'Message unstarred',
+        data: result,
+      });
+    } catch (error: any) {
+      logger.error('Error toggling star message:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: 'Failed to toggle star message',
+          details: error.message,
+        },
+      });
+    }
+  }
 }

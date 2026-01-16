@@ -305,6 +305,34 @@ export class ChatService {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
+  async toggleStarMessage(
+    messageId: string,
+    userId: string
+  ): Promise<{ isStarred: boolean }> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    // Verify user is a participant
+    const isParticipant = await this.isUserParticipant(
+      userId,
+      message.conversationId
+    );
+    if (!isParticipant) {
+      throw new Error('Not authorized to star messages in this conversation');
+    }
+
+    message.isStarred = !message.isStarred;
+    message.starredAt = message.isStarred ? new Date() : undefined;
+
+    await this.messageRepository.save(message);
+    return { isStarred: message.isStarred };
+  }
+
   async getConversationMessages(
     conversationId: string,
     limit = 50,
