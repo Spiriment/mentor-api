@@ -15,10 +15,15 @@ import { WebSocketService } from './services/websocket.service';
 const app = express();
 const httpServer = createServer(app);
 
-// Trust proxy - required when behind cPanel/nginx/Apache reverse proxy
-// This allows Express to correctly identify client IPs from X-Forwarded-For header
 app.set('trust proxy', 1);
 logger.info(`✅ Trust proxy configured: ${app.get('trust proxy')}`);
+
+// Verify Expo configuration
+if (Config.expo.accessToken) {
+  logger.info(`📱 Expo Access Token: Present (Starts with ${Config.expo.accessToken.substring(0, 5)}...)`);
+} else {
+  logger.warn('📱 Expo Access Token: MISSING. Push notifications may fail with "InvalidCredentials".');
+}
 
 // Rate limiting configuration - protects against brute force and DDoS attacks
 const limiter = rateLimit({
