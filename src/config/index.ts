@@ -83,6 +83,9 @@ const configSchema = z.object({
     appId: z.string(),
     appCertificate: z.string().optional(),
   }),
+  expo: z.object({
+    accessToken: z.string().optional(),
+  }),
 });
 
 const Config = configSchema.parse({
@@ -151,6 +154,9 @@ const Config = configSchema.parse({
   agora: {
     appId: process.env.AGORA_APP_ID || '',
     appCertificate: process.env.AGORA_APP_CERTIFICATE,
+  },
+  expo: {
+    accessToken: process.env.EXPO_ACCESS_TOKEN,
   },
 });
 

@@ -87,7 +87,7 @@ const createAuthRoutes = (
   router.post(
     '/logout',
     authMiddleware(jwtService),
-    validate(refreshTokenSchema),
+    validate(refreshTokenSchema.partial()), // Partial to allow logout without body
     authController.logout
   );
   router.post(
