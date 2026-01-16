@@ -1,5 +1,6 @@
 import { Expo, ExpoPushMessage, ExpoPushTicket, ExpoPushReceipt } from 'expo-server-sdk';
 import { Logger } from '../common';
+import { Config } from '../config';
 
 export interface PushNotificationData {
   userId: string;
@@ -18,7 +19,7 @@ export class PushNotificationService {
   private logger: Logger;
 
   constructor() {
-    this.expo = new Expo();
+    this.expo = new Expo({ accessToken: Config.expo.accessToken });
     this.logger = new Logger({
       service: 'push-notification-service',
       level: process.env.LOG_LEVEL || 'info',

@@ -29,6 +29,8 @@ export const sendMessageSchema = z.object({
       fileName: z.string().optional(),
       fileSize: z.number().positive().optional(),
       repliedToMessageId: z.string().uuid().optional(),
+      callStatus: z.enum(['completed', 'missed', 'rejected', 'failed', 'cancelled']).optional(),
+      duration: z.number().nonnegative().optional(),
     })
     .optional(),
 });
