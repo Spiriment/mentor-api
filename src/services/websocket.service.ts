@@ -462,7 +462,16 @@ export class WebSocketService {
         conversationId,
         socket.userId!
       );
+
+      // Notify the reader (current socket)
       socket.emit('conversation-read', { conversationId });
+
+      // Notify other participants that their messages in this conversation were read
+      socket.to(`conversation:${conversationId}`).emit('messages-read', {
+        conversationId,
+        readBy: socket.userId,
+        readAt: new Date(),
+      });
     } catch (error: any) {
       logger.error('Error marking conversation as read:', error);
     }
