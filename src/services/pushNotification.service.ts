@@ -331,6 +331,39 @@ export class PushNotificationService {
       channelId: 'session-reminders',
     });
   }
+
+  /**
+   * Send call invite notification for offline users
+   */
+  async sendCallInviteNotification(
+    pushToken: string,
+    userId: string,
+    callData: {
+      callerId: string;
+      callerName: string;
+      callerImage?: string;
+      sessionId?: string;
+      conversationId: string;
+    }
+  ): Promise<boolean> {
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title: `📞 Incoming call from ${callData.callerName}`,
+      body: 'Tap to answer',
+      data: {
+        type: 'call-invite',
+        callerId: callData.callerId,
+        callerName: callData.callerName,
+        callerImage: callData.callerImage,
+        sessionId: callData.sessionId,
+        conversationId: callData.conversationId,
+      },
+      channelId: 'calls',
+      priority: 'high',
+      sound: 'default',
+    });
+  }
 }
 
 export const pushNotificationService = new PushNotificationService();

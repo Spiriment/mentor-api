@@ -44,13 +44,14 @@ interface SocketEvents {
   // Call events
   'call-invite': (data: {
     sessionId?: string;
+    conversationId: string;
     targetUserId: string;
     callerName: string;
     callerImage?: string;
   }) => void;
-  'call-accept': (data: { sessionId?: string; callerId: string }) => void;
-  'call-reject': (data: { sessionId?: string; callerId: string }) => void;
-  'call-end': (data: { sessionId?: string; targetUserId: string }) => void;
+  'call-accept': (data: { sessionId?: string; conversationId: string; callerId: string }) => void;
+  'call-reject': (data: { sessionId?: string; conversationId: string; callerId: string }) => void;
+  'call-end': (data: { sessionId?: string; conversationId: string; targetUserId: string }) => void;
 }
 
 export class WebSocketService {
@@ -582,47 +583,104 @@ export class WebSocketService {
   }
 
   // Call handling methods
-  private handleCallInvite(socket: AuthenticatedSocket, data: any) {
-    const { targetUserId, sessionId, callerName, callerImage } = data;
+  private async handleCallInvite(socket: AuthenticatedSocket, data: any) {
+    const { targetUserId, sessionId, conversationId, callerName, callerImage } = data;
     logger.info(`Call invite from ${socket.userId} to ${targetUserId}`);
 
-    // Send to target user room
-    this.io.to(`user:${targetUserId}`).emit('call-invite', {
-      callerId: socket.userId,
-      callerName: callerName || `${socket.user?.firstName} ${socket.user?.lastName || ''}`.trim(),
-      callerImage: callerImage,
-      sessionId,
-    });
+    // Derive conversationId if not provided
+    const finalConversationId = conversationId || this.deriveConversationId(sessionId, socket.userId!, targetUserId);
+
+    // Check if target user is online
+    const isTargetOnline = this.isUserOnline(targetUserId);
+
+    if (isTargetOnline) {
+      // User is online - send via WebSocket
+      this.io.to(`user:${targetUserId}`).emit('call-invite', {
+        callerId: socket.userId,
+        callerName: callerName || `${socket.user?.firstName} ${socket.user?.lastName || ''}`.trim(),
+        callerImage: callerImage,
+        sessionId,
+        conversationId: finalConversationId,
+      });
+      logger.info(`Call invite sent via WebSocket to online user ${targetUserId}`);
+    } else {
+      // User is offline/backgrounded - send push notification
+      try {
+        const userRepository = this.chatService.getUserRepository();
+        const targetUser = await userRepository.findOne({
+          where: { id: targetUserId },
+          select: ['id', 'pushToken'],
+        });
+
+        if (targetUser?.pushToken) {
+          const senderName = callerName || `${socket.user?.firstName} ${socket.user?.lastName || ''}`.trim();
+          await pushNotificationService.sendCallInviteNotification(
+            targetUser.pushToken,
+            targetUserId,
+            {
+              callerId: socket.userId!,
+              callerName: senderName,
+              callerImage: callerImage,
+              sessionId,
+              conversationId: finalConversationId,
+            }
+          );
+          logger.info(`📱 Call invite sent via push notification to offline user ${targetUserId}`);
+        } else {
+          logger.warn(`User ${targetUserId} is offline and has no push token`);
+        }
+      } catch (error: any) {
+        logger.error('Error sending call invite push notification:', error);
+      }
+    }
   }
 
   private handleCallAccept(socket: AuthenticatedSocket, data: any) {
-    const { callerId, sessionId } = data;
+    const { callerId, sessionId, conversationId } = data;
     logger.info(`Call accepted by ${socket.userId} for caller ${callerId}`);
 
     this.io.to(`user:${callerId}`).emit('call-accepted', {
       acceptorId: socket.userId,
       sessionId,
+      conversationId,
     });
   }
 
   private handleCallReject(socket: AuthenticatedSocket, data: any) {
-    const { callerId, sessionId } = data;
+    const { callerId, sessionId, conversationId } = data;
     logger.info(`Call rejected by ${socket.userId} for caller ${callerId}`);
 
     this.io.to(`user:${callerId}`).emit('call-rejected', {
       rejectorId: socket.userId,
       sessionId,
+      conversationId,
     });
   }
 
   private handleCallEnd(socket: AuthenticatedSocket, data: any) {
-    const { targetUserId, sessionId } = data;
+    const { targetUserId, sessionId, conversationId } = data;
     logger.info(`Call ended by ${socket.userId} for ${targetUserId}`);
 
     this.io.to(`user:${targetUserId}`).emit('call-ended', {
       enderId: socket.userId,
       sessionId,
+      conversationId,
     });
+  }
+
+  /**
+   * Derive conversationId from sessionId or user IDs
+   */
+  private deriveConversationId(sessionId: string | undefined, userId1: string, userId2: string): string {
+    // Priority 1: Use sessionId if available (for scheduled sessions)
+    if (sessionId) {
+      return sessionId;
+    }
+    
+    // Priority 2: Generate from user IDs (for direct calls)
+    // Sort IDs to ensure consistency
+    const sortedIds = [userId1, userId2].sort();
+    return `direct_${sortedIds[0]}_${sortedIds[1]}`;
   }
 
   // Public methods for external use
