@@ -8,10 +8,9 @@ import {
   format,
   startOfDay,
   differenceInCalendarDays,
-  getWeek,
-  getYear,
   parseISO,
   getDay,
+  isSameWeek,
 } from 'date-fns';
 import { StreakNotificationService } from './streakNotification.service';
 import { getAppNotificationService } from './appNotification.service';
@@ -83,13 +82,8 @@ export class StreakService {
   ): boolean {
     if (!lastStreakDate) return false;
 
-    const lastWeek = getWeek(lastStreakDate);
-    const lastYear = getYear(lastStreakDate);
-    const currentWeek = getWeek(currentDate);
-    const currentYear = getYear(currentDate);
-
-    // Reset if different week or year
-    return currentWeek !== lastWeek || currentYear !== lastYear;
+    // Reset if NOT in the same week (Sunday start)
+    return !isSameWeek(lastStreakDate, currentDate, { weekStartsOn: 0 });
   }
 
   /**
@@ -203,6 +197,7 @@ export class StreakService {
           // Streak broken - reset to 1
           newCurrentStreak = 1;
           streakBroken = true;
+          weeklyStreakData = new Array(7).fill(false); // Clear previous week/streak data
           logger.info('Streak broken', {
             userId,
             previousStreak: user.currentStreak,
@@ -379,9 +374,9 @@ export class StreakService {
               needsUpdate = true;
             }
 
-            // 2. Reset current streak if missed more than 1 day
-            if (user.currentStreak > 0 && daysDiff > 1) {
-              logger.info('Streak expired on check', {
+            // 2. Reset current streak and weekly data if a day was missed
+            if (daysDiff > 1) {
+              logger.info('Streak expired or ghost data detected', {
                 userId,
                 previousStreak: user.currentStreak,
                 daysDiff,
@@ -389,7 +384,7 @@ export class StreakService {
               });
 
               user.currentStreak = 0;
-              user.weeklyStreakData = new Array(7).fill(false); // also clear week for consistency
+              user.weeklyStreakData = new Array(7).fill(false);
               updates.currentStreak = 0;
               updates.weeklyStreakData = user.weeklyStreakData;
               needsUpdate = true;
@@ -400,8 +395,11 @@ export class StreakService {
             }
           }
         } else {
-          // If no lastStreakDate but we have weekly data, we might want to check it too
-          // But usually no lastDate means no streak yet. Let's ensure non-null return.
+          // If no lastStreakDate but we have weekly data, clear it for consistency
+          if (user.weeklyStreakData && user.weeklyStreakData.some(v => v === true)) {
+            user.weeklyStreakData = new Array(7).fill(false);
+            await this.userRepository.update(userId, { weeklyStreakData: user.weeklyStreakData });
+          }
         }
 
       return {
