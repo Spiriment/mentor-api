@@ -6,7 +6,10 @@ import { SessionReminderService } from "@/services/sessionReminder.service";
 import { StreakNotificationService } from "@/services/streakNotification.service";
 import { ReengagementService } from "@/services/reengagement.service";
 import { notificationSchedulerService } from "@/services/notificationScheduler.service";
+import { MonthlySummaryService } from "@/services/monthlySummary.service";
+import { sessionAutoUpdateService } from "@/services/sessionAutoUpdate.service";
 import { EmailService } from "./email.service";
+import { subMonths } from "date-fns";
 
 export class CronService {
   private dataSource: DataSource;
@@ -14,6 +17,7 @@ export class CronService {
   private sessionReminderService: SessionReminderService | null = null;
   private streakNotificationService: StreakNotificationService | null = null;
   private reengagementService: ReengagementService | null = null;
+  private monthlySummaryService: MonthlySummaryService | null = null;
 
   constructor(dataSource: DataSource) {
     this.dataSource = dataSource;
@@ -144,6 +148,55 @@ export class CronService {
       this.tasks.set("notification-processing", notificationProcessingTask);
       logger.info("Notification processing cron job scheduled (every minute)");
 
+      // Initialize monthly summary service
+      this.monthlySummaryService = new MonthlySummaryService();
+
+      // Schedule monthly report job - runs at 00:00 on the 1st of every month
+      const monthlyReportTask = cron.schedule(
+        "0 0 1 * *",
+        async () => {
+          try {
+            const previousMonthDate = subMonths(new Date(), 1);
+            const year = previousMonthDate.getFullYear();
+            const month = previousMonthDate.getMonth() + 1;
+            
+            await this.monthlySummaryService?.processMonthlyReportsForAllUsers(emailService, year, month);
+          } catch (error) {
+            logger.error(
+              "Error in monthly report cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("monthly-report", monthlyReportTask);
+      logger.info("Monthly report cron job scheduled (1st of month at 00:00 UTC)");
+
+      // Schedule missed session check job - runs every 30 minutes
+      const missedSessionCheckTask = cron.schedule(
+        "*/30 * * * *",
+        async () => {
+          try {
+            await sessionAutoUpdateService.checkMissedSessions();
+          } catch (error) {
+            logger.error(
+              "Error in missed session check cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("missed-session-check", missedSessionCheckTask);
+      logger.info("Missed session check cron job scheduled (every 30 minutes)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -207,6 +260,10 @@ export class CronService {
         return "0 10 * * * (Daily at 10 AM UTC)";
       case "notification-processing":
         return "* * * * * (Every minute)";
+      case "monthly-report":
+        return "0 0 1 * * (1st of every month at 00:00 UTC)";
+      case "missed-session-check":
+        return "*/30 * * * * (Every 30 minutes)";
       default:
         return "Unknown";
     }
