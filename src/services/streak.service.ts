@@ -332,18 +332,77 @@ export class StreakService {
       const user = await this.userRepository.findOne({
         where: { id: userId },
         select: [
+          'id',
           'currentStreak',
           'longestStreak',
           'lastStreakDate',
           'weeklyStreakData',
           'streakFreezeCount',
           'monthlyStreakData',
+          'timezone',
         ],
       });
 
       if (!user) {
         throw new AppError('User not found', StatusCodes.NOT_FOUND);
       }
+
+        // Proactively check if weekly data should be reset
+        if (user.lastStreakDate) {
+          const userTimezone = user.timezone || 'UTC';
+          const todayInUserTz = this.getTodayInUserTimezone(userTimezone);
+
+          const lDate = user.lastStreakDate as any;
+          const lastDateString =
+            lDate instanceof Date
+              ? format(lDate, 'yyyy-MM-dd')
+              : typeof lDate === 'string'
+                ? lDate.split('T')[0]
+                : null;
+
+          if (lastDateString) {
+            const lastStreakDateParsed = parseISO(lastDateString);
+            const daysDiff = differenceInCalendarDays(todayInUserTz, lastStreakDateParsed);
+
+            let needsUpdate = false;
+            const updates: any = {};
+
+            // 1. Reset weekly data if it's a new week
+            if (this.shouldResetWeeklyData(lastStreakDateParsed, todayInUserTz)) {
+              logger.info('Resetting weekly streak data for new week', {
+                userId,
+                lastStreakDate: lastDateString,
+                currentDate: format(todayInUserTz, 'yyyy-MM-dd'),
+              });
+              user.weeklyStreakData = new Array(7).fill(false);
+              updates.weeklyStreakData = user.weeklyStreakData;
+              needsUpdate = true;
+            }
+
+            // 2. Reset current streak if missed more than 1 day
+            if (user.currentStreak > 0 && daysDiff > 1) {
+              logger.info('Streak expired on check', {
+                userId,
+                previousStreak: user.currentStreak,
+                daysDiff,
+                lastStreakDate: lastDateString,
+              });
+
+              user.currentStreak = 0;
+              user.weeklyStreakData = new Array(7).fill(false); // also clear week for consistency
+              updates.currentStreak = 0;
+              updates.weeklyStreakData = user.weeklyStreakData;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              await this.userRepository.update(userId, updates);
+            }
+          }
+        } else {
+          // If no lastStreakDate but we have weekly data, we might want to check it too
+          // But usually no lastDate means no streak yet. Let's ensure non-null return.
+        }
 
       return {
         currentStreak: user.currentStreak,
