@@ -364,6 +364,26 @@ export class PushNotificationService {
       sound: 'default',
     });
   }
+
+  /**
+   * Send a missed session notification
+   */
+  async sendMissedSessionNotification(
+    pushToken: string,
+    userId: string,
+    sessionTitle: string,
+    scheduledTime: string,
+    sessionId: string
+  ): Promise<boolean> {
+    return this.sendToUser({
+      userId,
+      pushToken,
+      title: '🔔 Missed Session',
+      body: `You missed "${sessionTitle}" scheduled for ${scheduledTime}. Would you like to reschedule?`,
+      data: { type: 'missed_session', sessionId },
+      channelId: 'session-reminders',
+    });
+  }
 }
 
 export const pushNotificationService = new PushNotificationService();

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Missed Session Notification</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f7f6; }
+        .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .header { background-color: #5C6BC0; color: white; padding: 30px 20px; text-align: center; }
+        .content { padding: 30px; }
+        .button { display: inline-block; background-color: #5C6BC0; color: white; padding: 12px 25px; text-decoration: none; border-radius: 25px; font-weight: 600; margin-top: 20px; }
+        .footer { background-color: #f8faf9; padding: 20px; text-align: center; font-size: 14px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Missed Session</h2>
+        </div>
+        <div class="content">
+            <p>Hi {{userName}},</p>
+            <p>It looks like the mentorship session <strong>"{{sessionTitle}}"</strong> scheduled for {{scheduledTime}} was missed.</p>
+            <p>Mentorship sessions are a key part of your growth. If you were unable to make it, would you like to reschedule?</p>
+            
+            <a href="spiriment://sessions/reschedule/{{sessionId}}" class="button">Reschedule Session</a>
+            
+            <p style="margin-top: 25px;">If you have any questions or had technical difficulties, please let us know.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; {{currentYear}} Spiriment. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

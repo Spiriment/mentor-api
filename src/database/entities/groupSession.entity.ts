@@ -17,6 +17,7 @@ export enum GROUP_SESSION_STATUS {
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
+  MISSED = 'missed',
 }
 
 export enum GROUP_SESSION_DURATION {

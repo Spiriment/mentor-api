@@ -835,4 +835,43 @@ export class EmailService {
       },
     });
   }
+
+  public async sendMonthlyReportEmail(props: {
+    to: string;
+    userName: string;
+    monthName: string;
+    year: number;
+    totalReadingMinutes: number;
+    longestStreak: number;
+    sessionsCount: number;
+    topBook: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Your Monthly Progress Report: ${props.monthName} ${props.year} - Spiriment`,
+      partialName: 'monthly-report',
+      templateData: {
+        ...props,
+        currentYear: new Date().getFullYear(),
+      },
+    });
+  }
+
+  public async sendMissedSessionEmail(props: {
+    to: string;
+    userName: string;
+    sessionTitle: string;
+    scheduledTime: string;
+    sessionId: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Missed Session: ${props.sessionTitle} - Spiriment`,
+      partialName: 'missed-session',
+      templateData: {
+        ...props,
+        currentYear: new Date().getFullYear(),
+      },
+    });
+  }
 }

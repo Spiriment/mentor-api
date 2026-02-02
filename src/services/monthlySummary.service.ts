@@ -193,4 +193,53 @@ export class MonthlySummaryService {
 
     return summary;
   }
+
+  /**
+   * Process and send monthly reports for all users
+   */
+  async processMonthlyReportsForAllUsers(emailService: any, year: number, month: number): Promise<void> {
+    try {
+      logger.info('Starting batch processing of monthly reports', { year, month });
+      
+      const users = await this.userRepo.find({
+        select: ['id', 'email', 'firstName', 'lastName']
+      });
+
+      const monthName = format(new Date(year, month - 1), 'MMMM');
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const user of users) {
+        if (!user.email) continue;
+
+        try {
+          const summary = await this.getMonthlySummary(user.id, year, month);
+          if (summary) {
+            await emailService.sendMonthlyReportEmail({
+              to: user.email,
+              userName: user.firstName || user.email,
+              monthName,
+              year,
+              totalReadingMinutes: Math.round(summary.totalReadingMinutes),
+              longestStreak: summary.longestStreak,
+              sessionsCount: summary.sessionsCount,
+              topBook: summary.topBook || 'None',
+            });
+            successCount++;
+          }
+        } catch (error) {
+          failCount++;
+          logger.error(`Failed to process monthly report for user ${user.id}`, error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+
+      logger.info('Batch processing of monthly reports completed', { 
+        total: users.length, 
+        success: successCount, 
+        failed: failCount 
+      });
+    } catch (error) {
+      logger.error('Error in processMonthlyReportsForAllUsers', error instanceof Error ? error : new Error(String(error)));
+    }
+  }
 }
