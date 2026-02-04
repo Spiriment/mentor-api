@@ -135,4 +135,64 @@ export class AgoraController {
       next(error);
     }
   };
+
+  /**
+   * Log call outcome to conversation
+   * POST /api/agora/log-call
+   */
+  logCallOutcome = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      const { conversationId, callStatus, duration } = req.body;
+
+      if (!conversationId) {
+        throw new AppError('conversationId is required', StatusCodes.BAD_REQUEST);
+      }
+
+      if (!callStatus || !['completed', 'missed', 'rejected', 'failed', 'cancelled'].includes(callStatus)) {
+        throw new AppError('Invalid callStatus', StatusCodes.BAD_REQUEST);
+      }
+
+      // Verify user is a participant in the conversation
+      const isParticipant = await this.chatService.isUserParticipant(
+        user.id,
+        conversationId
+      );
+
+      if (!isParticipant) {
+        throw new AppError(
+          'You are not a participant in this conversation',
+          StatusCodes.FORBIDDEN
+        );
+      }
+
+      // Create call log message
+      const message = await this.chatService.createCallLog({
+        conversationId,
+        senderId: user.id,
+        callStatus,
+        duration: duration || 0,
+      });
+
+      this.logger.info('Call outcome logged', {
+        conversationId,
+        callStatus,
+        duration,
+        messageId: message.id,
+      });
+
+      return sendSuccessResponse(res, {
+        message: 'Call outcome logged successfully',
+        callLog: message,
+      });
+    } catch (error: any) {
+      this.logger.error('Error logging call outcome', error);
+      next(error);
+    }
+  };
 }
