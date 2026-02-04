@@ -41,6 +41,29 @@ export class ChatController {
     }
   }
 
+  // Get total unread message count
+  static async getUnreadCount(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const count = await chatService.getUnreadMessageCount(userId);
+
+      res.json({
+        success: true,
+        data: { count },
+        message: 'Unread message count retrieved successfully',
+      });
+    } catch (error: any) {
+      logger.error('Error getting unread count:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          message: 'Failed to retrieve unread message count',
+          details: error.message,
+        },
+      });
+    }
+  }
+
   // Get specific conversation with messages
   static async getConversation(req: Request, res: Response) {
     try {
