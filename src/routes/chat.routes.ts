@@ -19,6 +19,10 @@ router.use(authenticateToken);
 
 // Conversation routes
 router.get(
+  '/unread-count',
+  ChatController.getUnreadCount
+);
+router.get(
   '/conversations',
   validate(getConversationsQuerySchema),
   ChatController.getConversations

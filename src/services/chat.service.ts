@@ -114,6 +114,46 @@ export class ChatService {
     });
   }
 
+  async getUnreadMessageCount(userId: string): Promise<number> {
+    // Get all conversations for the user
+    const participants = await this.participantRepository.find({
+      where: {
+        userId,
+        status: PARTICIPANT_STATUS.ACTIVE,
+      },
+    });
+
+    let totalUnread = 0;
+
+    for (const participant of participants) {
+      const queryBuilder = this.messageRepository
+        .createQueryBuilder('message')
+        .where('message.conversationId = :conversationId', {
+          conversationId: participant.conversationId,
+        })
+        .andWhere('message.senderId != :userId', { userId });
+
+      if (participant.lastReadMessageId) {
+        // If we have a lastReadMessageId, we need to count messages after that one
+        // Since messages are ordered by sentAt, we can find the message and use its sentAt
+        const lastReadMessage = await this.messageRepository.findOne({
+          where: { id: participant.lastReadMessageId },
+        });
+
+        if (lastReadMessage) {
+          queryBuilder.andWhere('message.sentAt > :lastReadAt', {
+            lastReadAt: lastReadMessage.sentAt,
+          });
+        }
+      }
+
+      const count = await queryBuilder.getCount();
+      totalUnread += count;
+    }
+
+    return totalUnread;
+  }
+
   async getUserConversations(
     userId: string,
     limit = 50,
@@ -261,7 +301,7 @@ export class ChatService {
     logger.info(
       `Message ${savedMessage.id} created in conversation ${data.conversationId}`
     );
-    return fullMessage!;
+    return this.enrichMessage(fullMessage!);
   }
 
   async createCallLog(data: {
@@ -356,14 +396,16 @@ export class ChatService {
       }
     }
 
-    return await queryBuilder.limit(limit).offset(offset).getMany();
+    const messages = await queryBuilder.limit(limit).offset(offset).getMany();
+    return this.enrichMessages(messages);
   }
 
   async getMessageById(messageId: string): Promise<Message | null> {
-    return await this.messageRepository.findOne({
+    const message = await this.messageRepository.findOne({
       where: { id: messageId },
       relations: ['conversation', 'sender'],
     });
+    return message ? this.enrichMessage(message) : null;
   }
 
   async markMessageAsRead(messageId: string, userId: string): Promise<void> {
@@ -616,6 +658,37 @@ export class ChatService {
     message.pinnedAt = undefined;
 
     return await this.messageRepository.save(message);
+  }
+
+  private async enrichMessage(message: Message): Promise<Message> {
+    if (!message.metadata || !message.metadata.repliedToMessageId) {
+      return message;
+    }
+
+    try {
+      const repliedToMessage = await this.messageRepository.findOne({
+        where: { id: message.metadata.repliedToMessageId },
+        relations: ['sender'],
+      });
+
+      if (repliedToMessage) {
+        message.metadata.repliedToMessage = {
+          id: repliedToMessage.id,
+          content: repliedToMessage.content,
+          senderId: repliedToMessage.senderId,
+          senderName: `${repliedToMessage.sender.firstName} ${repliedToMessage.sender.lastName || ''}`.trim(),
+          type: repliedToMessage.type as any,
+        };
+      }
+    } catch (error: any) {
+      logger.error(`Error enriching message ${message.id}:`, error);
+    }
+
+    return message;
+  }
+
+  private async enrichMessages(messages: Message[]): Promise<Message[]> {
+    return Promise.all(messages.map((m) => this.enrichMessage(m)));
   }
 
   // Helper methods

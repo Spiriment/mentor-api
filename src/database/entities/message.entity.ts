@@ -56,6 +56,14 @@ export class Message extends BaseEntity {
     dimensions?: { width: number; height: number };
     reactions?: { [userId: string]: string }; // userId -> emoji
     replyTo?: string; // messageId being replied to
+    repliedToMessageId?: string;
+    repliedToMessage?: {
+      id: string;
+      content: string;
+      senderId: string;
+      senderName: string;
+      type: MESSAGE_TYPE;
+    };
     editedAt?: Date;
     originalContent?: string;
   };
