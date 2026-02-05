@@ -86,6 +86,10 @@ const configSchema = z.object({
   expo: z.object({
     accessToken: z.string().optional(),
   }),
+  stream: z.object({
+    apiKey: z.string(),
+    apiSecret: z.string(),
+  }),
 });
 
 const Config = configSchema.parse({
@@ -157,6 +161,10 @@ const Config = configSchema.parse({
   },
   expo: {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
+  },
+  stream: {
+    apiKey: process.env.STREAM_API_KEY || '',
+    apiSecret: process.env.STREAM_API_SECRET || '',
   },
 });
 
