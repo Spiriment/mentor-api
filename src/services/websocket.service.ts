@@ -248,6 +248,15 @@ export class WebSocketService {
       this.handleCallEnd(socket, data);
     });
 
+    // Raise hand events
+    socket.on('raise-hand', (data: { sessionId: string }) => {
+      this.handleRaiseHand(socket, data);
+    });
+
+    socket.on('lower-hand', (data: { sessionId: string }) => {
+      this.handleLowerHand(socket, data);
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
       this.handleDisconnection(socket);
@@ -672,6 +681,28 @@ export class WebSocketService {
       enderId: socket.userId,
       sessionId,
       conversationId,
+    });
+  }
+
+  private handleRaiseHand(socket: AuthenticatedSocket, data: { sessionId: string }) {
+    const { sessionId } = data;
+    logger.info(`User ${socket.userId} raised hand in session ${sessionId}`);
+
+    // Broadcast to all participants in the session
+    this.io.to(`session:${sessionId}`).emit('hand-raised', {
+      userId: socket.userId,
+      sessionId,
+    });
+  }
+
+  private handleLowerHand(socket: AuthenticatedSocket, data: { sessionId: string }) {
+    const { sessionId } = data;
+    logger.info(`User ${socket.userId} lowered hand in session ${sessionId}`);
+
+    // Broadcast to all participants in the session
+    this.io.to(`session:${sessionId}`).emit('hand-lowered', {
+      userId: socket.userId,
+      sessionId,
     });
   }
 
