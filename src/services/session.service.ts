@@ -909,14 +909,37 @@ export class SessionService {
     date: Date
   ): Promise<Array<{ time: string; available: boolean }>> {
     try {
-      const dayOfWeek = date.getDay() as DAY_OF_WEEK;
-      const availability = await this.availabilityRepository.findOne({
-        where: {
-          mentorId,
-          dayOfWeek,
+      // Use getUTCDay() because the date string "YYYY-MM-DD" is parsed as UTC midnight
+      // getDay() would return the local day, which can be off by one based on server timezone
+      const dayOfWeek = date.getUTCDay() as DAY_OF_WEEK;
+      const dateString = date.toISOString().split('T')[0];
+
+      // 1. Check for specific date availability (overrides recurring)
+      let availability = await this.availabilityRepository
+        .createQueryBuilder('availability')
+        .where('availability.mentorId = :mentorId', { mentorId })
+        .andWhere('availability.status = :status', {
           status: AVAILABILITY_STATUS.AVAILABLE,
-        },
-      });
+        })
+        .andWhere('availability.isRecurring = :isRecurring', {
+          isRecurring: false,
+        })
+        .andWhere('DATE(availability.specificDate) = :date', {
+          date: dateString,
+        })
+        .getOne();
+
+      // 2. If no specific date, check for recurring availability
+      if (!availability) {
+        availability = await this.availabilityRepository.findOne({
+          where: {
+            mentorId,
+            dayOfWeek,
+            status: AVAILABILITY_STATUS.AVAILABLE,
+            isRecurring: true,
+          },
+        });
+      }
 
       if (!availability) {
         return [];
@@ -926,6 +949,25 @@ export class SessionService {
       const startTime = new Date(`1970-01-01T${availability.startTime}`);
       const endTime = new Date(`1970-01-01T${availability.endTime}`);
       const slotDuration = availability.slotDuration;
+      const activeStatuses = [
+        SESSION_STATUS.SCHEDULED,
+        SESSION_STATUS.CONFIRMED,
+        SESSION_STATUS.IN_PROGRESS,
+      ];
+
+      // Fetch overlapping sessions for this specific date once (outside the loop)
+      const startOfDay = new Date(date);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+
+      const overlappingSessions = await this.sessionRepository.find({
+        where: {
+          mentorId,
+          status: In(activeStatuses),
+          scheduledAt: Between(startOfDay, endOfDay),
+        },
+      });
 
       let currentTime = new Date(startTime);
       while (currentTime < endTime) {
@@ -947,27 +989,13 @@ export class SessionService {
 
         // Check if there's already a session overlapping with this time slot
         const sessionDateTime = new Date(date);
-        sessionDateTime.setHours(
+        sessionDateTime.setUTCHours(
           currentTime.getHours(),
           currentTime.getMinutes(),
           0,
           0
         );
         const slotEndTime = addMinutes(sessionDateTime, slotDuration);
-
-        // Check for existing sessions (scheduled or confirmed) that overlap with this slot
-        const activeStatuses = [
-          SESSION_STATUS.SCHEDULED,
-          SESSION_STATUS.CONFIRMED,
-          SESSION_STATUS.IN_PROGRESS,
-        ];
-        const overlappingSessions = await this.sessionRepository.find({
-          where: {
-            mentorId,
-            status: In(activeStatuses),
-          },
-        });
-
         let hasOverlap = false;
         for (const existingSession of overlappingSessions) {
           const existingStart = new Date(existingSession.scheduledAt);
