@@ -12,6 +12,7 @@ import {
 } from '@/database/entities/mentorAvailability.entity';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
+import { MentorProfile } from '@/database/entities/mentorProfile.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
@@ -400,6 +401,36 @@ export class SessionService {
               const profileImage = profileImageMap.get(session.menteeId);
               if (profileImage) {
                 (session.mentee as any).profileImage = profileImage;
+              }
+            }
+          }
+        }
+      }
+
+      // If user is a mentee, enrich mentor data with profile images
+      if (userRole === 'mentee' && sessions.length > 0) {
+        const mentorIds = sessions
+          .map((s) => s.mentorId)
+          .filter((id): id is string => id !== null && id !== undefined);
+
+        if (mentorIds.length > 0) {
+          const mentorProfiles = await AppDataSource.getRepository(
+            MentorProfile
+          ).find({
+            where: { userId: In(mentorIds) },
+            select: ['userId', 'profileImage'],
+          });
+
+          const profileImageMap = new Map(
+            mentorProfiles.map((p) => [p.userId, p.profileImage])
+          );
+
+          // Attach profile images to mentor objects
+          for (const session of sessions) {
+            if (session.mentor && session.mentorId) {
+              const profileImage = profileImageMap.get(session.mentorId);
+              if (profileImage) {
+                (session.mentor as any).profileImage = profileImage;
               }
             }
           }
