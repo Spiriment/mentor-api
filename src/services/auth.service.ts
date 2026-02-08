@@ -9,6 +9,7 @@ import {
   AppDataSource,
   Config,
   UserPayload,
+  USER_ROLE,
 } from '@/common';
 import bcrypt from 'bcryptjs';
 import { addMinutes } from 'date-fns';
@@ -30,7 +31,7 @@ import {
 } from '../validation/auth.validation';
 import { EmailService } from '@/core/email.service';
 import { RoleEnum } from '@/common/auth/rbac';
-import { User, PasswordReset, RefreshToken } from '@/database/entities';
+import { User, PasswordReset, RefreshToken, MenteeProfile, MentorProfile } from '@/database/entities';
 import { UserRepository } from '@/repository/user.repository';
 import { generateOTP } from '@/common/helpers/auth';
 import { FileUploadService } from '@/core/fileUpload.service';
@@ -411,7 +412,30 @@ export class AuthService {
       throw new AppError('User not found', 404);
     }
 
-    return User;
+    // Enrich with profile image
+    let profileImage;
+    try {
+      if (User.role === USER_ROLE.MENTEE) {
+        const profile = await AppDataSource.getRepository(MenteeProfile).findOne({
+          where: { userId: User.id },
+          select: ['profileImage'],
+        });
+        profileImage = profile?.profileImage;
+      } else if (User.role === USER_ROLE.MENTOR) {
+        const profile = await AppDataSource.getRepository(MentorProfile).findOne({
+          where: { userId: User.id },
+          select: ['profileImage'],
+        });
+        profileImage = profile?.profileImage;
+      }
+    } catch (error) {
+      this.logger.warn('Error fetching profile image for user profile', { userId, error });
+    }
+
+    return {
+      ...User,
+      profileImage,
+    };
   };
 
   refreshToken = async (refreshToken: string): Promise<TokenResponse> => {
