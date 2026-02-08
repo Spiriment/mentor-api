@@ -477,6 +477,17 @@ export class GroupSessionService {
         throw new AppError('Unauthorized', StatusCodes.FORBIDDEN);
       }
 
+      // Enrich mentor profile image
+      if (groupSession.mentor && groupSession.mentorId) {
+        const mentorProfile = await AppDataSource.getRepository('MentorProfile').findOne({
+          where: { userId: groupSession.mentorId },
+          select: ['profileImage'],
+        });
+        if (mentorProfile) {
+          (groupSession.mentor as any).profileImage = (mentorProfile as any).profileImage;
+        }
+      }
+
       return groupSession;
     } catch (error: any) {
       logger.error('Error getting group session:', error);
@@ -516,9 +527,31 @@ export class GroupSessionService {
 
       const groupSessions = await this.groupSessionRepository.find({
         where,
-        relations: ['participants', 'participants.mentee'],
+        relations: ['participants', 'participants.mentee', 'mentor'],
         order: { scheduledAt: 'DESC' },
       });
+
+      // Enrich mentor profile images
+      if (groupSessions.length > 0) {
+        const mentorIds = [...new Set(groupSessions.map((gs) => gs.mentorId))];
+        const mentorProfiles = await AppDataSource.getRepository('MentorProfile').find({
+          where: { userId: In(mentorIds) },
+          select: ['userId', 'profileImage'],
+        });
+
+        const profileImageMap = new Map(
+          mentorProfiles.map((p) => [p.userId, (p as any).profileImage])
+        );
+
+        for (const gs of groupSessions) {
+          if (gs.mentor && gs.mentorId) {
+            const profileImage = profileImageMap.get(gs.mentorId);
+            if (profileImage) {
+              (gs.mentor as any).profileImage = profileImage;
+            }
+          }
+        }
+      }
 
       return groupSessions;
     } catch (error: any) {
@@ -551,6 +584,28 @@ export class GroupSessionService {
         where,
         relations: ['groupSession', 'groupSession.mentor', 'groupSession.participants'],
       });
+
+      // Enrich mentor profile images
+      if (participants.length > 0) {
+        const mentorIds = [...new Set(participants.map((p) => p.groupSession.mentorId))];
+        const mentorProfiles = await AppDataSource.getRepository('MentorProfile').find({
+          where: { userId: In(mentorIds) },
+          select: ['userId', 'profileImage'],
+        });
+
+        const profileImageMap = new Map(
+          mentorProfiles.map((p) => [p.userId, (p as any).profileImage])
+        );
+
+        for (const p of participants) {
+          if (p.groupSession.mentor && p.groupSession.mentorId) {
+            const profileImage = profileImageMap.get(p.groupSession.mentorId);
+            if (profileImage) {
+              (p.groupSession.mentor as any).profileImage = profileImage;
+            }
+          }
+        }
+      }
 
       // Filter by upcoming if needed
       if (filters?.upcoming) {
