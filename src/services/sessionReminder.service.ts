@@ -339,7 +339,7 @@ export class SessionReminderService {
 
     // Send push notification if mentor has a push token and has enabled them
     if (mentor.pushToken && pushEnabled) {
-      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : 0);
+      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0));
       await pushNotificationService.sendSessionReminder(
         mentor.pushToken,
         mentor.id,
@@ -418,7 +418,7 @@ export class SessionReminderService {
 
     // Send push notification if mentee has a push token and has enabled them
     if (mentee.pushToken && pushEnabled) {
-      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : 0);
+      const minutesBefore = timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0));
       await pushNotificationService.sendSessionReminder(
         mentee.pushToken,
         mentee.id,
@@ -435,6 +435,62 @@ export class SessionReminderService {
   /**
    * Update session reminders field
    */
+  /**
+   * Send 24-hour session reminders
+   */
+  async send24HourReminders(): Promise<void> {
+    const now = new Date();
+    const startTime = addMinutes(now, 23 * 60 + 50); // 23h 50m
+    const endTime = addMinutes(now, 24 * 60 + 10); // 24h 10m
+
+    logger.debug(
+      `Checking for 24-hour reminders between ${startTime.toISOString()} and ${endTime.toISOString()}`
+    );
+
+    try {
+      const sessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .leftJoinAndSelect('session.mentor', 'mentor')
+        .leftJoinAndSelect('session.mentee', 'mentee')
+        .where('session.status IN (:...statuses)', {
+          statuses: [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED],
+        })
+        .andWhere('session.scheduledAt >= :startTime', {
+          startTime: startTime,
+        })
+        .andWhere('session.scheduledAt <= :endTime', {
+          endTime: endTime,
+        })
+        .getMany();
+
+      logger.debug(`Found ${sessions.length} sessions for 24-hour reminder`);
+
+      for (const session of sessions) {
+        try {
+          if (session.reminders?.sent24h) {
+            continue;
+          }
+
+          // Send reminder to both mentor and mentee
+          await this.sendReminderToMentor(session, '24 hours');
+          await this.sendReminderToMentee(session, '24 hours');
+
+          // Update flag
+          await this.updateSessionReminders(session.id, {
+            sent24h: true,
+          });
+        } catch (sessionError) {
+          logger.error(
+            `Error processing 24-hour reminder for session ${session.id}:`,
+            sessionError instanceof Error ? sessionError : new Error(String(sessionError))
+          );
+        }
+      }
+    } catch (error) {
+      logger.error('Error fetching sessions for 24-hour reminders:', error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
   private async updateSessionReminders(
     sessionId: string,
     reminderUpdate: {

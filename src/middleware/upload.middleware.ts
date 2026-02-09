@@ -85,7 +85,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 250 * 1024 * 1024, // 250MB limit
     files: 1, // Only one file per request
   },
 });
@@ -117,7 +117,7 @@ export const handleUploadError = (
       return res.status(400).json({
         success: false,
         error: {
-          message: 'File size too large. Maximum size is 50MB.',
+          message: 'File size too large. Maximum size is 250MB.',
           code: 'FILE_TOO_LARGE',
         },
       });

@@ -2,6 +2,7 @@ import { AppDataSource } from '@/config/data-source';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { Logger } from '@/common';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
@@ -48,6 +49,7 @@ export class MentorService {
   private sessionRepository = AppDataSource.getRepository(Session);
   private userRepository = AppDataSource.getRepository(User);
   private menteeProfileRepository = AppDataSource.getRepository(MenteeProfile);
+  private mentorshipRequestRepository = AppDataSource.getRepository(MentorshipRequest);
   private logger: Logger;
 
   constructor() {
@@ -143,8 +145,13 @@ export class MentorService {
         })
         .slice(0, 5);
 
-      // Get stats
-      const totalMentees = menteeMap.size;
+      // Get count of accepted mentees
+      const totalMentees = await this.mentorshipRequestRepository.count({
+        where: {
+          mentorId,
+          status: MENTORSHIP_REQUEST_STATUS.ACCEPTED,
+        },
+      });
 
       const activeSessions = await this.sessionRepository.count({
         where: {
@@ -225,91 +232,95 @@ export class MentorService {
       const { page = 1, limit = 20, search = '' } = options;
       const offset = (page - 1) * limit;
 
-      // Get all sessions for this mentor to extract mentees
-      let sessionsQuery = this.sessionRepository
-        .createQueryBuilder('session')
-        .leftJoinAndSelect('session.mentee', 'mentee')
-        .where('session.mentorId = :mentorId', { mentorId })
-        .andWhere('session.status != :cancelled', {
-          cancelled: SESSION_STATUS.CANCELLED,
+      // Get all accepted mentorship requests for this mentor
+      let requestsQuery = this.mentorshipRequestRepository
+        .createQueryBuilder('request')
+        .leftJoinAndSelect('request.mentee', 'mentee')
+        .where('request.mentorId = :mentorId', { mentorId })
+        .andWhere('request.status = :accepted', {
+          accepted: MENTORSHIP_REQUEST_STATUS.ACCEPTED,
         });
 
       // Apply search filter if provided
       if (search) {
-        sessionsQuery = sessionsQuery.andWhere(
+        requestsQuery = requestsQuery.andWhere(
           '(mentee.firstName LIKE :search OR mentee.lastName LIKE :search OR mentee.email LIKE :search)',
           { search: `%${search}%` }
         );
       }
 
-      const allSessions = await sessionsQuery
+      // Get basic count for pagination
+      const total = await requestsQuery.getCount();
+      const pages = Math.ceil(total / limit);
+
+      // Get paginated requests
+      const requests = await requestsQuery
+        .orderBy('mentee.firstName', 'ASC')
+        .addOrderBy('mentee.lastName', 'ASC')
+        .skip(offset)
+        .take(limit)
+        .getMany();
+
+      if (requests.length === 0) {
+        return {
+          mentees: [],
+          pagination: { total, page, limit, pages },
+        };
+      }
+
+      const menteeIds = requests.map((r) => r.menteeId);
+
+      // Fetch profiles for these mentees
+      const profiles = await this.menteeProfileRepository.find({
+        where: menteeIds.map((id) => ({ userId: id })),
+      });
+      const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+
+      // Fetch last session and session counts for these mentees
+      const sessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .where('session.mentorId = :mentorId', { mentorId })
+        .andWhere('session.menteeId IN (:...menteeIds)', { menteeIds })
+        .andWhere('session.status != :cancelled', {
+          cancelled: SESSION_STATUS.CANCELLED,
+        })
         .orderBy('session.scheduledAt', 'DESC')
         .getMany();
 
-      // Group sessions by mentee and calculate stats
-      const menteeMap = new Map<string, MenteeListItem>();
-
-      // Get mentee profiles for all sessions
-      const sessionMenteeIds = [...new Set(allSessions.map((s) => s.menteeId))];
-      const sessionMenteeProfiles = await this.menteeProfileRepository.find({
-        where: sessionMenteeIds.map((id) => ({ userId: id })),
-        select: ['userId', 'profileImage'],
-      });
-      const sessionProfileMap = new Map(
-        sessionMenteeProfiles.map((p) => [p.userId, p.profileImage])
-      );
-
-      allSessions.forEach((session) => {
-        const menteeId = session.menteeId;
-        const mentee = session.mentee;
-
-        if (!menteeMap.has(menteeId)) {
-          menteeMap.set(menteeId, {
-            id: menteeId,
-            name:
-              mentee.firstName && mentee.lastName
-                ? `${mentee.firstName} ${mentee.lastName}`
-                : mentee.email || 'Unknown Mentee',
-            avatar: sessionProfileMap.get(menteeId) || undefined,
-            email: mentee.email,
-            lastSessionAt: session.scheduledAt,
-            activeSessions: 0,
-            totalSessions: 0,
-          });
-        }
-
-        const menteeData = menteeMap.get(menteeId)!;
-        menteeData.totalSessions++;
-
-        // Update last session date if this is more recent
-        if (
-          session.scheduledAt &&
-          (!menteeData.lastSessionAt ||
-            new Date(session.scheduledAt) > new Date(menteeData.lastSessionAt))
-        ) {
-          menteeData.lastSessionAt = session.scheduledAt;
-        }
-
-        // Count active sessions (confirmed or scheduled)
-        if (
-          session.status === SESSION_STATUS.CONFIRMED ||
-          session.status === SESSION_STATUS.SCHEDULED
-        ) {
-          menteeData.activeSessions++;
-        }
+      // Group sessions by mentee
+      const sessionMap = new Map<string, Session[]>();
+      sessions.forEach((s) => {
+        const list = sessionMap.get(s.menteeId) || [];
+        list.push(s);
+        sessionMap.set(s.menteeId, list);
       });
 
-      // Convert to array and sort by last session date
-      let mentees = Array.from(menteeMap.values()).sort((a, b) => {
-        const dateA = a.lastSessionAt ? new Date(a.lastSessionAt).getTime() : 0;
-        const dateB = b.lastSessionAt ? new Date(b.lastSessionAt).getTime() : 0;
-        return dateB - dateA;
-      });
+      // Format the result
+      const mentees: MenteeListItem[] = requests.map((request) => {
+        const mentee = request.mentee!;
+        const profile = profileMap.get(request.menteeId);
+        const menteeSessions = sessionMap.get(request.menteeId) || [];
 
-      // Apply pagination
-      const total = mentees.length;
-      const pages = Math.ceil(total / limit);
-      mentees = mentees.slice(offset, offset + limit);
+        const activeSessions = menteeSessions.filter(
+          (s) =>
+            s.status === SESSION_STATUS.CONFIRMED ||
+            s.status === SESSION_STATUS.SCHEDULED
+        ).length;
+
+        return {
+          id: request.menteeId,
+          name:
+            mentee.firstName && mentee.lastName
+              ? `${mentee.firstName} ${mentee.lastName}`
+              : mentee.email || 'Unknown Mentee',
+          avatar: profile?.profileImage || undefined,
+          email: mentee.email,
+          lastSeen: mentee.lastActiveAt, // Use user's last activity
+          lastSessionAt: menteeSessions[0]?.scheduledAt,
+          activeSessions,
+          totalSessions: menteeSessions.length,
+        };
+      });
 
       return {
         mentees,
