@@ -142,6 +142,8 @@ export class SessionController {
         offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
         upcoming: req.query.upcoming === 'true',
         past: req.query.past === 'true',
+        menteeId: req.query.menteeId as string,
+        mentorId: req.query.mentorId as string,
       };
 
       const result = await this.sessionService.getUserSessions(

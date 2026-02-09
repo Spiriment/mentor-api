@@ -19,7 +19,7 @@ import { getEmailService } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { pushNotificationService } from './pushNotification.service';
-import { AgoraService } from '@/core/agora.service';
+
 import {
   Conversation,
   CONVERSATION_TYPE,
@@ -61,7 +61,6 @@ export class GroupSessionService {
   private participantRepository = AppDataSource.getRepository(GroupSessionParticipant);
   private userRepository = AppDataSource.getRepository(User);
   private sessionRepository = AppDataSource.getRepository(Session);
-  private agoraService = new AgoraService();
   private conversationRepository = AppDataSource.getRepository(Conversation);
   private chatParticipantRepository = AppDataSource.getRepository(ConversationParticipant);
   private messageRepository = AppDataSource.getRepository(Message);
@@ -195,7 +194,7 @@ export class GroupSessionService {
         );
       }
 
-      // Generate Agora channel name and meeting credentials
+      // Generate channel name and meeting credentials
       const channelName = `group_${Date.now()}_${data.mentorId.substring(0, 8)}`;
       const meetingId = channelName;
 
@@ -947,72 +946,7 @@ export class GroupSessionService {
     }
   }
 
-  /**
-   * Get Agora credentials for group session video call
-   */
-  async getGroupSessionAgoraCredentials(
-    groupSessionId: string,
-    userId: string
-  ): Promise<{
-    appId: string;
-    channelName: string;
-    token: string;
-    uid: number;
-  }> {
-    try {
-      const groupSession = await this.groupSessionRepository.findOne({
-        where: { id: groupSessionId },
-        relations: ['participants'],
-      });
 
-      if (!groupSession) {
-        throw new AppError('Group session not found', StatusCodes.NOT_FOUND);
-      }
-
-      // Check if user is mentor or participant
-      const isMentor = groupSession.mentorId === userId;
-      const isParticipant = groupSession.participants.some(
-        (p) => p.menteeId === userId && p.invitationStatus === INVITATION_STATUS.ACCEPTED
-      );
-
-      if (!isMentor && !isParticipant) {
-        throw new AppError('Unauthorized', StatusCodes.FORBIDDEN);
-      }
-
-      // Use meetingLink as channel name (set during creation)
-      const channelName = groupSession.meetingLink || groupSession.id;
-
-      // Generate Agora token
-      const token = this.agoraService.generateRtcToken(
-        channelName,
-        userId,
-        'publisher',
-        7200 // 2 hours
-      );
-
-      const uid = this.agoraService.hashUserId(userId);
-      const appId = this.agoraService.getAppId();
-
-      logger.info(`Generated Agora credentials for group session ${groupSessionId}`, {
-        userId,
-        channelName,
-      });
-
-      return {
-        appId,
-        channelName,
-        token,
-        uid,
-      };
-    } catch (error: any) {
-      logger.error('Error getting group session Agora credentials:', error);
-      if (error instanceof AppError) throw error;
-      throw new AppError(
-        'Failed to get Agora credentials',
-        StatusCodes.INTERNAL_SERVER_ERROR
-      );
-    }
-  }
 
   /**
    * Create a group chat for a completed group session
