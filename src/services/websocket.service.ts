@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import jwt from 'jsonwebtoken';
 import { Config } from '@/config';
 import { logger } from '@/config/int-services';
-import { User } from '@/database/entities';
+import { User, Message } from '@/database/entities';
 import { ChatService } from '@/services/chat.service';
 import { pushNotificationService } from '@/services/pushNotification.service';
 
@@ -796,6 +796,17 @@ export class WebSocketService {
     this.io
       .to(`conversation:${conversationId}`)
       .emit('conversation-notification', notification);
+  }
+
+  /**
+   * Broadcast a new message to all participants in a conversation
+   */
+  public broadcastNewMessage(conversationId: string, message: Message) {
+    this.io.to(`conversation:${conversationId}`).emit('new-message', {
+      message,
+      conversationId,
+    });
+    logger.info(`Broadcasted new message: ${message.id} in ${conversationId}`);
   }
 
   /**

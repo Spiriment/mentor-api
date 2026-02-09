@@ -98,8 +98,7 @@ router.post(
  * Shared Routes (mentor or mentee)
  */
 
-// Get Agora credentials for video call (mentor or participant)
-router.get('/:id/agora-credentials', groupSessionController.getAgoraCredentials);
+
 
 // Get group session details (mentor or participant)
 router.get('/:id', groupSessionController.getGroupSession);

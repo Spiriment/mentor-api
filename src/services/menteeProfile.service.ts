@@ -3,15 +3,18 @@ import { AppDataSource } from '../config/data-source';
 import { MenteeProfile } from '../database/entities/menteeProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger, USER_ROLE } from '../common';
+import { Session, SESSION_STATUS } from '../database/entities/session.entity';
 
 export class MenteeProfileService {
   private menteeProfileRepository: Repository<MenteeProfile>;
   private userRepository: Repository<User>;
+  private sessionRepository: Repository<Session>;
   private logger: Logger;
 
   constructor() {
     this.menteeProfileRepository = AppDataSource.getRepository(MenteeProfile);
     this.userRepository = AppDataSource.getRepository(User);
+    this.sessionRepository = AppDataSource.getRepository(Session);
     this.logger = new Logger({
       service: 'mentee-profile-service',
       level: process.env.LOG_LEVEL || 'info',
@@ -180,10 +183,27 @@ export class MenteeProfileService {
   // Get profile by user ID
   async getProfile(userId: string): Promise<MenteeProfile | null> {
     try {
-      return await this.menteeProfileRepository.findOne({
+      const profile = await this.menteeProfileRepository.findOne({
         where: { userId },
         relations: ['user'],
       });
+
+      if (!profile) return null;
+
+      // Fetch last session date
+      const lastSession = await this.sessionRepository.findOne({
+        where: {
+          menteeId: userId,
+          status: SESSION_STATUS.COMPLETED as any || 'completed',
+        },
+        order: { scheduledAt: 'DESC' },
+      });
+
+      // Attach stats to profile
+      const profileWithStats = profile as any;
+      profileWithStats.lastSessionDate = lastSession?.scheduledAt || null;
+
+      return profileWithStats;
     } catch (error) {
       this.logger.error('Error getting mentee profile', error instanceof Error ? error : new Error(String(error)));
       throw error;

@@ -52,6 +52,7 @@ export class MenteeProfileController {
         spiritualGoals: profile.spiritualGoals,
         currentBook: profile.currentBook,
         currentChapter: profile.currentChapter,
+        lastSessionDate: (profile as any).lastSessionDate,
       };
 
       res.json({

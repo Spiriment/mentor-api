@@ -307,7 +307,7 @@ export class ChatService {
   async createCallLog(data: {
     conversationId: string;
     senderId: string;
-    callStatus: 'completed' | 'missed' | 'rejected' | 'failed';
+    callStatus: 'completed' | 'missed' | 'rejected' | 'failed' | 'cancelled';
     duration?: number;
   }): Promise<Message> {
     const content = this.formatCallLogContent(data.callStatus, data.duration);
@@ -334,15 +334,22 @@ export class ChatService {
         return 'Video call declined';
       case 'failed':
         return 'Video call failed';
+      case 'cancelled':
+        return 'Video call cancelled';
       default:
         return 'Video call';
     }
   }
 
   private formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   async toggleStarMessage(

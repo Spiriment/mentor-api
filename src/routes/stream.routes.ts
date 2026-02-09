@@ -11,4 +11,7 @@ router.use(authenticateToken);
 // Generate Stream token for a user
 router.get('/token', streamController.generateToken);
 
+// Log call outcome
+router.post('/log-call', streamController.logCallOutcome);
+
 export { router as streamRoutes };

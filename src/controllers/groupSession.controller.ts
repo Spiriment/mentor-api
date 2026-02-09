@@ -374,41 +374,7 @@ export class GroupSessionController {
     }
   };
 
-  /**
-   * GET /api/sessions/group/:id/agora-credentials
-   * Get Agora credentials for joining group video call
-   */
-  public getAgoraCredentials = async (
-    req: Request,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const userId = req.user!.id;
 
-      const credentials =
-        await this.groupSessionService.getGroupSessionAgoraCredentials(
-          id,
-          userId
-        );
-
-      res.status(200).json({
-        success: true,
-        data: credentials,
-      });
-    } catch (error: any) {
-      console.error('Error getting Agora credentials:', error);
-      const statusCode = error.message.includes('not found')
-        ? 404
-        : error.message.includes('Unauthorized')
-          ? 403
-          : 500;
-      res.status(statusCode).json({
-        success: false,
-        message: error.message || 'Failed to get Agora credentials',
-      });
-    }
-  };
 
   /**
    * POST /api/sessions/group/:id/create-chat

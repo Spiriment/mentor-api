@@ -325,6 +325,8 @@ export class SessionService {
       offset?: number;
       upcoming?: boolean;
       past?: boolean;
+      menteeId?: string;
+      mentorId?: string;
     } = {}
   ): Promise<{ sessions: Session[]; total: number }> {
     try {
@@ -335,8 +337,18 @@ export class SessionService {
 
       if (userRole === 'mentor') {
         queryBuilder.where('session.mentorId = :userId', { userId });
+        if (options.menteeId) {
+          queryBuilder.andWhere('session.menteeId = :menteeId', {
+            menteeId: options.menteeId,
+          });
+        }
       } else {
         queryBuilder.where('session.menteeId = :userId', { userId });
+        if (options.mentorId) {
+          queryBuilder.andWhere('session.mentorId = :mentorId', {
+            mentorId: options.mentorId,
+          });
+        }
       }
 
       if (options.status) {

@@ -23,7 +23,6 @@ import groupSessionRoutes from './groupSession.routes';
 import mentorshipRequestRoutes from './mentorshipRequest.routes';
 import pushTokenRoutes from './pushToken.routes';
 import { monthlySummaryRoutes } from './monthlySummary.routes';
-import { agoraRoutes } from './agora.routes';
 import { streamRoutes } from './stream.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
@@ -160,8 +159,6 @@ const createRootRoutes = () => {
   // Push token routes
   rootRouter.use('/api/users/push-token', pushTokenRoutes);
 
-  // Agora video call routes
-  rootRouter.use('/api/agora', agoraRoutes);
 
   // Stream video call routes
   rootRouter.use('/api/stream', streamRoutes);
