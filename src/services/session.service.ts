@@ -17,7 +17,7 @@ import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
-import { format, addMinutes } from 'date-fns';
+import { format, addMinutes, subMinutes } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
 import { Between, In } from 'typeorm';
 import {
@@ -346,8 +346,8 @@ export class SessionService {
       }
 
       if (options.upcoming) {
-        queryBuilder.andWhere('session.scheduledAt > :now', {
-          now: new Date(),
+        queryBuilder.andWhere('session.scheduledAt > :gracePeriodLimit', {
+          gracePeriodLimit: subMinutes(new Date(), 120),
         });
         // Exclude cancelled and completed sessions from upcoming
         queryBuilder.andWhere('session.status != :cancelledStatus', {
@@ -1565,6 +1565,7 @@ export class SessionService {
           currentSession.previousScheduledAt = undefined;
           currentSession.rescheduleReason = undefined;
           currentSession.rescheduleMessage = undefined;
+          currentSession.reminders = {}; // Reset reminder flags for the new time
 
           return await sessionRepository.save(currentSession);
         }

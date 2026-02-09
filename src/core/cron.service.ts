@@ -50,6 +50,16 @@ export class CronService {
             );
           }
 
+          // Run 24-hour reminders
+          try {
+            await this.sessionReminderService?.send24HourReminders();
+          } catch (error) {
+            logger.error(
+              "Error in 24-hour session reminder cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+
           // Run 15-minute reminders
           try {
             await this.sessionReminderService?.send15MinuteReminders();

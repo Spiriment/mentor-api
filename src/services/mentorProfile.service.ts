@@ -6,15 +6,24 @@ import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
 import { pushNotificationService } from './pushNotification.service';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '../database/entities/appNotification.entity';
+import { Session, SESSION_STATUS } from '../database/entities/session.entity';
+import { SessionReview } from '../database/entities/sessionReview.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '../database/entities/mentorshipRequest.entity';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
   private userRepository: Repository<User>;
+  private sessionRepository: Repository<Session>;
+  private sessionReviewRepository: Repository<SessionReview>;
+  private mentorshipRequestRepository: Repository<MentorshipRequest>;
   private logger: Logger;
 
   constructor() {
     this.mentorProfileRepository = AppDataSource.getRepository(MentorProfile);
     this.userRepository = AppDataSource.getRepository(User);
+    this.sessionRepository = AppDataSource.getRepository(Session);
+    this.sessionReviewRepository = AppDataSource.getRepository(SessionReview);
+    this.mentorshipRequestRepository = AppDataSource.getRepository(MentorshipRequest);
     this.logger = new Logger({
       service: 'mentor-profile-service',
       level: process.env.LOG_LEVEL || 'info',
@@ -189,10 +198,40 @@ export class MentorProfileService {
   // Get profile by user ID
   async getProfile(userId: string): Promise<MentorProfile | null> {
     try {
-      return await this.mentorProfileRepository.findOne({
+      const profile = await this.mentorProfileRepository.findOne({
         where: { userId },
         relations: ['user'],
       });
+
+      if (!profile) return null;
+
+      // Fetch dynamic stats
+      const totalSessions = await this.sessionRepository.count({
+        where: {
+          mentorId: userId,
+          status: SESSION_STATUS.COMPLETED as any || 'completed',
+        },
+      });
+
+      const reviews = await this.sessionReviewRepository.count({
+        where: { mentorId: userId },
+      });
+
+      // Get count of accepted mentees
+      const totalMentees = await this.mentorshipRequestRepository.count({
+        where: {
+          mentorId: userId,
+          status: MENTORSHIP_REQUEST_STATUS.ACCEPTED,
+        },
+      });
+
+      // Attach stats to profile (cast to any to allow dynamic properties)
+      const profileWithStats = profile as any;
+      profileWithStats.totalMentees = totalMentees;
+      profileWithStats.sessions = totalSessions;
+      profileWithStats.reviews = reviews;
+
+      return profileWithStats;
     } catch (error) {
       this.logger.error('Error getting mentor profile', error instanceof Error ? error : new Error(String(error)));
       throw error;
