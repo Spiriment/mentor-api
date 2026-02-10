@@ -138,6 +138,15 @@ export class SessionService {
           const sessionRepository =
             transactionalEntityManager.getRepository(Session);
 
+          // CRITICAL: Ensure the scheduled time is in the future
+          const now = new Date();
+          if (data.scheduledAt <= now) {
+            throw new AppError(
+              'Cannot schedule a session in the past',
+              StatusCodes.BAD_REQUEST
+            );
+          }
+
           // Check if mentor is available at the requested time with duration overlap checking
           const duration = data.duration || SESSION_DURATION.ONE_HOUR;
           const isAvailable = await this.isMentorAvailable(
@@ -432,15 +441,19 @@ export class SessionService {
       }
 
       if (options.upcoming) {
-        queryBuilder.andWhere('session.scheduledAt > :gracePeriodLimit', {
-          gracePeriodLimit: subMinutes(new Date(), 120),
-        });
-        // Exclude cancelled and completed sessions from upcoming
-        queryBuilder.andWhere('session.status != :cancelledStatus', {
-          cancelledStatus: SESSION_STATUS.CANCELLED,
-        });
-        queryBuilder.andWhere('session.status != :completedStatus', {
-          completedStatus: SESSION_STATUS.COMPLETED,
+        // A session is upcoming if it hasn't finished its duration + a 30-minute grace buffer
+        queryBuilder.andWhere(
+          'DATE_ADD(session.scheduledAt, INTERVAL (session.duration + 30) MINUTE) > :now',
+          { now: new Date() }
+        );
+        // Exclude inactive and terminal statuses from upcoming
+        queryBuilder.andWhere('session.status NOT IN (:...inactiveStatuses)', {
+          inactiveStatuses: [
+            SESSION_STATUS.CANCELLED,
+            SESSION_STATUS.COMPLETED,
+            SESSION_STATUS.NO_SHOW,
+            SESSION_STATUS.RESCHEDULED,
+          ],
         });
       }
 
@@ -884,11 +897,20 @@ export class SessionService {
 
       // Check for overlapping group sessions
       const groupSessionRepository = AppDataSource.getRepository(GroupSession);
+      const startOfDay = new Date(requestedTime);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(requestedTime);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+
       const existingGroupSessions = await groupSessionRepository
         .createQueryBuilder('gs')
         .where('gs.mentorId = :mentorId', { mentorId })
         .andWhere('gs.status IN (:...statuses)', {
           statuses: ['invites_sent', 'confirmed', 'in_progress'],
+        })
+        .andWhere('gs.scheduledAt BETWEEN :startOfDay AND :endOfDay', {
+          startOfDay,
+          endOfDay,
         })
         .getMany();
 
@@ -1205,9 +1227,12 @@ export class SessionService {
           }
         }
 
+        // Check if the slot is in the past
+        const isPast = sessionDateTime <= new Date();
+
         slots.push({
           time: timeString,
-          available: !isInBreak && !hasOverlap,
+          available: !isInBreak && !hasOverlap && !isPast,
         });
 
         currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
@@ -1466,6 +1491,24 @@ export class SessionService {
         );
       }
 
+      const newTimeDate = new Date(newScheduledAt);
+
+      // CRITICAL: Ensure the new time is in the future
+      if (newTimeDate <= new Date()) {
+        throw new AppError(
+          'Cannot reschedule a session to a past time',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
+      // Ensure the new time is different from the current scheduled time
+      if (newTimeDate.getTime() === session.scheduledAt.getTime()) {
+        throw new AppError(
+          'New scheduled time must be different from the current scheduled time',
+          StatusCodes.BAD_REQUEST
+        );
+      }
+
       // Validate mentor availability at the new requested time
       const newScheduledAtDate = new Date(newScheduledAt);
       const isAvailable = await this.isMentorAvailable(
@@ -1519,6 +1562,79 @@ export class SessionService {
             StatusCodes.CONFLICT
           );
         }
+      }
+
+      // Check for mentor group session conflicts
+      const groupSessionRepository = AppDataSource.getRepository(GroupSession);
+      const mentorGroupSessions = await groupSessionRepository
+        .createQueryBuilder('gs')
+        .where('gs.mentorId = :mentorId', { mentorId: session.mentorId })
+        .andWhere('gs.status IN (:...statuses)', {
+          statuses: ['invites_sent', 'confirmed', 'in_progress'],
+        })
+        .andWhere(
+          '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+          {
+            requestedStart: newScheduledAtDate,
+            requestedEnd: requestedEndTime,
+          }
+        )
+        .getMany();
+
+      if (mentorGroupSessions.length > 0) {
+        throw new AppError(
+          'Mentor has a conflicting group session at the requested time',
+          StatusCodes.CONFLICT
+        );
+      }
+
+      // Check for mentee regular session conflicts
+      const menteeRegularSessions = await this.sessionRepository
+        .createQueryBuilder('session')
+        .where('session.menteeId = :menteeId', { menteeId: session.menteeId })
+        .andWhere('session.id != :sessionId', { sessionId: session.id })
+        .andWhere('session.status IN (:...statuses)', {
+          statuses: activeStatuses,
+        })
+        .andWhere(
+          '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+          {
+            requestedStart: newScheduledAtDate,
+            requestedEnd: requestedEndTime,
+          }
+        )
+        .getMany();
+
+      if (menteeRegularSessions.length > 0) {
+        throw new AppError(
+          'You already have a session scheduled at the requested time',
+          StatusCodes.CONFLICT
+        );
+      }
+
+      // Check for mentee group session conflicts
+      const menteeGroupSessions = await groupSessionRepository
+        .createQueryBuilder('gs')
+        .leftJoin('gs.participants', 'participant')
+        .where('participant.menteeId = :menteeId', { menteeId: session.menteeId })
+        .andWhere('participant.invitationStatus = :status', { status: 'accepted' })
+        .andWhere('gs.status IN (:...statuses)', {
+          statuses: ['invites_sent', 'confirmed', 'in_progress'],
+        })
+        .andWhere(
+          '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+          {
+            requestedStart: newScheduledAtDate,
+            requestedEnd: requestedEndTime,
+          }
+        )
+        .getMany();
+
+      if (menteeGroupSessions.length > 0) {
+        throw new AppError(
+          'You already have a group session scheduled at the requested time',
+          StatusCodes.CONFLICT
+        );
       }
 
       // Store the reschedule request details
@@ -1662,6 +1778,14 @@ export class SessionService {
             );
           }
 
+          // CRITICAL: Ensure the requested time is still in the future
+          if (currentSession.requestedScheduledAt <= new Date()) {
+            throw new AppError(
+              'Cannot accept a reschedule for a time that has already passed',
+              StatusCodes.BAD_REQUEST
+            );
+          }
+
           // Validate mentor availability at the new time (may have changed since request)
           const isAvailable = await this.isMentorAvailable(
             currentSession.mentorId,
@@ -1710,6 +1834,79 @@ export class SessionService {
           if (overlappingSessions.length > 0) {
             throw new AppError(
               'The requested reschedule time conflicts with another session',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentor group session conflicts
+          const groupSessionRepository = transactionalEntityManager.getRepository(GroupSession);
+          const mentorGroupSessions = await groupSessionRepository
+            .createQueryBuilder('gs')
+            .where('gs.mentorId = :mentorId', { mentorId: currentSession.mentorId })
+            .andWhere('gs.status IN (:...statuses)', {
+              statuses: ['invites_sent', 'confirmed', 'in_progress'],
+            })
+            .andWhere(
+              '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: currentSession.requestedScheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (mentorGroupSessions.length > 0) {
+            throw new AppError(
+              'Mentor has a conflicting group session at the requested time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentee regular session conflicts
+          const menteeRegularSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.menteeId = :menteeId', { menteeId: currentSession.menteeId })
+            .andWhere('session.id != :sessionId', { sessionId: currentSession.id })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: currentSession.requestedScheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (menteeRegularSessions.length > 0) {
+            throw new AppError(
+              'Mentee has a conflicting session at the requested time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentee group session conflicts
+          const menteeGroupSessions = await groupSessionRepository
+            .createQueryBuilder('gs')
+            .leftJoin('gs.participants', 'participant')
+            .where('participant.menteeId = :menteeId', { menteeId: currentSession.menteeId })
+            .andWhere('participant.invitationStatus = :status', { status: 'accepted' })
+            .andWhere('gs.status IN (:...statuses)', {
+              statuses: ['invites_sent', 'confirmed', 'in_progress'],
+            })
+            .andWhere(
+              '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: currentSession.requestedScheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (menteeGroupSessions.length > 0) {
+            throw new AppError(
+              'Mentee has a conflicting group session at the requested time',
               StatusCodes.CONFLICT
             );
           }
