@@ -32,6 +32,7 @@ import {
   MentorshipRequest,
   MENTORSHIP_REQUEST_STATUS,
 } from '@/database/entities/mentorshipRequest.entity';
+import { GroupSession } from '@/database/entities/groupSession.entity';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -159,6 +160,7 @@ export class SessionService {
             SESSION_STATUS.IN_PROGRESS,
           ];
 
+          // Check for mentor conflicts
           const overlappingSessions = await sessionRepository
             .createQueryBuilder('session')
             .where('session.mentorId = :mentorId', { mentorId: data.mentorId })
@@ -177,6 +179,78 @@ export class SessionService {
           if (overlappingSessions.length > 0) {
             throw new AppError(
               'Mentor is not available at the requested time (time slot conflict)',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentee conflicts (prevent double-booking)
+          const menteeOverlappingSessions = await sessionRepository
+            .createQueryBuilder('session')
+            .where('session.menteeId = :menteeId', { menteeId: data.menteeId })
+            .andWhere('session.status IN (:...statuses)', {
+              statuses: activeStatuses,
+            })
+            .andWhere(
+              '(session.scheduledAt < :requestedEnd AND DATE_ADD(session.scheduledAt, INTERVAL session.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: data.scheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (menteeOverlappingSessions.length > 0) {
+            throw new AppError(
+              'You already have a session scheduled at this time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentor group session conflicts
+          const groupSessionRepository = transactionalEntityManager.getRepository(GroupSession);
+          const overlappingGroupSessions = await groupSessionRepository
+            .createQueryBuilder('gs')
+            .where('gs.mentorId = :mentorId', { mentorId: data.mentorId })
+            .andWhere('gs.status IN (:...statuses)', {
+              statuses: ['invites_sent', 'confirmed', 'in_progress'],
+            })
+            .andWhere(
+              '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: data.scheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (overlappingGroupSessions.length > 0) {
+            throw new AppError(
+              'Mentor has a conflicting group session at this time',
+              StatusCodes.CONFLICT
+            );
+          }
+
+          // Check for mentee group session conflicts
+          const menteeGroupSessions = await groupSessionRepository
+            .createQueryBuilder('gs')
+            .leftJoin('gs.participants', 'participant')
+            .where('participant.menteeId = :menteeId', { menteeId: data.menteeId })
+            .andWhere('participant.invitationStatus = :status', { status: 'accepted' })
+            .andWhere('gs.status IN (:...statuses)', {
+              statuses: ['invites_sent', 'confirmed', 'in_progress'],
+            })
+            .andWhere(
+              '(gs.scheduledAt < :requestedEnd AND DATE_ADD(gs.scheduledAt, INTERVAL gs.duration MINUTE) > :requestedStart)',
+              {
+                requestedStart: data.scheduledAt,
+                requestedEnd: requestedEndTime,
+              }
+            )
+            .getMany();
+
+          if (menteeGroupSessions.length > 0) {
+            throw new AppError(
+              'You already have a group session scheduled at this time',
               StatusCodes.CONFLICT
             );
           }
@@ -808,6 +882,40 @@ export class SessionService {
         }
       }
 
+      // Check for overlapping group sessions
+      const groupSessionRepository = AppDataSource.getRepository(GroupSession);
+      const existingGroupSessions = await groupSessionRepository
+        .createQueryBuilder('gs')
+        .where('gs.mentorId = :mentorId', { mentorId })
+        .andWhere('gs.status IN (:...statuses)', {
+          statuses: ['invites_sent', 'confirmed', 'in_progress'],
+        })
+        .getMany();
+
+      // Check if any existing group session overlaps with requested time range
+      for (const existingGroupSession of existingGroupSessions) {
+        const existingStart = new Date(existingGroupSession.scheduledAt);
+        const existingEnd = addMinutes(existingStart, existingGroupSession.duration);
+
+        if (
+          this.doTimeRangesOverlap(
+            requestedTime,
+            requestedEndTime,
+            existingStart,
+            existingEnd
+          )
+        ) {
+          logger.warn('Requested time conflicts with group session', {
+            mentorId,
+            requestedTime: requestedTime.toISOString(),
+            groupSessionId: existingGroupSession.id,
+            groupSessionStart: existingStart.toISOString(),
+            groupSessionEnd: existingEnd.toISOString(),
+          });
+          return false;
+        }
+      }
+
       return true;
     } catch (error: any) {
       logger.error('Error checking mentor availability', error);
@@ -1012,6 +1120,20 @@ export class SessionService {
         },
       });
 
+      // Fetch overlapping group sessions for this specific date
+      const groupSessionRepository = AppDataSource.getRepository(GroupSession);
+      const overlappingGroupSessions = await groupSessionRepository
+        .createQueryBuilder('gs')
+        .where('gs.mentorId = :mentorId', { mentorId })
+        .andWhere('gs.status IN (:...statuses)', {
+          statuses: ['invites_sent', 'confirmed', 'in_progress'],
+        })
+        .andWhere('gs.scheduledAt BETWEEN :startOfDay AND :endOfDay', {
+          startOfDay,
+          endOfDay,
+        })
+        .getMany();
+
       let currentTime = new Date(startTime);
       while (currentTime < endTime) {
         const timeString = currentTime.toTimeString().slice(0, 5); // HH:MM format
@@ -1057,6 +1179,29 @@ export class SessionService {
           ) {
             hasOverlap = true;
             break;
+          }
+        }
+
+        // Check for group session overlaps
+        if (!hasOverlap) {
+          for (const existingGroupSession of overlappingGroupSessions) {
+            const existingStart = new Date(existingGroupSession.scheduledAt);
+            const existingEnd = addMinutes(
+              existingStart,
+              existingGroupSession.duration
+            );
+
+            if (
+              this.doTimeRangesOverlap(
+                sessionDateTime,
+                slotEndTime,
+                existingStart,
+                existingEnd
+              )
+            ) {
+              hasOverlap = true;
+              break;
+            }
           }
         }
 
