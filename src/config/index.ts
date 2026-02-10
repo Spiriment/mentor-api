@@ -79,10 +79,6 @@ const configSchema = z.object({
     apiKey: z.string(),
     apiSecret: z.string(),
   }),
-  agora: z.object({
-    appId: z.string(),
-    appCertificate: z.string().optional(),
-  }),
   expo: z.object({
     accessToken: z.string().optional(),
   }),
@@ -154,10 +150,6 @@ const Config = configSchema.parse({
     cloudName: process.env.CLOUDINARY_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,
     apiSecret: process.env.CLOUDINARY_API_SECRET,
-  },
-  agora: {
-    appId: process.env.AGORA_APP_ID || '',
-    appCertificate: process.env.AGORA_APP_CERTIFICATE,
   },
   expo: {
     accessToken: process.env.EXPO_ACCESS_TOKEN,
