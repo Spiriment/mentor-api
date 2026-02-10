@@ -101,6 +101,7 @@ export class ChatController {
       // Get messages
       const messages = await chatService.getConversationMessages(
         conversationId,
+        userId,
         parseInt(limit as string),
         parseInt(offset as string),
         beforeMessageId as string
@@ -227,8 +228,10 @@ export class ChatController {
 
       const message = await chatService.createMessage(messageData);
 
-      // Update conversation last message
-      await chatService.updateConversationLastMessage(conversationId, message);
+      // Update conversation last message (only for non-private messages)
+      if (!metadata?.isPrivate) {
+        await chatService.updateConversationLastMessage(conversationId, message);
+      }
 
       res.status(201).json({
         success: true,

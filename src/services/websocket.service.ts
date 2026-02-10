@@ -372,56 +372,69 @@ export class WebSocketService {
       });
 
       // Broadcast message to conversation participants
-      this.io.to(`conversation:${conversationId}`).emit('new-message', {
-        message,
-        conversationId,
-      });
+      if (metadata?.isPrivate) {
+        // Private note - only send to the sender
+        socket.emit('new-message', {
+          message,
+          conversationId,
+        });
+      } else {
+        // Shared message - broadcast to conversation participants
+        this.io.to(`conversation:${conversationId}`).emit('new-message', {
+          message,
+          conversationId,
+        });
+      }
 
       // Secondary tasks (do not block the broadcast)
       (async () => {
         try {
-          // Update conversation last message
-          await this.chatService.updateConversationLastMessage(
-            conversationId,
-            message
-          );
+          // Update conversation last message (only for non-private messages)
+          if (!metadata?.isPrivate) {
+            await this.chatService.updateConversationLastMessage(
+              conversationId,
+              message
+            );
+          }
 
-          // Send notifications to other participants
-          const participants = await this.chatService.getConversationParticipants(conversationId);
-          const sender = socket.user!;
-          const senderName = `${sender.firstName} ${sender.lastName || ''}`.trim();
-
-          for (const participant of participants) {
-            // Skip sender
-            if (participant.userId === socket.userId) continue;
-
-            if (participant.isOnline) {
-              // Recipient is actively viewing the conversation
-              // We can mark message as delivered if at least one other participant is online
-              await this.chatService.markMessageAsDelivered(message.id);
-
-              // Notify sender that message was delivered
-              socket.emit('message-delivered', {
-                messageId: message.id,
-                status: 'delivered',
-                deliveredAt: new Date(),
-              });
-
-              // Also broadcast to conversation room
-              this.io.to(`conversation:${conversationId}`).emit('message-delivered', {
-                messageId: message.id,
-                deliveredAt: new Date(),
-              });
-            } else {
-              // Recipient is NOT viewing the conversation (might be elsewhere in app or offline)
-              // Send push notification if they have a token
-              if (participant.user?.pushToken) {
-                await pushNotificationService.sendNewMessageNotification(
-                  participant.user.pushToken,
-                  participant.userId,
-                  senderName,
-                  content
-                );
+          // Send notifications to other participants (only for non-private messages)
+          if (!metadata?.isPrivate) {
+            const participants = await this.chatService.getConversationParticipants(conversationId);
+            const sender = socket.user!;
+            const senderName = `${sender.firstName} ${sender.lastName || ''}`.trim();
+  
+            for (const participant of participants) {
+              // Skip sender
+              if (participant.userId === socket.userId) continue;
+  
+              if (participant.isOnline) {
+                // Recipient is actively viewing the conversation
+                // We can mark message as delivered if at least one other participant is online
+                await this.chatService.markMessageAsDelivered(message.id);
+  
+                // Notify sender that message was delivered
+                socket.emit('message-delivered', {
+                  messageId: message.id,
+                  status: 'delivered',
+                  deliveredAt: new Date(),
+                });
+  
+                // Also broadcast to conversation room
+                this.io.to(`conversation:${conversationId}`).emit('message-delivered', {
+                  messageId: message.id,
+                  deliveredAt: new Date(),
+                });
+              } else {
+                // Recipient is NOT viewing the conversation (might be elsewhere in app or offline)
+                // Send push notification if they have a token
+                if (participant.user?.pushToken) {
+                  await pushNotificationService.sendNewMessageNotification(
+                    participant.user.pushToken,
+                    participant.userId,
+                    senderName,
+                    content
+                  );
+                }
               }
             }
           }

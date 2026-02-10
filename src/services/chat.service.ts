@@ -382,6 +382,7 @@ export class ChatService {
 
   async getConversationMessages(
     conversationId: string,
+    userId: string,
     limit = 50,
     offset = 0,
     beforeMessageId?: string
@@ -390,6 +391,8 @@ export class ChatService {
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.sender', 'sender')
       .where('message.conversationId = :conversationId', { conversationId })
+      // Filter out private messages not belonging to the user
+      .andWhere('(message.metadata->>\'isPrivate\' IS NULL OR message.senderId = :userId)', { userId })
       .orderBy('message.sentAt', 'DESC');
 
     if (beforeMessageId) {
