@@ -962,28 +962,44 @@ export class SessionService {
       }
 
       // Check if availability already exists for this day
-      const existingAvailability = await this.availabilityRepository.findOne({
+      // Using find instead of findOne to identify and clean up potential duplicates
+      const existingAvailabilities = await this.availabilityRepository.find({
         where: {
           mentorId: data.mentorId,
           dayOfWeek: data.dayOfWeek,
           isRecurring: !data.specificDate,
           ...(data.specificDate && { specificDate: data.specificDate }),
         },
+        order: { createdAt: 'ASC' }
       });
 
-      if (existingAvailability) {
-        // Update existing availability
-        existingAvailability.startTime = data.startTime;
-        existingAvailability.endTime = data.endTime;
-        existingAvailability.slotDuration = data.slotDuration || 30;
-        existingAvailability.timezone = data.timezone;
-        existingAvailability.breaks = data.breaks;
-        existingAvailability.notes = data.notes;
-        existingAvailability.status = AVAILABILITY_STATUS.AVAILABLE;
+      if (existingAvailabilities.length > 0) {
+        // Use the first one as our primary record
+        const primaryAvailability = existingAvailabilities[0];
+        
+        // Update primary availability
+        primaryAvailability.startTime = data.startTime;
+        primaryAvailability.endTime = data.endTime;
+        primaryAvailability.slotDuration = data.slotDuration || 30;
+        primaryAvailability.timezone = data.timezone;
+        primaryAvailability.breaks = data.breaks;
+        primaryAvailability.notes = data.notes;
+        primaryAvailability.status = AVAILABILITY_STATUS.AVAILABLE;
 
         const updatedAvailability = await this.availabilityRepository.save(
-          existingAvailability
+          primaryAvailability
         );
+
+        // Delete any extra duplicate records that might have existed
+        if (existingAvailabilities.length > 1) {
+          const extraIds = existingAvailabilities.slice(1).map(av => av.id);
+          await this.availabilityRepository.delete(extraIds);
+          logger.info('Cleaned up duplicate mentor availability records', {
+            mentorId: data.mentorId,
+            dayOfWeek: data.dayOfWeek,
+            deletedCount: extraIds.length
+          });
+        }
 
         logger.info('Mentor availability updated successfully', {
           availabilityId: updatedAvailability.id,
@@ -1036,7 +1052,18 @@ export class SessionService {
         order: { dayOfWeek: 'ASC', startTime: 'ASC' },
       });
 
-      return availability;
+      // De-duplicate results to handle any existing redundant records in the database
+      const uniqueAvailability = availability.filter((av, index, self) =>
+        index === self.findIndex((a) =>
+          a.dayOfWeek === av.dayOfWeek &&
+          a.startTime === av.startTime &&
+          a.endTime === av.endTime &&
+          a.isRecurring === av.isRecurring &&
+          (av.specificDate ? a.specificDate?.toString() === av.specificDate.toString() : !a.specificDate)
+        )
+      );
+
+      return uniqueAvailability;
     } catch (error: any) {
       logger.error('Error getting mentor availability', error);
       throw error;
@@ -1713,10 +1740,17 @@ export class SessionService {
     mentorId: string
   ): Promise<Session> {
     try {
-      const session = await this.sessionRepository.findOne({
-        where: { id: sessionId },
-        relations: ['mentor', 'mentee'],
-      });
+      const session = await this.sessionRepository.createQueryBuilder('session')
+        .leftJoinAndSelect('session.mentor', 'mentor')
+        .leftJoinAndSelect('session.mentee', 'mentee')
+        .addSelect([
+          'session.previousScheduledAt',
+          'session.rescheduleRequestedAt',
+          'session.rescheduleReason',
+          'session.rescheduleMessage',
+        ])
+        .where('session.id = :sessionId', { sessionId })
+        .getOne();
 
       if (!session) {
         throw new AppError('Session not found', StatusCodes.NOT_FOUND);
@@ -1758,10 +1792,19 @@ export class SessionService {
             transactionalEntityManager.getRepository(Session);
 
           // Re-fetch session within transaction to get latest state
-          const currentSession = await sessionRepository.findOne({
-            where: { id: sessionId },
-            relations: ['mentor', 'mentee'],
-          });
+          const currentSession = await transactionalEntityManager
+            .getRepository(Session)
+            .createQueryBuilder('session')
+            .leftJoinAndSelect('session.mentor', 'mentor')
+            .leftJoinAndSelect('session.mentee', 'mentee')
+            .addSelect([
+              'session.previousScheduledAt',
+              'session.rescheduleRequestedAt',
+              'session.rescheduleReason',
+              'session.rescheduleMessage',
+            ])
+            .where('session.id = :sessionId', { sessionId })
+            .getOne();
 
           if (!currentSession) {
             throw new AppError('Session not found', StatusCodes.NOT_FOUND);
@@ -2014,10 +2057,17 @@ export class SessionService {
     reason?: string
   ): Promise<Session> {
     try {
-      const session = await this.sessionRepository.findOne({
-        where: { id: sessionId },
-        relations: ['mentor', 'mentee'],
-      });
+      const session = await this.sessionRepository.createQueryBuilder('session')
+        .leftJoinAndSelect('session.mentor', 'mentor')
+        .leftJoinAndSelect('session.mentee', 'mentee')
+        .addSelect([
+          'session.previousScheduledAt',
+          'session.rescheduleRequestedAt',
+          'session.rescheduleReason',
+          'session.rescheduleMessage',
+        ])
+        .where('session.id = :sessionId', { sessionId })
+        .getOne();
 
       if (!session) {
         throw new AppError('Session not found', StatusCodes.NOT_FOUND);
