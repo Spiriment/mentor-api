@@ -12,6 +12,8 @@ import {
   PARTICIPANT_STATUS,
   MentorProfile,
   MenteeProfile,
+  Session,
+  GroupSession,
 } from '@/database/entities';
 
 export interface CreateConversationData {
@@ -112,6 +114,59 @@ export class ChatService {
       where: { id: conversationId },
       relations: ['participants', 'participants.user', 'messages'],
     });
+  }
+
+  async getConversationByUsers(
+    userIds: string[]
+  ): Promise<Conversation | null> {
+    const userCount = userIds.length;
+    
+    // Find conversations that have exactly these participants
+    const query = this.conversationRepository
+      .createQueryBuilder('conversation')
+      .innerJoin('conversation.participants', 'participant')
+      .where('conversation.type = :type', { type: CONVERSATION_TYPE.MENTOR_MENTEE })
+      .andWhere('participant.userId IN (:...userIds)', { userIds })
+      .groupBy('conversation.id')
+      .having('COUNT(participant.id) = :count', { count: userCount });
+
+    const conversation = await query.getOne();
+    
+    if (conversation) {
+      return this.getConversationById(conversation.id);
+    }
+    
+    return null;
+  }
+
+  async resolveConversationId(
+    identifier: string,
+    currentUserId: string
+  ): Promise<string | null> {
+    // 1. Check if it's already a valid conversationId
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: identifier }
+    });
+    if (conversation) return identifier;
+
+    // 2. Check if it's a GroupSession ID (they have a conversationId field)
+    const groupSession = await this.dataSource.getRepository(GroupSession).findOne({
+      where: { id: identifier }
+    });
+    if (groupSession?.conversationId) return groupSession.conversationId;
+
+    // 3. Check if it's a regular Session ID (1-on-1)
+    const session = await this.dataSource.getRepository(Session).findOne({
+      where: { id: identifier },
+      relations: ['mentor', 'mentee']
+    });
+    
+    if (session) {
+      const chat = await this.getConversationByUsers([session.mentorId, session.menteeId]);
+      if (chat) return chat.id;
+    }
+
+    return null;
   }
 
   async getUnreadMessageCount(userId: string): Promise<number> {
