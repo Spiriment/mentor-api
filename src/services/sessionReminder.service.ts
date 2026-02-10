@@ -4,7 +4,8 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { pushNotificationService } from './pushNotification.service';
-import { addMinutes, format } from 'date-fns';
+import { addMinutes, addHours } from 'date-fns';
+import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
 export class SessionReminderService {
   private sessionRepository = AppDataSource.getRepository(Session);
@@ -24,9 +25,9 @@ export class SessionReminderService {
       const now = new Date();
 
       // Find sessions that start in approximately 1 hour
-      // We check for sessions between 59 and 61 minutes from now to account for cron timing
-      const startTime = addMinutes(now, 59);
-      const endTime = addMinutes(now, 61);
+      // Widening the window to 55-70 minutes to ensure no sessions are missed due to cron timing
+      const startTime = addMinutes(now, 55);
+      const endTime = addMinutes(now, 70);
 
       const sessions = await this.sessionRepository
         .createQueryBuilder('session')
@@ -109,9 +110,9 @@ export class SessionReminderService {
       const in15Minutes = addMinutes(now, 15);
 
       // Find sessions that start in approximately 15 minutes
-      // We check for sessions between 14 and 16 minutes from now to account for cron timing
-      const startTime = addMinutes(now, 14);
-      const endTime = addMinutes(now, 16);
+      // Widening the window to 10-25 minutes for reliability
+      const startTime = addMinutes(now, 10);
+      const endTime = addMinutes(now, 25);
       
       // Use QueryBuilder with explicit select to avoid selecting columns that might not exist
       const sessions = await this.sessionRepository
@@ -287,10 +288,13 @@ export class SessionReminderService {
       return;
     }
 
+    const timezone = session.timezone || 'UTC';
     const scheduledTime = new Date(session.scheduledAt);
-    const formattedTime = format(
-      scheduledTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a'
+    const zonedTime = toZonedTime(scheduledTime, timezone);
+    const formattedTime = formatTz(
+      zonedTime,
+      'EEEE, MMMM d, yyyy "at" h:mm a',
+      { timeZone: timezone }
     );
     const menteeName = session.mentee
       ? `${session.mentee.firstName || ''} ${
@@ -366,10 +370,13 @@ export class SessionReminderService {
       return;
     }
 
+    const timezone = session.timezone || 'UTC';
     const scheduledTime = new Date(session.scheduledAt);
-    const formattedTime = format(
-      scheduledTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a'
+    const zonedTime = toZonedTime(scheduledTime, timezone);
+    const formattedTime = formatTz(
+      zonedTime,
+      'EEEE, MMMM d, yyyy "at" h:mm a',
+      { timeZone: timezone }
     );
     const mentorName = session.mentor
       ? `${session.mentor.firstName || ''} ${

@@ -751,7 +751,7 @@ export class SessionService {
         availability = await this.availabilityRepository.findOne({
           where: {
             mentorId,
-            dayOfWeek: dayOfWeek.toString() as any,
+            dayOfWeek: dayOfWeek,
             status: AVAILABILITY_STATUS.AVAILABLE,
             isRecurring: true,
           },
@@ -1139,7 +1139,7 @@ export class SessionService {
         availability = await this.availabilityRepository.findOne({
           where: {
             mentorId,
-            dayOfWeek: dayOfWeek.toString() as any, // Explicitly use string to avoid MySQL ENUM index mismatch
+            dayOfWeek: dayOfWeek, // Use number now that column is converted to INT
             status: AVAILABILITY_STATUS.AVAILABLE,
             isRecurring: true,
           },
@@ -1269,6 +1269,17 @@ export class SessionService {
 
         // Check if the slot is in the past
         const isPast = sessionDateTime <= new Date();
+
+        if (isPast || hasOverlap || isInBreak) {
+          logger.info('Slot unavailable details', {
+            time: timeString,
+            isPast,
+            hasOverlap,
+            isInBreak,
+            sessionDateTime: sessionDateTime.toISOString(),
+            now: new Date().toISOString()
+          });
+        }
 
         slots.push({
           time: timeString,
