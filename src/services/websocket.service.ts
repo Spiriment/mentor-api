@@ -248,29 +248,6 @@ export class WebSocketService {
       this.handleCallEnd(socket, data);
     });
 
-    // Raise hand events
-    socket.on('raise-hand', (data: { sessionId: string }) => {
-      this.handleRaiseHand(socket, data);
-    });
-
-    socket.on('lower-hand', (data: { sessionId: string }) => {
-      this.handleLowerHand(socket, data);
-    });
-
-    // Agora UID registration
-    socket.on('register-agora-uid', (data: { sessionId: string; agoraUid: number }) => {
-      this.handleRegisterAgoraUid(socket, data);
-    });
-
-    // Moderator controls
-    socket.on('mute-all', (data: { sessionId: string }) => {
-      this.handleMuteAll(socket, data);
-    });
-
-    socket.on('lower-all-hands', (data: { sessionId: string }) => {
-      this.handleLowerAllHands(socket, data);
-    });
-
     // Handle disconnection
     socket.on('disconnect', () => {
       this.handleDisconnection(socket);
@@ -711,64 +688,6 @@ export class WebSocketService {
     });
   }
 
-  private handleRaiseHand(socket: AuthenticatedSocket, data: { sessionId: string }) {
-    const { sessionId } = data;
-    logger.info(`User ${socket.userId} raised hand in session ${sessionId}`);
-
-    // Broadcast to all participants in the session
-    this.io.to(`session:${sessionId}`).emit('hand-raised', {
-      userId: socket.userId,
-      sessionId,
-    });
-  }
-
-  private handleLowerHand(socket: AuthenticatedSocket, data: { sessionId: string }) {
-    const { sessionId } = data;
-    logger.info(`User ${socket.userId} lowered hand in session ${sessionId}`);
-
-    // Broadcast to all participants in the session
-    this.io.to(`session:${sessionId}`).emit('hand-lowered', {
-      userId: socket.userId,
-      sessionId,
-    });
-  }
-
-  private handleRegisterAgoraUid(socket: AuthenticatedSocket, data: { sessionId: string; agoraUid: number }) {
-    const { sessionId, agoraUid } = data;
-    logger.info(`User ${socket.userId} registered Agora UID ${agoraUid} in session ${sessionId}`);
-
-    // Join the session room if not already joined
-    socket.join(`session:${sessionId}`);
-
-    // Broadcast mapping to all participants in the session
-    this.io.to(`session:${sessionId}`).emit('agora-uid-registered', {
-      userId: socket.userId,
-      agoraUid,
-      sessionId,
-    });
-  }
-
-  private handleMuteAll(socket: AuthenticatedSocket, data: { sessionId: string }) {
-    const { sessionId } = data;
-    logger.info(`Moderator ${socket.userId} muted all in session ${sessionId}`);
-
-    // Broadcast remote-mute to all participants in the session
-    this.io.to(`session:${sessionId}`).emit('remote-mute', {
-      moderatorId: socket.userId,
-      sessionId,
-    });
-  }
-
-  private handleLowerAllHands(socket: AuthenticatedSocket, data: { sessionId: string }) {
-    const { sessionId } = data;
-    logger.info(`Moderator ${socket.userId} lowered all hands in session ${sessionId}`);
-
-    // Broadcast all-hands-lowered to all participants in the session
-    this.io.to(`session:${sessionId}`).emit('all-hands-lowered', {
-      moderatorId: socket.userId,
-      sessionId,
-    });
-  }
 
   /**
    * Derive conversationId from sessionId or user IDs
