@@ -65,10 +65,16 @@ export class StreamController {
         throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
       }
 
-      const { conversationId, callStatus, duration } = req.body;
+      const { conversationId: identifier, callStatus, duration } = req.body;
+
+      if (!identifier) {
+        throw new AppError('conversationId/sessionId is required', StatusCodes.BAD_REQUEST);
+      }
+
+      const conversationId = await this.chatService.resolveConversationId(identifier, user.id);
 
       if (!conversationId) {
-        throw new AppError('conversationId is required', StatusCodes.BAD_REQUEST);
+        throw new AppError('Could not resolve conversation for provided ID', StatusCodes.NOT_FOUND);
       }
 
       if (!callStatus || !['completed', 'missed', 'rejected', 'failed', 'cancelled'].includes(callStatus)) {
