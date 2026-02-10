@@ -33,19 +33,17 @@ export class SessionAutoUpdateService {
   }
 
   private async processMissedOneOnOneSessions(): Promise<void> {
-    // A session is missed if it's past its scheduled end time and hasn't started
-    // We check sessions scheduled more than (duration) minutes ago
-    // For simplicity, we'll check sessions scheduled more than 2 hours ago that are still in 'scheduled' or 'confirmed' status
-    
-    const twoHoursAgo = subMinutes(new Date(), 120);
-    
-    const missedSessions = await this.sessionRepo.find({
-      where: {
-        status: In([SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED]),
-        scheduledAt: LessThan(twoHoursAgo),
-      },
-      relations: ['mentor', 'mentee'],
-    });
+    const missedSessions = await this.sessionRepo.createQueryBuilder('session')
+      .leftJoinAndSelect('session.mentor', 'mentor')
+      .leftJoinAndSelect('session.mentee', 'mentee')
+      .where('session.status IN (:...statuses)', {
+        statuses: [SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED],
+      })
+      .andWhere(
+        'DATE_ADD(session.scheduledAt, INTERVAL (session.duration + 30) MINUTE) < :now',
+        { now: new Date() }
+      )
+      .getMany();
 
     if (missedSessions.length === 0) return;
 
@@ -115,15 +113,18 @@ export class SessionAutoUpdateService {
   }
 
   private async processMissedGroupSessions(): Promise<void> {
-    const twoHoursAgo = subMinutes(new Date(), 120);
-    
-    const missedGroupSessions = await this.groupSessionRepo.find({
-      where: {
-        status: In([GROUP_SESSION_STATUS.INVITES_SENT, GROUP_SESSION_STATUS.CONFIRMED]),
-        scheduledAt: LessThan(twoHoursAgo),
-      },
-      relations: ['mentor', 'participants', 'participants.mentee'],
-    });
+    const missedGroupSessions = await this.groupSessionRepo.createQueryBuilder('gs')
+      .leftJoinAndSelect('gs.mentor', 'mentor')
+      .leftJoinAndSelect('gs.participants', 'participants')
+      .leftJoinAndSelect('participants.mentee', 'mentee')
+      .where('gs.status IN (:...statuses)', {
+        statuses: [GROUP_SESSION_STATUS.INVITES_SENT, GROUP_SESSION_STATUS.CONFIRMED],
+      })
+      .andWhere(
+        'DATE_ADD(gs.scheduledAt, INTERVAL (gs.duration + 30) MINUTE) < :now',
+        { now: new Date() }
+      )
+      .getMany();
 
     if (missedGroupSessions.length === 0) return;
 
