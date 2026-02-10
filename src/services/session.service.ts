@@ -1146,8 +1146,8 @@ export class SessionService {
       }
 
       const slots: Array<{ time: string; available: boolean }> = [];
-      const startTime = new Date(`1970-01-01T${availability.startTime}`);
-      const endTime = new Date(`1970-01-01T${availability.endTime}`);
+      const startTime = new Date(`1970-01-01T${availability.startTime}Z`);
+      const endTime = new Date(`1970-01-01T${availability.endTime}Z`);
       const slotDuration = availability.slotDuration;
       const activeStatuses = [
         SESSION_STATUS.SCHEDULED,
@@ -1185,7 +1185,7 @@ export class SessionService {
 
       let currentTime = new Date(startTime);
       while (currentTime < endTime) {
-        const timeString = currentTime.toTimeString().slice(0, 5); // HH:MM format
+        const timeString = currentTime.toISOString().slice(11, 16); // HH:MM format
 
         // Check if this time slot is in a break
         let isInBreak = false;
@@ -1204,8 +1204,8 @@ export class SessionService {
         // Check if there's already a session overlapping with this time slot
         const sessionDateTime = new Date(date);
         sessionDateTime.setUTCHours(
-          currentTime.getHours(),
-          currentTime.getMinutes(),
+          currentTime.getUTCHours(),
+          currentTime.getUTCMinutes(),
           0,
           0
         );
@@ -1262,7 +1262,7 @@ export class SessionService {
           available: !isInBreak && !hasOverlap && !isPast,
         });
 
-        currentTime.setMinutes(currentTime.getMinutes() + slotDuration);
+        currentTime.setUTCMinutes(currentTime.getUTCMinutes() + slotDuration);
       }
 
       return slots;

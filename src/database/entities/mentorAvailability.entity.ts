@@ -37,8 +37,8 @@ export class MentorAvailability {
   @Column()
   mentorId!: string;
 
-  @Column({ type: 'enum', enum: DAY_OF_WEEK })
-  dayOfWeek!: DAY_OF_WEEK;
+  @Column({ type: 'int' })
+  dayOfWeek!: number;
 
   @Column({ type: 'time' })
   startTime!: string; // Format: "09:00:00"
