@@ -751,7 +751,7 @@ export class SessionService {
         availability = await this.availabilityRepository.findOne({
           where: {
             mentorId,
-            dayOfWeek,
+            dayOfWeek: dayOfWeek.toString() as any,
             status: AVAILABILITY_STATUS.AVAILABLE,
             isRecurring: true,
           },
@@ -1109,10 +1109,15 @@ export class SessionService {
     date: Date
   ): Promise<Array<{ time: string; available: boolean }>> {
     try {
-      // Use getUTCDay() because the date string "YYYY-MM-DD" is parsed as UTC midnight
-      // getDay() would return the local day, which can be off by one based on server timezone
-      const dayOfWeek = date.getUTCDay() as DAY_OF_WEEK;
+      const dayOfWeek = date.getUTCDay();
       const dateString = date.toISOString().split('T')[0];
+
+      logger.info('getAvailableSlots called', {
+        mentorId,
+        requestedDate: date.toISOString(),
+        dayOfWeek,
+        dateString
+      });
 
       // 1. Check for specific date availability (overrides recurring)
       let availability = await this.availabilityRepository
@@ -1134,12 +1139,20 @@ export class SessionService {
         availability = await this.availabilityRepository.findOne({
           where: {
             mentorId,
-            dayOfWeek,
+            dayOfWeek: dayOfWeek.toString() as any, // Explicitly use string to avoid MySQL ENUM index mismatch
             status: AVAILABILITY_STATUS.AVAILABLE,
             isRecurring: true,
           },
         });
       }
+
+      logger.info('Availability record search result', {
+        found: !!availability,
+        availabilityId: availability?.id,
+        dayOfWeekUsed: dayOfWeek.toString(),
+        startTime: availability?.startTime,
+        endTime: availability?.endTime
+      });
 
       if (!availability) {
         return [];
