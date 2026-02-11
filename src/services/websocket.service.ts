@@ -667,13 +667,14 @@ export class WebSocketService {
   }
 
   private handleCallReject(socket: AuthenticatedSocket, data: any) {
-    const { callerId, sessionId, conversationId } = data;
-    logger.info(`Call rejected by ${socket.userId} for caller ${callerId}`);
+    const { callerId, sessionId, conversationId, reason } = data;
+    logger.info(`Call rejected by ${socket.userId} for caller ${callerId} ${reason ? `(Reason: ${reason})` : ''}`);
 
     this.io.to(`user:${callerId}`).emit('call-rejected', {
       rejectorId: socket.userId,
       sessionId,
       conversationId,
+      reason,
     });
   }
 
