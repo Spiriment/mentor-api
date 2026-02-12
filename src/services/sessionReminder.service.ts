@@ -7,6 +7,8 @@ import { pushNotificationService } from './pushNotification.service';
 import { addMinutes, addHours } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
+import { formatSessionType, formatUserName } from './emailHelper';
+
 export class SessionReminderService {
   private sessionRepository = AppDataSource.getRepository(Session);
   private userRepository = AppDataSource.getRepository(User);
@@ -293,16 +295,12 @@ export class SessionReminderService {
     const zonedTime = toZonedTime(scheduledTime, timezone);
     const formattedTime = formatTz(
       zonedTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a',
+      "EEEE, MMMM d, yyyy 'at' h:mm a",
       { timeZone: timezone }
     );
-    const menteeName = session.mentee
-      ? `${session.mentee.firstName || ''} ${
-          session.mentee.lastName || ''
-        }`.trim() || session.mentee.email
-      : 'Your mentee';
-
-    const mentorName = `${mentor.firstName || ''} ${mentor.lastName || ''}`.trim() || mentor.email;
+    
+    const mentorName = formatUserName(mentor);
+    const menteeName = formatUserName(session.mentee || { email: 'Your mentee' });
 
     // Format session type for display
     const sessionTypeMap: Record<string, string> = {
@@ -375,16 +373,12 @@ export class SessionReminderService {
     const zonedTime = toZonedTime(scheduledTime, timezone);
     const formattedTime = formatTz(
       zonedTime,
-      'EEEE, MMMM d, yyyy "at" h:mm a',
+      "EEEE, MMMM d, yyyy 'at' h:mm a",
       { timeZone: timezone }
     );
-    const mentorName = session.mentor
-      ? `${session.mentor.firstName || ''} ${
-          session.mentor.lastName || ''
-        }`.trim() || session.mentor.email
-      : 'Your mentor';
-
-    const menteeName = `${mentee.firstName || ''} ${mentee.lastName || ''}`.trim() || mentee.email;
+    
+    const mentorName = formatUserName(session.mentor || { email: 'Your mentor' });
+    const menteeName = formatUserName(mentee);
 
     // Format session type for display
     const sessionTypeMap: Record<string, string> = {

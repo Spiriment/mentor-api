@@ -1,0 +1,42 @@
+<h2>New Assignments from {{mentorName}}</h2>
+
+<p>Hello {{menteeName}},</p>
+
+<p>Your mentor has shared some follow-up assignments from your recent session. These action items will help you continue growing in your faith journey.</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Mentor:</strong> {{mentorName}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Session Date:</strong> {{sessionDate}}</p>
+  <p style='margin: 0;'><strong>Assignments:</strong> {{assignmentCount}}</p>
+</div>
+
+<h3>Your Assignments:</h3>
+
+<div style='background-color: #F0F7F4; border-left: 4px solid #3A5A40; padding: 20px; margin: 20px 0; border-radius: 8px;'>
+  {{#each assignments}}
+    <p style='margin: 0 0 15px 0; padding-left: 10px;'>
+      <strong style='color: #3A5A40;'>{{inc @index}}.</strong> {{this}}
+    </p>
+  {{/each}}
+</div>
+
+<p style='text-align: center;'>
+  <a href='{{appUrl}}' class='button'>View in App</a>
+</p>
+
+<p>Take your time working through these assignments, and don't hesitate to reach out to your mentor if you have any questions or need guidance.</p>
+
+<p style='margin-top: 30px;'>
+  <strong>Tips for Success:</strong><br/>
+  • Set aside dedicated time for each assignment<br/>
+  • Take notes as you work through them<br/>
+  • Discuss your insights in your next session<br/>
+  • Reach out to your mentor if you need help
+</p>
+
+<p>Keep up the great work on your spiritual growth journey!</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br/>
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

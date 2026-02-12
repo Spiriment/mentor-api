@@ -24,6 +24,7 @@ import {
   getEmailService,
   formatSessionTime,
   formatSessionType,
+  formatUserName,
 } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
@@ -301,8 +302,8 @@ export class SessionService {
         const sessionType = formatSessionType(savedSession.type);
         await emailService.sendSessionRequestEmail(
           mentor.email,
-          `${mentor.firstName} ${mentor.lastName}`,
-          `${mentee.firstName} ${mentee.lastName}`,
+          formatUserName(mentor),
+          formatUserName(mentee),
           scheduledTimeFormatted,
           savedSession.duration,
           sessionType,
@@ -316,11 +317,12 @@ export class SessionService {
       try {
         const notificationService = getAppNotificationService();
         const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+        const fullMenteeName = formatUserName(mentee);
         await notificationService.createNotification({
           userId: mentor.id,
           type: AppNotificationType.SESSION_REQUEST,
-          title: '📅 New Session Request',
-          message: `${mentee.firstName} ${mentee.lastName} requested a session on ${scheduledTimeFormatted}`,
+          title: 'New Session Request',
+          message: `${fullMenteeName} requested a session on ${scheduledTimeFormatted}`,
           data: {
             sessionId: savedSession.id,
             menteeId: mentee.id,
@@ -338,7 +340,7 @@ export class SessionService {
           await pushNotificationService.sendSessionRequestNotification(
             mentor.pushToken,
             mentor.id,
-            `${mentee.firstName} ${mentee.lastName}`,
+            formatUserName(mentee),
             scheduledTimeFormatted
           );
         }
@@ -1361,7 +1363,7 @@ export class SessionService {
         await notificationService.createNotification({
           userId: session.menteeId,
           type: AppNotificationType.SESSION_CONFIRMED,
-          title: '✅ Session Confirmed',
+          title: 'Session Confirmed',
           message: `${session.mentor.firstName} ${session.mentor.lastName} confirmed your session on ${scheduledTimeFormatted}`,
           data: {
             sessionId: session.id,
@@ -1466,7 +1468,7 @@ export class SessionService {
         await notificationService.createNotification({
           userId: session.menteeId,
           type: AppNotificationType.SESSION_DECLINED,
-          title: '❌ Session Declined',
+          title: 'Session Declined',
           message: `${session.mentor.firstName} ${
             session.mentor.lastName
           } declined your session on ${scheduledTimeFormatted}${
@@ -2039,7 +2041,7 @@ export class SessionService {
         await notificationService.createNotification({
           userId: finalSession.menteeId,
           type: AppNotificationType.RESCHEDULE_ACCEPTED,
-          title: '✅ Reschedule Accepted',
+          title: 'Reschedule Accepted',
           message: `${finalSession.mentor.firstName} ${finalSession.mentor.lastName} accepted your reschedule request. New time: ${newTimeFormatted}`,
           data: {
             sessionId: finalSession.id,
@@ -2156,7 +2158,7 @@ export class SessionService {
         await notificationService.createNotification({
           userId: session.menteeId,
           type: AppNotificationType.RESCHEDULE_DECLINED,
-          title: '❌ Reschedule Declined',
+          title: 'Reschedule Declined',
           message: `${session.mentor.firstName} ${
             session.mentor.lastName
           } declined your reschedule request. Original time: ${scheduledTimeFormatted}${

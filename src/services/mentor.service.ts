@@ -6,6 +6,7 @@ import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entitie
 import { Logger } from '@/common';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
+import { formatUserName } from './emailHelper';
 
 export interface DashboardData {
   todaysSessions: Array<{
@@ -122,10 +123,7 @@ export class MentorService {
           const mentee = session.mentee;
           menteeMap.set(menteeId, {
             id: menteeId,
-            name:
-              mentee.firstName && mentee.lastName
-                ? `${mentee.firstName} ${mentee.lastName}`
-                : mentee.email || 'Unknown Mentee',
+            name: formatUserName(mentee),
             avatar: allProfileMap.get(menteeId) || undefined,
             lastSessionAt: session.scheduledAt,
           });
@@ -178,10 +176,7 @@ export class MentorService {
           id: session.id,
           mentee: {
             id: mentee.id,
-            name:
-              mentee.firstName && mentee.lastName
-                ? `${mentee.firstName} ${mentee.lastName}`
-                : mentee.email || 'Unknown Mentee',
+            name: formatUserName(mentee),
             avatar: profileMap.get(mentee.id) || undefined,
           },
           scheduledAt: session.scheduledAt,
@@ -309,10 +304,7 @@ export class MentorService {
 
         return {
           id: request.menteeId,
-          name:
-            mentee.firstName && mentee.lastName
-              ? `${mentee.firstName} ${mentee.lastName}`
-              : mentee.email || 'Unknown Mentee',
+          name: formatUserName(mentee),
           avatar: profile?.profileImage || undefined,
           email: mentee.email,
           lastSeen: mentee.lastActiveAt, // Use user's last activity
@@ -380,10 +372,7 @@ export class MentorService {
 
       return {
         id: menteeId,
-        name:
-          mentee.firstName && mentee.lastName
-            ? `${mentee.firstName} ${mentee.lastName}`
-            : mentee.email || 'Unknown Mentee',
+        name: formatUserName(mentee),
         avatar: menteeProfile?.profileImage || undefined,
         email: mentee.email,
         lastSessionAt: sessions[0].scheduledAt,

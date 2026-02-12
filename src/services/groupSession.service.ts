@@ -15,7 +15,7 @@ import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
 import { In, LessThan, MoreThan } from 'typeorm';
-import { getEmailService } from './emailHelper';
+import { getEmailService, formatUserName } from './emailHelper';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { pushNotificationService } from './pushNotification.service';
@@ -269,8 +269,8 @@ export class GroupSessionService {
       try {
         await emailService.sendGroupSessionInvitation({
           to: mentee.email,
-          menteeName: `${mentee.firstName} ${mentee.lastName}`,
-          mentorName: `${mentor.firstName} ${mentor.lastName}`,
+          menteeName: formatUserName(mentee),
+          mentorName: formatUserName(mentor),
           sessionTitle: groupSession.title,
           sessionDescription: groupSession.description || '',
           scheduledAt: groupSession.scheduledAt,
@@ -288,7 +288,7 @@ export class GroupSessionService {
           userId: mentee.id,
           type: AppNotificationType.GROUP_SESSION_INVITATION,
           title: 'Group Session Invitation',
-          message: `${mentor.firstName} ${mentor.lastName} has invited you to "${groupSession.title}"`,
+          message: `${formatUserName(mentor)} has invited you to "${groupSession.title}"`,
           data: {
             groupSessionId: groupSession.id,
             participantId: participant.id,
@@ -303,11 +303,11 @@ export class GroupSessionService {
       // Send push notification
       try {
         if (mentee.pushToken) {
-          const mentorName = `${mentor.firstName} ${mentor.lastName}`;
+          const mentorName = formatUserName(mentor);
           await pushNotificationService.sendToUser({
             userId: mentee.id,
             pushToken: mentee.pushToken,
-            title: '📅 Group Session Invitation',
+            title: 'Group Session Invitation',
             body: `${mentorName} has invited you to join "${groupSession.title}"`,
             data: {
               type: 'group_session_invitation',
@@ -370,8 +370,8 @@ export class GroupSessionService {
         // Accepted
         await emailService.sendGroupSessionAcceptance({
           to: mentor.email,
-          mentorName: `${mentor.firstName} ${mentor.lastName}`,
-          menteeName: `${mentee.firstName} ${mentee.lastName}`,
+          mentorName: formatUserName(mentor),
+          menteeName: formatUserName(mentee),
           sessionTitle: participant.groupSession.title,
         });
 
@@ -379,7 +379,7 @@ export class GroupSessionService {
           userId: mentor.id,
           type: AppNotificationType.GROUP_SESSION_RESPONSE,
           title: 'Group Session Accepted',
-          message: `${mentee.firstName} ${mentee.lastName} accepted your group session invitation`,
+          message: `${formatUserName(mentee)} accepted your group session invitation`,
           data: {
             groupSessionId: participant.groupSession.id,
             menteeId: mentee.id,
@@ -390,8 +390,8 @@ export class GroupSessionService {
         // Declined
         await emailService.sendGroupSessionDecline({
           to: mentor.email,
-          mentorName: `${mentor.firstName} ${mentor.lastName}`,
-          menteeName: `${mentee.firstName} ${mentee.lastName}`,
+          mentorName: formatUserName(mentor),
+          menteeName: formatUserName(mentee),
           sessionTitle: participant.groupSession.title,
           declineReason: data.declineReason,
         });
@@ -400,7 +400,7 @@ export class GroupSessionService {
           userId: mentor.id,
           type: AppNotificationType.GROUP_SESSION_RESPONSE,
           title: 'Group Session Declined',
-          message: `${mentee.firstName} ${mentee.lastName} declined your group session invitation`,
+          message: `${formatUserName(mentee)} declined your group session invitation`,
           data: {
             groupSessionId: participant.groupSession.id,
             menteeId: mentee.id,
@@ -686,8 +686,8 @@ export class GroupSessionService {
         try {
           await emailService.sendGroupSessionCancellation({
             to: mentee.email,
-            menteeName: `${mentee.firstName} ${mentee.lastName}`,
-            mentorName: `${groupSession.mentor.firstName} ${groupSession.mentor.lastName}`,
+            menteeName: formatUserName(mentee),
+            mentorName: formatUserName(groupSession.mentor),
             sessionTitle: groupSession.title,
             cancellationReason: groupSession.cancellationReason,
           });
