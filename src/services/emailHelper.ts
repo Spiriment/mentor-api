@@ -29,3 +29,19 @@ export const formatSessionType = (type: string): string => {
   };
   return types[type] || type;
 };
+
+export const formatUserName = (user: { firstName?: string; lastName?: string; email: string }, role?: string): string => {
+  const firstName = (user.firstName || '').trim();
+  const lastName = (user.lastName || '').trim();
+  
+  if (!firstName) return user.email;
+  
+  if (lastName) {
+    const LowerLastName = lastName.toLowerCase();
+    if (LowerLastName !== 'mentor' && LowerLastName !== 'mentee' && LowerLastName !== 'user') {
+      return `${firstName} ${lastName}`;
+    }
+  }
+  
+  return firstName;
+};

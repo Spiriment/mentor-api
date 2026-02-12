@@ -8,7 +8,7 @@ import { User } from '../database/entities/user.entity';
 import { AppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '../database/entities/appNotification.entity';
 import { logger } from '@/config/int-services';
-import { getEmailService } from './emailHelper';
+import { getEmailService, formatUserName } from './emailHelper';
 import { pushNotificationService } from './pushNotification.service';
 import { AppError } from '../common/errors';
 import { StatusCodes } from 'http-status-codes';
@@ -163,7 +163,7 @@ export class MentorshipRequestService {
         return;
       }
 
-      const menteeName = `${mentee.firstName} ${mentee.lastName}`;
+      const menteeName = formatUserName(mentee);
 
       // Create in-app notification for mentor
       await this.notificationService.createNotification({
@@ -188,7 +188,7 @@ export class MentorshipRequestService {
           subject: `New Mentorship Request from ${menteeName}`,
           partialName: 'mentorship-request',
           templateData: {
-            mentorName: `${mentor.firstName} ${mentor.lastName}`,
+            mentorName: formatUserName(mentor),
             menteeName,
             message:
               request.message || 'I would love to have you as my mentor.',
@@ -286,7 +286,7 @@ export class MentorshipRequestService {
         return;
       }
 
-      const mentorName = `${mentor.firstName} ${mentor.lastName}`;
+      const mentorName = formatUserName(mentor);
 
       // Create in-app notification for mentee
       await this.notificationService.createNotification({
@@ -311,7 +311,7 @@ export class MentorshipRequestService {
           subject: `${mentorName} Accepted Your Mentorship Request!`,
           partialName: 'mentorship-accepted',
           templateData: {
-            menteeName: `${mentee.firstName} ${mentee.lastName}`,
+            menteeName: formatUserName(mentee),
             mentorName,
             responseMessage:
               request.responseMessage || 'I look forward to mentoring you!',
@@ -411,7 +411,7 @@ export class MentorshipRequestService {
         return;
       }
 
-      const mentorName = `${mentor.firstName} ${mentor.lastName}`;
+      const mentorName = formatUserName(mentor);
 
       // Create in-app notification for mentee
       await this.notificationService.createNotification({
@@ -436,7 +436,7 @@ export class MentorshipRequestService {
           subject: `Mentorship Request Update from ${mentorName}`,
           partialName: 'mentorship-declined',
           templateData: {
-            menteeName: `${mentee.firstName} ${mentee.lastName}`,
+            menteeName: formatUserName(mentee),
             mentorName,
             responseMessage:
               request.responseMessage ||

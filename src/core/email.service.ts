@@ -103,6 +103,11 @@ export class EmailService {
     handlebars.registerHelper('eq', function (a, b) {
       return a === b;
     });
+    
+    // Helper to increment numbers (for assignment numbering)
+    handlebars.registerHelper('inc', function (value) {
+      return parseInt(value) + 1;
+    });
   }
 
   private loadPartials(): void {
@@ -701,6 +706,30 @@ export class EmailService {
         sessionType,
         location,
         reason,
+        appUrl: appUrl || 'spiriment://sessions',
+      },
+    });
+  }
+
+  public async sendSessionAssignmentEmail(
+    to: string,
+    menteeName: string,
+    mentorName: string,
+    sessionDate: string,
+    assignments: string[],
+    appUrl?: string
+  ): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to,
+      subject: `📝 New Assignments from ${mentorName} - Spiriment`,
+      partialName: 'session-assignments',
+      templateData: {
+        title: 'New Session Assignments',
+        menteeName,
+        mentorName,
+        sessionDate,
+        assignments,
+        assignmentCount: assignments.length,
         appUrl: appUrl || 'spiriment://sessions',
       },
     });

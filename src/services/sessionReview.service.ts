@@ -7,6 +7,7 @@ import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
+import { formatUserName } from './emailHelper';
 
 export interface CreateSessionReviewDTO {
   sessionId: string;
@@ -106,12 +107,12 @@ export class SessionReviewService {
           userId: session.mentorId,
           type: AppNotificationType.SESSION_REVIEW_SUBMITTED,
           title: '⭐ New Session Review',
-          message: `${session.mentee.firstName} ${session.mentee.lastName} submitted a ${data.rating}-star review for your session`,
+          message: `${formatUserName(session.mentee)} submitted a ${data.rating}-star review for your session`,
           data: {
             sessionId: session.id,
             reviewId: savedReview.id,
             menteeId: session.menteeId,
-            menteeName: `${session.mentee.firstName} ${session.mentee.lastName}`,
+            menteeName: formatUserName(session.mentee),
             rating: data.rating,
           },
         });

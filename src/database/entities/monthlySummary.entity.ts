@@ -41,4 +41,10 @@ export class MonthlySummary extends BaseEntity {
 
   @Column({ name: 'totalReadingMinutes', type: 'int', default: 0 })
   totalReadingMinutes!: number;
+
+  @Column({ name: 'topBookChapters', type: 'int', default: 0 })
+  topBookChapters!: number;
+
+  @Column({ name: 'totalDaysRead', type: 'int', default: 0 })
+  totalDaysRead!: number;
 }

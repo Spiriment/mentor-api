@@ -59,6 +59,7 @@ export class MonthlySummaryService {
       });
       const topBookEntry = Object.entries(bookCounts).sort((a, b) => b[1] - a[1])[0];
       const topBook = topBookEntry ? topBookEntry[0] : undefined;
+      const topBookChapters = topBookEntry ? topBookEntry[1] : 0;
 
       // 3.2 Reading time preference
       const timeSlots = { morning: 0, afternoon: 0, evening: 0 };
@@ -68,8 +69,10 @@ export class MonthlySummaryService {
         else if (hour >= 12 && hour < 17) timeSlots.afternoon++;
         else timeSlots.evening++;
       });
-      const readingTimePreferenceEntry = Object.entries(timeSlots).sort((a, b) => b[1] - a[1])[0];
-      const readingTimePreference = readingTimePreferenceEntry ? readingTimePreferenceEntry[0] : 'morning';
+      const readingTimePreferenceEntry = studySessions.length > 0 
+        ? Object.entries(timeSlots).sort((a, b) => b[1] - a[1])[0]
+        : null;
+      const readingTimePreference = readingTimePreferenceEntry ? readingTimePreferenceEntry[0] : 'None';
 
       // 3.3 Testament Focus
       let otCount = 0;
@@ -79,14 +82,19 @@ export class MonthlySummaryService {
         else ntCount++;
       });
       
-      let testamentFocus = 'Balanced';
+      let testamentFocus = 'None';
       if (otCount > 0 || ntCount > 0) {
+        testamentFocus = 'Balanced';
         if (otCount > ntCount * 2) testamentFocus = 'Old Testament';
         else if (ntCount > otCount * 2) testamentFocus = 'New Testament';
       }
 
       // 3.4 Longest consecutive days read in this month
-      const longestConsecutiveDays = this.calculateLongestConsecutiveDays(studySessions, userTimezone);
+      const sessionDates = Array.from(new Set(
+        studySessions.map(s => format(toZonedTime(s.completedAt, userTimezone), 'yyyy-MM-dd'))
+      )).sort();
+      const totalDaysRead = sessionDates.length;
+      const longestConsecutiveDays = this.calculateConsecutiveDaysFromDates(sessionDates);
 
       // 3.5 Total reading minutes
       const totalReadingMinutes = studySessions.reduce((acc, s) => acc + (s.duration || 0), 0);
@@ -104,6 +112,8 @@ export class MonthlySummaryService {
         longestStreak: user.longestStreak,
         longestConsecutiveDays,
         topBook,
+        topBookChapters,
+        totalDaysRead,
         readingTimePreference,
         testamentFocus,
         sessionsCount: mentorshipSessionsCount,
@@ -142,13 +152,8 @@ export class MonthlySummaryService {
   /**
    * Helper to calculate consecutive days
    */
-  private calculateLongestConsecutiveDays(sessions: StudySession[], timezone: string): number {
-    if (sessions.length === 0) return 0;
-
-    // Get unique dates for sessions in user's timezone
-    const sessionDates = Array.from(new Set(
-      sessions.map(s => format(toZonedTime(s.completedAt, timezone), 'yyyy-MM-dd'))
-    )).sort();
+  private calculateConsecutiveDaysFromDates(sessionDates: string[]): number {
+    if (sessionDates.length === 0) return 0;
 
     let maxConsecutive = 0;
     let currentConsecutive = 1;

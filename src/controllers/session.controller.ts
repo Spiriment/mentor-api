@@ -465,6 +465,47 @@ export class SessionController {
         mentorId: user.id,
       });
 
+      // Send assignment email if assignments exist
+      if (assignments && assignments.length > 0) {
+        try {
+          const { getEmailService, formatUserName } = await import('../services/emailHelper');
+          const emailService = getEmailService();
+          
+          // Format session date
+          const sessionDate = new Date(session.scheduledAt).toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+
+          const mentorName = formatUserName(session.mentor);
+          const menteeName = formatUserName(session.mentee);
+
+          await emailService.sendSessionAssignmentEmail(
+            session.mentee.email,
+            menteeName,
+            mentorName,
+            sessionDate,
+            assignments
+          );
+
+          this.logger.info('Assignment email sent successfully', {
+            sessionId,
+            menteeEmail: session.mentee.email,
+            assignmentCount: assignments.length,
+          });
+        } catch (emailError: any) {
+          // Log email error but don't fail the request
+          this.logger.error('Failed to send assignment email', emailError, {
+            sessionId,
+            menteeId: session.menteeId,
+          });
+        }
+      }
+
       return sendSuccessResponse(res, {
         session,
         message: 'Session notes added successfully',
