@@ -21,6 +21,7 @@ export class MonthlySummaryService {
    */
   async generateMonthlySummary(userId: string, year: number, month: number): Promise<MonthlySummary> {
     try {
+      logger.info('Starting monthly summary generation', { userId, year, month });
       const user = await this.userRepo.findOne({ where: { id: userId } });
       if (!user) {
         throw new AppError('User not found', StatusCodes.NOT_FOUND);
@@ -31,7 +32,7 @@ export class MonthlySummaryService {
       const startDate = startOfMonth(new Date(year, month - 1));
       const endDate = endOfMonth(new Date(year, month - 1));
 
-      logger.info('Generating monthly summary', { userId, year, month, startDate, endDate });
+      logger.info('Fetching data for monthly summary', { userId, startDate, endDate });
 
       // 1. Fetch study sessions for the month
       const studySessions = await this.studySessionRepo.find({
@@ -41,6 +42,8 @@ export class MonthlySummaryService {
         },
         order: { completedAt: 'ASC' }
       });
+
+      logger.info(`Found ${studySessions.length} study sessions`);
 
       // 2. Fetch completed mentorship sessions for the month
       const mentorshipSessionsCount = await this.sessionRepo.count({
@@ -55,7 +58,9 @@ export class MonthlySummaryService {
       // 3.1 Most read bible book
       const bookCounts: Record<string, number> = {};
       studySessions.forEach(s => {
-        bookCounts[s.book] = (bookCounts[s.book] || 0) + 1;
+        if (s.book) {
+          bookCounts[s.book] = (bookCounts[s.book] || 0) + 1;
+        }
       });
       const topBookEntry = Object.entries(bookCounts).sort((a, b) => b[1] - a[1])[0];
       const topBook = topBookEntry ? topBookEntry[0] : undefined;
@@ -64,22 +69,32 @@ export class MonthlySummaryService {
       // 3.2 Reading time preference
       const timeSlots = { morning: 0, afternoon: 0, evening: 0 };
       studySessions.forEach(s => {
-        const hour = toZonedTime(s.completedAt, userTimezone).getHours();
-        if (hour >= 4 && hour < 12) timeSlots.morning++;
-        else if (hour >= 12 && hour < 17) timeSlots.afternoon++;
-        else timeSlots.evening++;
+        try {
+          if (s.completedAt) {
+            const zonedDate = toZonedTime(s.completedAt, userTimezone);
+            const hour = zonedDate.getHours();
+            if (hour >= 4 && hour < 12) timeSlots.morning++;
+            else if (hour >= 12 && hour < 17) timeSlots.afternoon++;
+            else timeSlots.evening++;
+          }
+        } catch (e) {
+          logger.warn('Error calculating hour for study session', { sessionId: s.id, error: e });
+        }
       });
       const readingTimePreferenceEntry = studySessions.length > 0 
         ? Object.entries(timeSlots).sort((a, b) => b[1] - a[1])[0]
         : null;
+      
       const readingTimePreference = readingTimePreferenceEntry ? readingTimePreferenceEntry[0] : 'None';
 
       // 3.3 Testament Focus
       let otCount = 0;
       let ntCount = 0;
       studySessions.forEach(s => {
-        if (this.isOldTestament(s.book)) otCount++;
-        else ntCount++;
+        if (s.book) {
+          if (this.isOldTestament(s.book)) otCount++;
+          else ntCount++;
+        }
       });
       
       let testamentFocus = 'None';
@@ -91,13 +106,25 @@ export class MonthlySummaryService {
 
       // 3.4 Longest consecutive days read in this month
       const sessionDates = Array.from(new Set(
-        studySessions.map(s => format(toZonedTime(s.completedAt, userTimezone), 'yyyy-MM-dd'))
-      )).sort();
+        studySessions
+          .filter(s => s.completedAt)
+          .map(s => {
+            try {
+              return format(toZonedTime(s.completedAt, userTimezone), 'yyyy-MM-dd');
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter(d => d !== null)
+      )).sort() as string[];
+      
       const totalDaysRead = sessionDates.length;
       const longestConsecutiveDays = this.calculateConsecutiveDaysFromDates(sessionDates);
 
       // 3.5 Total reading minutes
       const totalReadingMinutes = studySessions.reduce((acc, s) => acc + (s.duration || 0), 0);
+
+      logger.info('Metrics calculated', { userId, year, month, totalDaysRead, totalReadingMinutes });
 
       // 4. Update or create summary
       let summary = await this.summaryRepo.findOne({
@@ -108,8 +135,8 @@ export class MonthlySummaryService {
         userId,
         year,
         month,
-        currentStreak: user.currentStreak,
-        longestStreak: user.longestStreak,
+        currentStreak: user.currentStreak || 0,
+        longestStreak: user.longestStreak || 0,
         longestConsecutiveDays,
         topBook,
         topBookChapters,
@@ -120,18 +147,25 @@ export class MonthlySummaryService {
         totalReadingMinutes
       };
 
+      let finalSummary: any;
       if (summary) {
-        summary = this.summaryRepo.merge(summary, summaryData);
+        finalSummary = this.summaryRepo.merge(summary, (summaryData as any));
       } else {
-        summary = this.summaryRepo.create(summaryData);
+        finalSummary = this.summaryRepo.create((summaryData as any));
       }
 
-      const savedSummary = await this.summaryRepo.save(summary);
-      logger.info('Monthly summary saved', { summaryId: savedSummary.id, userId, year, month });
+      const savedSummary = await this.summaryRepo.save(finalSummary);
+      logger.info('Monthly summary saved successfully', { summaryId: savedSummary.id, userId, year, month });
       
-      return savedSummary;
+      return savedSummary as any;
     } catch (error) {
-      logger.error('Error generating monthly summary', error instanceof Error ? error : new Error(String(error)));
+      const fs = require('fs');
+      const errInfo = `\n[${new Date().toISOString()}] ERROR: ${error instanceof Error ? error.stack : String(error)}`;
+      try {
+        fs.appendFileSync('/Users/admin/Desktop/workspace/mentor-backend/debug_report_error.log', errInfo);
+      } catch (e) {}
+      
+      logger.error('CRITICAL: Error generating monthly summary', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
