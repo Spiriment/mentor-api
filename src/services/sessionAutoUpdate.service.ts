@@ -6,8 +6,10 @@ import { Conversation, CONVERSATION_TYPE } from '@/database/entities/conversatio
 import { logger } from '@/config/int-services';
 import { getEmailService } from './emailHelper';
 import { pushNotificationService } from './pushNotification.service';
-import { subMinutes, format } from 'date-fns';
-import { In, LessThan } from 'typeorm';
+import { format } from 'date-fns';
+import { StreamService } from '@/core/stream.service';
+
+const streamService = new StreamService();
 
 export class SessionAutoUpdateService {
   private sessionRepo = AppDataSource.getRepository(Session);
@@ -25,10 +27,75 @@ export class SessionAutoUpdateService {
       
       await this.processMissedOneOnOneSessions();
       await this.processMissedGroupSessions();
+      await this.processStaleInProgressSessions();
       
       logger.info('Missed sessions check completed.');
     } catch (error) {
       logger.error('Error during missed sessions check:', error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /**
+   * Process sessions that are stuck in 'in_progress' status
+   * but their scheduled time has passed.
+   */
+  private async processStaleInProgressSessions(): Promise<void> {
+    try {
+      // Find sessions stuck in 'in_progress' that should have ended by now
+      // Buffer of 30 minutes after scheduled end time
+      const staleSessions = await this.sessionRepo.createQueryBuilder('session')
+        .where('session.status = :status', { status: SESSION_STATUS.IN_PROGRESS })
+        .andWhere(
+          'DATE_ADD(session.scheduledAt, INTERVAL (session.duration + 30) MINUTE) < :now',
+          { now: new Date() }
+        )
+        .getMany();
+
+      if (staleSessions.length === 0) return;
+
+      logger.info(`Found ${staleSessions.length} stale in-progress sessions.`);
+
+      for (const session of staleSessions) {
+        try {
+          // Sanitize session ID for Stream call ID (standard alphanumeric, underscore, hyphen)
+          const callId = session.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+          const callReport = await streamService.getCallSessionReport(callId);
+
+          let finalStatus = SESSION_STATUS.COMPLETED;
+          
+          if (callReport && callReport.session) {
+            const participants = callReport.session.participants || [];
+            const mentorJoined = participants.some((p: any) => p.user_id === session.mentorId);
+            const menteeJoined = participants.some((p: any) => p.user_id === session.menteeId);
+
+            // Logic: If mentee never joined, it's a NO_SHOW
+            if (!menteeJoined) {
+              finalStatus = SESSION_STATUS.NO_SHOW;
+              logger.info(`Stale session ${session.id}: Mentee never joined. Marking as NO_SHOW.`);
+            } else if (!mentorJoined) {
+              // If mentor never joined but mentee did, it might be a no-show for mentor
+              // but for now we follow the user's request "no show if the mentee and mentor were not in the call"
+              finalStatus = SESSION_STATUS.NO_SHOW;
+              logger.info(`Stale session ${session.id}: Mentor never joined. Marking as NO_SHOW.`);
+            } else {
+              logger.info(`Stale session ${session.id}: Both participants recorded. Marking as COMPLETED.`);
+            }
+          } else {
+            // No call report found means no session ever really happened on Stream
+            finalStatus = SESSION_STATUS.NO_SHOW;
+            logger.info(`Stale session ${session.id}: No Stream call session found. Marking as NO_SHOW.`);
+          }
+
+          session.status = finalStatus;
+          session.endedAt = session.endedAt || new Date(); // Use existing endedAt or current time
+          await this.sessionRepo.save(session);
+
+        } catch (err) {
+          logger.error(`Failed to process stale session ${session.id}:`, err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    } catch (error) {
+      logger.error('Error processing stale in-progress sessions:', error instanceof Error ? error : new Error(String(error)));
     }
   }
 
