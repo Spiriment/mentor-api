@@ -210,7 +210,7 @@ export class StreakService {
             await notificationService.createNotification({
               userId: userId,
               type: AppNotificationType.STREAK_BROKEN,
-              title: '💔 Streak Lost',
+              title: 'Streak Lost',
               message: `Your ${user.currentStreak}-day streak ended. Start fresh today!`,
               data: {
                 previousStreak: user.currentStreak,
