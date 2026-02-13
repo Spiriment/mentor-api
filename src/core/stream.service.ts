@@ -53,4 +53,29 @@ export class StreamService {
   getApiKey(): string {
     return Config.stream.apiKey;
   }
+
+  /**
+   * Get call report/session details from Stream
+   * @param callId - Unique call ID
+   */
+  async getCallSessionReport(callId: string): Promise<any> {
+    try {
+      // For one-on-one sessions, call type is usually 'default'
+      const call = this.client.video.call('default', callId);
+      const response = await call.get();
+      
+      this.logger.info('Stream call report retrieved', {
+        callId,
+        participants: response.call.session?.participants?.length || 0,
+      });
+
+      return response.call;
+    } catch (error: any) {
+      this.logger.error('Error getting Stream call report', error, {
+        callId
+      });
+      // Don't throw here, just return null so the caller can handle it gracefully
+      return null;
+    }
+  }
 }
