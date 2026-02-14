@@ -4,6 +4,8 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { pushNotificationService } from './pushNotification.service';
+import { getAppNotificationService } from './appNotification.service';
+import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { addMinutes, addHours } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
@@ -13,6 +15,7 @@ export class SessionReminderService {
   private sessionRepository = AppDataSource.getRepository(Session);
   private userRepository = AppDataSource.getRepository(User);
   private emailService: EmailService;
+  private appNotificationService = getAppNotificationService();
 
   constructor(emailService: EmailService) {
     this.emailService = emailService;
@@ -353,6 +356,48 @@ export class SessionReminderService {
         `${timeUntil} push notification sent to mentor ${mentor.email} for session ${session.id}`
       );
     }
+
+    // Create in-app notification
+    try {
+      const notificationTitles: Record<string, string> = {
+        '24 hours': 'Session Tomorrow',
+        '1 hour': 'Session in 1 Hour',
+        '15 minutes': 'Session Starting Soon',
+        'now': 'Session Starting Now',
+      };
+
+      const notificationMessages: Record<string, string> = {
+        '24 hours': `Your session with ${menteeName} is scheduled for ${formattedTime}`,
+        '1 hour': `Your session with ${menteeName} starts at ${formattedTime}`,
+        '15 minutes': `Your session with ${menteeName} starts in 15 minutes`,
+        'now': `Your session with ${menteeName} is starting now`,
+      };
+
+      await this.appNotificationService.createNotification({
+        userId: mentor.id,
+        type: AppNotificationType.SESSION_REMINDER,
+        title: notificationTitles[timeUntil] || 'Session Reminder',
+        message: notificationMessages[timeUntil] || `Your session with ${menteeName} is coming up`,
+        data: {
+          sessionId: session.id,
+          sessionType: session.type,
+          scheduledAt: session.scheduledAt.toISOString(),
+          menteeId: session.mentee?.id,
+          menteeName,
+          minutesBefore: timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0)),
+        },
+      });
+
+      logger.info(
+        `In-app notification created for mentor ${mentor.email} for session ${session.id}`
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to create in-app notification for mentor ${mentor.email}:`,
+        error instanceof Error ? error : new Error(String(error))
+      );
+      // Don't throw - notification failure shouldn't block the reminder process
+    }
   }
 
   /**
@@ -430,6 +475,48 @@ export class SessionReminderService {
       logger.info(
         `${timeUntil} push notification sent to mentee ${mentee.email} for session ${session.id}`
       );
+    }
+
+    // Create in-app notification
+    try {
+      const notificationTitles: Record<string, string> = {
+        '24 hours': 'Session Tomorrow',
+        '1 hour': 'Session in 1 Hour',
+        '15 minutes': 'Session Starting Soon',
+        'now': 'Session Starting Now',
+      };
+
+      const notificationMessages: Record<string, string> = {
+        '24 hours': `Your session with ${mentorName} is scheduled for ${formattedTime}`,
+        '1 hour': `Your session with ${mentorName} starts at ${formattedTime}`,
+        '15 minutes': `Your session with ${mentorName} starts in 15 minutes`,
+        'now': `Your session with ${mentorName} is starting now`,
+      };
+
+      await this.appNotificationService.createNotification({
+        userId: mentee.id,
+        type: AppNotificationType.SESSION_REMINDER,
+        title: notificationTitles[timeUntil] || 'Session Reminder',
+        message: notificationMessages[timeUntil] || `Your session with ${mentorName} is coming up`,
+        data: {
+          sessionId: session.id,
+          sessionType: session.type,
+          scheduledAt: session.scheduledAt.toISOString(),
+          mentorId: session.mentor?.id,
+          mentorName,
+          minutesBefore: timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0)),
+        },
+      });
+
+      logger.info(
+        `In-app notification created for mentee ${mentee.email} for session ${session.id}`
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to create in-app notification for mentee ${mentee.email}:`,
+        error instanceof Error ? error : new Error(String(error))
+      );
+      // Don't throw - notification failure shouldn't block the reminder process
     }
   }
 
