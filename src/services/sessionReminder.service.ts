@@ -293,7 +293,7 @@ export class SessionReminderService {
       return;
     }
 
-    const timezone = session.timezone || 'UTC';
+    const timezone = mentor.timezone || session.timezone || 'UTC';
     const scheduledTime = new Date(session.scheduledAt);
     const zonedTime = toZonedTime(scheduledTime, timezone);
     const formattedTime = formatTz(
@@ -413,7 +413,7 @@ export class SessionReminderService {
       return;
     }
 
-    const timezone = session.timezone || 'UTC';
+    const timezone = mentee.timezone || session.timezone || 'UTC';
     const scheduledTime = new Date(session.scheduledAt);
     const zonedTime = toZonedTime(scheduledTime, timezone);
     const formattedTime = formatTz(
