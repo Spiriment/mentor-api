@@ -71,10 +71,25 @@ export class ChatController {
       const { conversationId } = req.params;
       const { limit = 50, offset = 0, beforeMessageId } = req.query;
 
+      // Resolve conversationId (might be sessionId or groupSessionId)
+      const resolvedConversationId = await chatService.resolveConversationId(
+        conversationId,
+        userId
+      );
+
+      if (!resolvedConversationId) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: 'Conversation not found',
+          },
+        });
+      }
+
       // Verify user is participant
       const isParticipant = await chatService.isUserParticipant(
         userId,
-        conversationId
+        resolvedConversationId
       );
       if (!isParticipant) {
         return res.status(403).json({
@@ -87,7 +102,7 @@ export class ChatController {
 
       // Get conversation details
       const conversation = await chatService.getConversationById(
-        conversationId
+        resolvedConversationId
       );
       if (!conversation) {
         return res.status(404).json({
@@ -100,7 +115,7 @@ export class ChatController {
 
       // Get messages
       const messages = await chatService.getConversationMessages(
-        conversationId,
+        resolvedConversationId,
         userId,
         parseInt(limit as string),
         parseInt(offset as string),
@@ -204,10 +219,25 @@ export class ChatController {
         });
       }
 
+      // Resolve conversationId (might be sessionId or groupSessionId)
+      const resolvedConversationId = await chatService.resolveConversationId(
+        conversationId,
+        userId
+      );
+
+      if (!resolvedConversationId) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: 'Conversation not found',
+          },
+        });
+      }
+
       // Verify user is participant
       const isParticipant = await chatService.isUserParticipant(
         userId,
-        conversationId
+        resolvedConversationId
       );
       if (!isParticipant) {
         return res.status(403).json({
@@ -219,7 +249,7 @@ export class ChatController {
       }
 
       const messageData = {
-        conversationId,
+        conversationId: resolvedConversationId,
         senderId: userId,
         content,
         type: type || MESSAGE_TYPE.TEXT,
@@ -230,7 +260,22 @@ export class ChatController {
 
       // Update conversation last message (only for non-private messages)
       if (!metadata?.isPrivate) {
-        await chatService.updateConversationLastMessage(conversationId, message);
+        await chatService.updateConversationLastMessage(
+          resolvedConversationId,
+          message
+        );
+      }
+
+      // Broadcast via WebSocket for real-time delivery to other participants
+      try {
+        const { WebSocketService } = require('@/services/websocket.service');
+        const wsService = WebSocketService.getInstance();
+        if (wsService && !metadata?.isPrivate) {
+          wsService.broadcastNewMessage(resolvedConversationId, message);
+        }
+      } catch (wsError: any) {
+        // Don't fail the REST response if WebSocket broadcast fails
+        logger.warn('Failed to broadcast message via WebSocket:', wsError);
       }
 
       res.status(201).json({
@@ -256,10 +301,25 @@ export class ChatController {
       const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
+      // Resolve conversationId (might be sessionId or groupSessionId)
+      const resolvedConversationId = await chatService.resolveConversationId(
+        conversationId,
+        userId
+      );
+
+      if (!resolvedConversationId) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: 'Conversation not found',
+          },
+        });
+      }
+
       // Verify user is participant
       const isParticipant = await chatService.isUserParticipant(
         userId,
-        conversationId
+        resolvedConversationId
       );
       if (!isParticipant) {
         return res.status(403).json({
@@ -270,7 +330,7 @@ export class ChatController {
         });
       }
 
-      await chatService.markConversationAsRead(conversationId, userId);
+      await chatService.markConversationAsRead(resolvedConversationId, userId);
 
       res.json({
         success: true,
@@ -473,10 +533,25 @@ export class ChatController {
       const userId = (req as any).user?.id;
       const { conversationId } = req.params;
 
+      // Resolve conversationId (might be sessionId or groupSessionId)
+      const resolvedConversationId = await chatService.resolveConversationId(
+        conversationId,
+        userId
+      );
+
+      if (!resolvedConversationId) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            message: 'Conversation not found',
+          },
+        });
+      }
+
       // Verify user is participant
       const isParticipant = await chatService.isUserParticipant(
         userId,
-        conversationId
+        resolvedConversationId
       );
       if (!isParticipant) {
         return res.status(403).json({
@@ -488,7 +563,7 @@ export class ChatController {
       }
 
       const conversation = await chatService.getConversationById(
-        conversationId
+        resolvedConversationId
       );
       if (!conversation) {
         return res.status(404).json({

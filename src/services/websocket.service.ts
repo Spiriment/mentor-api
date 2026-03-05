@@ -259,10 +259,18 @@ export class WebSocketService {
     conversationId: string
   ) {
     try {
+      // Resolve conversationId (might be sessionId or groupSessionId)
+      const resolvedConversationId = await this.chatService.resolveConversationId(
+        conversationId,
+        socket.userId!
+      );
+
+      const effectiveConversationId = resolvedConversationId || conversationId;
+
       // Verify user is participant in this conversation
       const isParticipant = await this.chatService.isUserParticipant(
         socket.userId!,
-        conversationId
+        effectiveConversationId
       );
 
       if (!isParticipant) {
@@ -273,21 +281,24 @@ export class WebSocketService {
       }
 
       // Join the conversation room
-      socket.join(`conversation:${conversationId}`);
+      socket.join(`conversation:${effectiveConversationId}`);
 
       // Update user's online status in conversation
       await this.chatService.updateParticipantStatus(
         socket.userId!,
-        conversationId,
+        effectiveConversationId,
         {
           isOnline: true,
           lastSeen: new Date(),
         }
       );
 
-      socket.emit('joined-conversation', { conversationId });
+      socket.emit('joined-conversation', {
+        conversationId: effectiveConversationId,
+        originalId: conversationId,
+      });
       logger.info(
-        `User ${socket.userId} joined conversation ${conversationId}`
+        `User ${socket.userId} joined conversation ${effectiveConversationId}${resolvedConversationId !== conversationId ? ` (resolved from ${conversationId})` : ''}`
       );
     } catch (error: any) {
       logger.error('Error joining conversation:', error);
@@ -299,18 +310,30 @@ export class WebSocketService {
     socket: AuthenticatedSocket,
     conversationId: string
   ) {
-    socket.leave(`conversation:${conversationId}`);
+    // Resolve conversationId (might be sessionId or groupSessionId)
+    const resolvedConversationId = await this.chatService.resolveConversationId(
+      conversationId,
+      socket.userId!
+    );
+
+    const effectiveConversationId = resolvedConversationId || conversationId;
+
+    socket.leave(`conversation:${effectiveConversationId}`);
     
     // Update user's online status in conversation to false
     // This means they are no longer actively viewing the chat
-    await this.chatService.updateParticipantStatus(
-      socket.userId!,
-      conversationId,
-      {
-        isOnline: false,
-        lastSeen: new Date(),
-      }
-    );
+    try {
+      await this.chatService.updateParticipantStatus(
+        socket.userId!,
+        effectiveConversationId,
+        {
+          isOnline: false,
+          lastSeen: new Date(),
+        }
+      );
+    } catch (error: any) {
+      logger.warn(`Error updating participant status on leave: ${error.message}`);
+    }
 
     socket.emit('left-conversation', { conversationId });
     logger.info(`User ${socket.userId} left conversation ${conversationId}`);
