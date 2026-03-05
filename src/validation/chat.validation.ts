@@ -17,7 +17,7 @@ export const createConversationSchema = z.object({
 
 // Send message validation
 export const sendMessageSchema = z.object({
-  conversationId: z.string().uuid('Invalid conversation ID'),
+  conversationId: z.string().min(1, 'Conversation ID is required'),
   content: z
     .string()
     .min(1, 'Message content is required')
@@ -31,6 +31,7 @@ export const sendMessageSchema = z.object({
       repliedToMessageId: z.string().uuid().optional(),
       callStatus: z.enum(['completed', 'missed', 'rejected', 'failed', 'cancelled']).optional(),
       duration: z.number().nonnegative().optional(),
+      isPrivate: z.boolean().optional(),
     })
     .optional(),
 });
@@ -90,7 +91,7 @@ export const getConversationQuerySchema = z.object({
 
 // Path parameters validation
 export const conversationIdSchema = z.object({
-  conversationId: z.string().uuid('Invalid conversation ID'),
+  conversationId: z.string().min(1, 'Conversation ID is required'),
 });
 
 export const messageIdSchema = z.object({
