@@ -30,9 +30,9 @@ export class SessionReminderService {
       const now = new Date();
 
       // Find sessions that start in approximately 1 hour
-      // Widening the window to 55-70 minutes to ensure no sessions are missed due to cron timing
-      const startTime = addMinutes(now, 55);
-      const endTime = addMinutes(now, 70);
+      // ±2 minute window is sufficient since cron runs every minute
+      const startTime = addMinutes(now, 58);
+      const endTime = addMinutes(now, 62);
 
       const sessions = await this.sessionRepository
         .createQueryBuilder('session')
@@ -115,9 +115,9 @@ export class SessionReminderService {
       const in15Minutes = addMinutes(now, 15);
 
       // Find sessions that start in approximately 15 minutes
-      // Widening the window to 10-25 minutes for reliability
-      const startTime = addMinutes(now, 10);
-      const endTime = addMinutes(now, 25);
+      // ±2 minute window is sufficient since cron runs every minute
+      const startTime = addMinutes(now, 13);
+      const endTime = addMinutes(now, 17);
       
       // Use QueryBuilder with explicit select to avoid selecting columns that might not exist
       const sessions = await this.sessionRepository
