@@ -55,39 +55,51 @@ export class SessionAutoUpdateService {
 
       logger.info(`Found ${staleSessions.length} stale in-progress sessions.`);
 
+      const MINIMUM_SESSION_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+
       for (const session of staleSessions) {
         try {
-          // Sanitize session ID for Stream call ID (standard alphanumeric, underscore, hyphen)
+          // If the session has a startedAt, it means at least one participant joined.
+          // Use actual duration to determine outcome.
+          if (session.startedAt) {
+            const endTime = session.endedAt || new Date();
+            const actualDurationMs = endTime.getTime() - new Date(session.startedAt).getTime();
+
+            if (actualDurationMs >= MINIMUM_SESSION_DURATION_MS) {
+              session.status = SESSION_STATUS.COMPLETED;
+              session.endedAt = session.endedAt || new Date();
+              await this.sessionRepo.save(session);
+              logger.info(`Stale session ${session.id}: Had startedAt and ran for ${Math.round(actualDurationMs / 60000)} min. Marking as COMPLETED.`);
+              continue;
+            }
+          }
+
+          // No startedAt (status was set to IN_PROGRESS by app but call may not have run long enough).
+          // Check Stream for live participant data as a fallback.
           const callId = session.id.replace(/[^a-zA-Z0-9_-]/g, '_');
           const callReport = await streamService.getCallSessionReport(callId);
 
           let finalStatus = SESSION_STATUS.COMPLETED;
-          
+
           if (callReport && callReport.session) {
             const participants = callReport.session.participants || [];
             const mentorJoined = participants.some((p: any) => p.user_id === session.mentorId);
             const menteeJoined = participants.some((p: any) => p.user_id === session.menteeId);
 
-            // Logic: If mentee never joined, it's a NO_SHOW
-            if (!menteeJoined) {
+            if (!menteeJoined || !mentorJoined) {
               finalStatus = SESSION_STATUS.NO_SHOW;
-              logger.info(`Stale session ${session.id}: Mentee never joined. Marking as NO_SHOW.`);
-            } else if (!mentorJoined) {
-              // If mentor never joined but mentee did, it might be a no-show for mentor
-              // but for now we follow the user's request "no show if the mentee and mentor were not in the call"
-              finalStatus = SESSION_STATUS.NO_SHOW;
-              logger.info(`Stale session ${session.id}: Mentor never joined. Marking as NO_SHOW.`);
+              logger.info(`Stale session ${session.id}: Missing participant in live call data. Marking as NO_SHOW.`);
             } else {
-              logger.info(`Stale session ${session.id}: Both participants recorded. Marking as COMPLETED.`);
+              logger.info(`Stale session ${session.id}: Both participants in live call data. Marking as COMPLETED.`);
             }
           } else {
-            // No call report found means no session ever really happened on Stream
+            // No Stream data and no startedAt — session was never really started.
             finalStatus = SESSION_STATUS.NO_SHOW;
-            logger.info(`Stale session ${session.id}: No Stream call session found. Marking as NO_SHOW.`);
+            logger.info(`Stale session ${session.id}: No Stream call data and no startedAt. Marking as NO_SHOW.`);
           }
 
           session.status = finalStatus;
-          session.endedAt = session.endedAt || new Date(); // Use existing endedAt or current time
+          session.endedAt = session.endedAt || new Date();
           await this.sessionRepo.save(session);
 
         } catch (err) {
