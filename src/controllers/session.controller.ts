@@ -375,6 +375,8 @@ export class SessionController {
         throw new AppError('Invalid session status', StatusCodes.BAD_REQUEST);
       }
 
+      const updateData: UpdateSessionDTO = { status };
+
       // If trying to start a session (set to IN_PROGRESS), validate the scheduled time
       if (status === SESSION_STATUS.IN_PROGRESS) {
         // Get the session to check scheduled time
@@ -401,13 +403,11 @@ export class SessionController {
             StatusCodes.FORBIDDEN
           );
         }
-      }
 
-      const updateData: UpdateSessionDTO = { status };
-
-      // Add timestamps based on status
-      if (status === SESSION_STATUS.IN_PROGRESS) {
-        updateData.startedAt = new Date();
+        // Only set startedAt once — first participant to join wins
+        if (!existingSession.startedAt) {
+          updateData.startedAt = new Date();
+        }
       } else if (status === SESSION_STATUS.COMPLETED) {
         updateData.endedAt = new Date();
       }
