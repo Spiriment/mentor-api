@@ -344,12 +344,14 @@ export class PushNotificationService {
       callerImage?: string;
       sessionId?: string;
       conversationId: string;
+      isSessionCall?: boolean;
     }
   ): Promise<boolean> {
+    const callLabel = callData.isSessionCall ? 'session call' : 'call';
     return this.sendToUser({
       userId,
       pushToken,
-      title: `📞 Incoming call from ${callData.callerName}`,
+      title: `📞 Incoming ${callLabel} from ${callData.callerName}`,
       body: 'Tap to answer',
       data: {
         type: 'call-invite',
@@ -358,6 +360,7 @@ export class PushNotificationService {
         callerImage: callData.callerImage,
         sessionId: callData.sessionId,
         conversationId: callData.conversationId,
+        isSessionCall: callData.isSessionCall,
       },
       channelId: 'calls',
       priority: 'high',

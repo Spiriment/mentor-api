@@ -627,7 +627,7 @@ export class WebSocketService {
 
   // Call handling methods
   private async handleCallInvite(socket: AuthenticatedSocket, data: any) {
-    const { targetUserId, sessionId, conversationId, callerName, callerImage } = data;
+    const { targetUserId, sessionId, conversationId, callerName, callerImage, isSessionCall } = data;
     logger.info(`Call invite from ${socket.userId} to ${targetUserId}`);
 
     // Derive conversationId if not provided
@@ -644,6 +644,7 @@ export class WebSocketService {
         callerImage: callerImage,
         sessionId,
         conversationId: finalConversationId,
+        isSessionCall,
       });
       logger.info(`Call invite sent via WebSocket to online user ${targetUserId}`);
     } else {
@@ -666,6 +667,7 @@ export class WebSocketService {
               callerImage: callerImage,
               sessionId,
               conversationId: finalConversationId,
+              isSessionCall,
             }
           );
           logger.info(`📱 Call invite sent via push notification to offline user ${targetUserId}`);
