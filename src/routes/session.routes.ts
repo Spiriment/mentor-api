@@ -61,6 +61,12 @@ router.patch(
   sessionController.addSessionNotes
 );
 
+router.patch(
+  '/:sessionId/mentee-notes',
+  requireRole(['mentee']),
+  sessionController.addMenteeNotes
+);
+
 // Accept/Decline session (mentor only)
 router.post(
   '/:sessionId/accept',
