@@ -517,6 +517,46 @@ export class SessionController {
   };
 
   /**
+   * Add mentee notes and summary after a session
+   * PATCH /api/sessions/:sessionId/mentee-notes
+   */
+  addMenteeNotes = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+      const { notes, summary } = req.body;
+      const user = req.user;
+
+      if (!user) {
+        throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
+      }
+
+      const updateData: UpdateSessionDTO = {
+        menteeNotes: notes,
+        ...(summary ? { sessionSummary: summary } : {}),
+      };
+
+      const session = await this.sessionService.updateSession(
+        sessionId,
+        updateData,
+        user.id
+      );
+
+      this.logger.info('Mentee session notes added successfully', {
+        sessionId,
+        menteeId: user.id,
+      });
+
+      return sendSuccessResponse(res, {
+        session,
+        message: 'Session notes saved successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error adding mentee session notes', error);
+      next(error);
+    }
+  };
+
+  /**
    * Accept a session request (mentor only)
    * POST /api/sessions/:sessionId/accept
    */
