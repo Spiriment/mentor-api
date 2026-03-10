@@ -8,6 +8,7 @@ import { ReengagementService } from "@/services/reengagement.service";
 import { notificationSchedulerService } from "@/services/notificationScheduler.service";
 import { MonthlySummaryService } from "@/services/monthlySummary.service";
 import { sessionAutoUpdateService } from "@/services/sessionAutoUpdate.service";
+import { AssignmentReminderService } from "@/services/assignmentReminder.service";
 import { EmailService } from "./email.service";
 import { subMonths } from "date-fns";
 
@@ -18,6 +19,7 @@ export class CronService {
   private streakNotificationService: StreakNotificationService | null = null;
   private reengagementService: ReengagementService | null = null;
   private monthlySummaryService: MonthlySummaryService | null = null;
+  private assignmentReminderService: AssignmentReminderService | null = null;
 
   constructor(dataSource: DataSource) {
     this.dataSource = dataSource;
@@ -207,6 +209,34 @@ export class CronService {
       this.tasks.set("missed-session-check", missedSessionCheckTask);
       logger.info("Missed session check cron job scheduled (every 30 minutes)");
 
+      // Initialize assignment reminder service
+      this.assignmentReminderService = new AssignmentReminderService(
+        this.dataSource,
+        emailService
+      );
+
+      // Schedule assignment reminder job - runs every hour
+      // Sends reminder to mentors who completed a session ~24hrs ago but haven't added assignments
+      const assignmentReminderTask = cron.schedule(
+        "0 * * * *", // Every hour
+        async () => {
+          try {
+            await this.assignmentReminderService?.sendAssignmentReminders();
+          } catch (error) {
+            logger.error(
+              "Error in assignment reminder cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+
+      this.tasks.set("assignment-reminder", assignmentReminderTask);
+      logger.info("Assignment reminder cron job scheduled (every hour)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -274,6 +304,8 @@ export class CronService {
         return "0 0 1 * * (1st of every month at 00:00 UTC)";
       case "missed-session-check":
         return "*/30 * * * * (Every 30 minutes)";
+      case "assignment-reminder":
+        return "0 * * * * (Every hour)";
       default:
         return "Unknown";
     }

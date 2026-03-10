@@ -886,6 +886,25 @@ export class EmailService {
     });
   }
 
+  public async sendAssignmentReminderEmail(props: {
+    to: string;
+    mentorName: string;
+    menteeName: string;
+    sessionDate: string;
+    sessionId: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `Reminder: Add assignments for your session with ${props.menteeName} - Spiriment`,
+      partialName: 'assignment-reminder',
+      templateData: {
+        title: 'Assignment Reminder',
+        ...props,
+        currentYear: new Date().getFullYear(),
+      },
+    });
+  }
+
   public async sendMissedSessionEmail(props: {
     to: string;
     userName: string;
