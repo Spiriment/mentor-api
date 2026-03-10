@@ -135,6 +135,7 @@ export class Session {
     sent1h?: boolean;
     sent15min?: boolean;
     sentStartNow?: boolean;
+    sentAssignmentReminder?: boolean;
   };
 
   @Column({ default: false })
