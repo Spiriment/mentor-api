@@ -379,6 +379,7 @@ export class MentorProfileService {
       leadershipRoles?: string;
       maturityDefinition?: string;
       menteeCapacity?: number;
+      sessionDuration?: number;
       mentorshipFormat?: string[];
       menteeCalling?: string[];
       profileImage?: string;
@@ -441,6 +442,13 @@ export class MentorProfileService {
       }
       if (data.menteeCapacity !== undefined) {
         profile.menteeCapacity = data.menteeCapacity;
+      }
+      if (data.sessionDuration !== undefined) {
+        const allowed = [30, 45, 60];
+        if (!allowed.includes(data.sessionDuration)) {
+          throw new Error(`Invalid session duration. Allowed values: ${allowed.join(', ')} minutes`);
+        }
+        profile.sessionDuration = data.sessionDuration;
       }
       if (data.mentorshipFormat !== undefined) {
         profile.mentorshipFormat = data.mentorshipFormat;

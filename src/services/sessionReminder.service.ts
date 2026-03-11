@@ -65,6 +65,14 @@ export class SessionReminderService {
       logger.info(`Found ${sessions.length} sessions starting in ~1 hour`);
 
       for (const session of sessions) {
+        // Skip 1-hour reminder for sessions shorter than 60 minutes
+        if (session.duration < 60) {
+          logger.debug(
+            `Skipping 1-hour reminder for session ${session.id} (duration: ${session.duration} min)`
+          );
+          continue;
+        }
+
         // Check if 1-hour reminder already sent
         if (session.reminders?.sent1h) {
           logger.debug(
