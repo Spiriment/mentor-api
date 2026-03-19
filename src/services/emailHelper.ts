@@ -1,5 +1,5 @@
 import { EmailService } from '../core/email.service';
-import { format } from 'date-fns';
+import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
 let emailServiceInstance: EmailService | null = null;
 
@@ -15,8 +15,10 @@ export const getEmailService = (): EmailService => {
   return emailServiceInstance;
 };
 
-export const formatSessionTime = (scheduledAt: Date): string => {
-  return format(scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
+export const formatSessionTime = (scheduledAt: Date, timezone?: string): string => {
+  const tz = timezone || 'UTC';
+  const zonedTime = toZonedTime(scheduledAt, tz);
+  return formatTz(zonedTime, "EEEE, MMMM d, yyyy 'at' h:mm a", { timeZone: tz });
 };
 
 export const formatSessionType = (type: string): string => {
