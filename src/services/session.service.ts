@@ -298,7 +298,7 @@ export class SessionService {
       // Send email notification to mentor
       try {
         const emailService = getEmailService();
-        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt, mentor.timezone);
         const sessionType = formatSessionType(savedSession.type);
         await emailService.sendSessionRequestEmail(
           mentor.email,
@@ -316,7 +316,7 @@ export class SessionService {
       // Create in-app notification for mentor
       try {
         const notificationService = getAppNotificationService();
-        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(data.scheduledAt, mentor.timezone);
         const fullMenteeName = formatUserName(mentee);
         await notificationService.createNotification({
           userId: mentor.id,
@@ -336,7 +336,7 @@ export class SessionService {
       // Send push notification to mentor
       try {
         if (mentor.pushToken) {
-          const scheduledTimeFormatted = formatSessionTime(data.scheduledAt);
+          const scheduledTimeFormatted = formatSessionTime(data.scheduledAt, mentor.timezone);
           await pushNotificationService.sendSessionRequestNotification(
             mentor.pushToken,
             mentor.id,
@@ -1341,7 +1341,7 @@ export class SessionService {
       // Send email notification to mentee
       try {
         const emailService = getEmailService();
-        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
         const sessionType = formatSessionType(session.type);
         await emailService.sendSessionAcceptedEmail(
           session.mentee.email,
@@ -1359,7 +1359,7 @@ export class SessionService {
       // Create in-app notification for mentee
       try {
         const notificationService = getAppNotificationService();
-        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
         await notificationService.createNotification({
           userId: session.menteeId,
           type: AppNotificationType.SESSION_CONFIRMED,
@@ -1378,7 +1378,7 @@ export class SessionService {
       // Send push notification to mentee
       try {
         if (session.mentee?.pushToken) {
-          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
           await pushNotificationService.sendSessionStatusNotification(
             session.mentee.pushToken,
             session.mentee.id,
@@ -1449,7 +1449,7 @@ export class SessionService {
       // Send email notification to mentee
       try {
         const emailService = getEmailService();
-        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
         await emailService.sendSessionDeclinedEmail(
           session.mentee.email,
           `${session.mentee.firstName} ${session.mentee.lastName}`,
@@ -1464,7 +1464,7 @@ export class SessionService {
       // Create in-app notification for mentee
       try {
         const notificationService = getAppNotificationService();
-        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+        const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
         await notificationService.createNotification({
           userId: session.menteeId,
           type: AppNotificationType.SESSION_DECLINED,
@@ -1488,7 +1488,7 @@ export class SessionService {
       // Send push notification to mentee
       try {
         if (session.mentee?.pushToken) {
-          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
           await pushNotificationService.sendSessionStatusNotification(
             session.mentee.pushToken,
             session.mentee.id,
@@ -1701,8 +1701,8 @@ export class SessionService {
 
       const currentScheduledTime = new Date(session.scheduledAt);
       const sessionType = formatSessionType(session.type);
-      const currentTimeFormatted = formatSessionTime(currentScheduledTime);
-      const newTimeFormatted = formatSessionTime(new Date(newScheduledAt));
+      const currentTimeFormatted = formatSessionTime(currentScheduledTime, session.mentor?.timezone);
+      const newTimeFormatted = formatSessionTime(new Date(newScheduledAt), session.mentor?.timezone);
 
       logger.info('Session reschedule requested', {
         sessionId,
@@ -1808,8 +1808,8 @@ export class SessionService {
         );
       }
 
-      const previousTimeFormatted = formatSessionTime(previousTime);
-      const newTimeFormatted = formatSessionTime(requestedNewTime);
+      const previousTimeFormatted = formatSessionTime(previousTime, session.mentee?.timezone);
+      const newTimeFormatted = formatSessionTime(requestedNewTime, session.mentee?.timezone);
 
       // Use a transaction to prevent race conditions when accepting reschedule
       const updatedSession = await AppDataSource.transaction(
@@ -2057,7 +2057,7 @@ export class SessionService {
       // Send push notification to mentee
       try {
         if (finalSession.mentee?.pushToken) {
-          const scheduledTimeFormatted = formatSessionTime(finalSession.scheduledAt);
+          const scheduledTimeFormatted = formatSessionTime(finalSession.scheduledAt, finalSession.mentee?.timezone);
           await pushNotificationService.sendSessionStatusNotification(
             finalSession.mentee.pushToken,
             finalSession.mentee.id,
@@ -2115,7 +2115,7 @@ export class SessionService {
         );
       }
 
-      const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+      const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
 
       // Clear reschedule request data (keep original time)
       session.previousScheduledAt = undefined;
@@ -2178,7 +2178,7 @@ export class SessionService {
       // Send push notification to mentee
       try {
         if (session.mentee?.pushToken) {
-          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt);
+          const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
           await pushNotificationService.sendSessionStatusNotification(
             session.mentee.pushToken,
             session.mentee.id,
