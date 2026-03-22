@@ -76,6 +76,11 @@ export class SessionReview {
   @Column({ type: 'datetime', nullable: true })
   mentorViewedAt?: Date;
 
+  // When the review becomes visible on the mentor's public profile.
+  // Set to session's scheduledAt + duration so it only shows after the session ends.
+  @Column({ type: 'datetime', nullable: true })
+  publishedAt?: Date;
+
   @CreateDateColumn()
   createdAt!: Date;
 
