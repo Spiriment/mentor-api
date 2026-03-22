@@ -121,6 +121,7 @@ export class SessionReviewController {
     next: NextFunction
   ): Promise<void> {
     try {
+      const userId = (req as any).user?.id;
       const { mentorId } = req.params;
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
@@ -128,7 +129,8 @@ export class SessionReviewController {
       const result = await sessionReviewService.getMentorReviews(
         mentorId,
         limit,
-        offset
+        offset,
+        userId // passed as viewerMentorId — skips publishedAt filter if mentor views own reviews
       );
 
       res.status(StatusCodes.OK).json({

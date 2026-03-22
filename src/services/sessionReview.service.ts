@@ -5,6 +5,7 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
+import { LessThanOrEqual } from 'typeorm';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { formatUserName } from './emailHelper';
@@ -57,8 +58,9 @@ export class SessionReviewService {
         );
       }
 
-      // Only allow reviews for completed sessions
-      if (session.status !== SESSION_STATUS.COMPLETED) {
+      // Only allow reviews for sessions that have actually taken place
+      const reviewableStatuses = [SESSION_STATUS.COMPLETED, SESSION_STATUS.NO_SHOW];
+      if (!reviewableStatuses.includes(session.status)) {
         throw new AppError(
           'Reviews can only be submitted for completed sessions',
           StatusCodes.BAD_REQUEST
@@ -85,6 +87,12 @@ export class SessionReviewService {
         );
       }
 
+      // Compute when the review becomes publicly visible:
+      // session's scheduled end time (scheduledAt + duration minutes)
+      const publishedAt = new Date(
+        new Date(session.scheduledAt).getTime() + session.duration * 60 * 1000
+      );
+
       // Create the review
       const review = this.sessionReviewRepository.create({
         sessionId: data.sessionId,
@@ -96,6 +104,7 @@ export class SessionReviewService {
         learnings: data.learnings,
         topicsDiscussed: data.topicsDiscussed,
         nextSessionFocus: data.nextSessionFocus,
+        publishedAt,
       });
 
       const savedReview = await this.sessionReviewRepository.save(review);
@@ -202,16 +211,26 @@ export class SessionReviewService {
   }
 
   /**
-   * Get all reviews for a mentor
+   * Get reviews for a mentor.
+   * - When the mentor views their own reviews (viewerMentorId === mentorId), all reviews
+   *   are returned regardless of publishedAt — they should see feedback immediately.
+   * - For all other viewers (mentee browsing a profile, public), only published reviews
+   *   (publishedAt <= now) are returned.
    */
   async getMentorReviews(
     mentorId: string,
     limit: number = 20,
-    offset: number = 0
+    offset: number = 0,
+    viewerMentorId?: string
   ): Promise<{ reviews: SessionReview[]; total: number }> {
     try {
+      const isSelfView = viewerMentorId === mentorId;
+      const where: any = isSelfView
+        ? { mentorId }
+        : { mentorId, publishedAt: LessThanOrEqual(new Date()) };
+
       const [reviews, total] = await this.sessionReviewRepository.findAndCount({
-        where: { mentorId },
+        where,
         relations: ['mentee', 'session'],
         order: { createdAt: 'DESC' },
         take: limit,
@@ -346,7 +365,7 @@ export class SessionReviewService {
   }
 
   /**
-   * Get mentor's average rating
+   * Get mentor's average rating — only counts published reviews.
    */
   async getMentorAverageRating(mentorId: string): Promise<{
     averageRating: number;
@@ -358,6 +377,7 @@ export class SessionReviewService {
         .select('AVG(review.rating)', 'averageRating')
         .addSelect('COUNT(review.id)', 'totalReviews')
         .where('review.mentorId = :mentorId', { mentorId })
+        .andWhere('review.publishedAt <= :now', { now: new Date() })
         .getRawOne();
 
       return {

@@ -55,7 +55,7 @@ export class SessionAutoUpdateService {
 
       logger.info(`Found ${staleSessions.length} stale in-progress sessions.`);
 
-      const MINIMUM_SESSION_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+      const MINIMUM_SESSION_DURATION_MS = 15 * 60 * 1000; // 15 minutes — matches frontend eligibility rule
 
       for (const session of staleSessions) {
         try {
