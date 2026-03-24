@@ -471,7 +471,8 @@ export class SessionController {
           const { getEmailService, formatUserName } = await import('../services/emailHelper');
           const emailService = getEmailService();
           
-          // Format session date
+          // Format session date in the mentee's timezone
+          const menteeTimezone = session.mentee?.timezone || 'UTC';
           const sessionDate = new Date(session.scheduledAt).toLocaleDateString('en-US', {
             weekday: 'long',
             month: 'long',
@@ -479,6 +480,7 @@ export class SessionController {
             year: 'numeric',
             hour: 'numeric',
             minute: '2-digit',
+            timeZone: menteeTimezone,
           });
 
           const mentorName = formatUserName(session.mentor);
