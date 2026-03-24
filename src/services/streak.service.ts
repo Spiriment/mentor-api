@@ -497,6 +497,7 @@ export class StreakService {
       currentStreak: number;
       lastStreakDate: Date;
       timezone: string;
+      pushToken?: string;
     }>
   > {
     try {
@@ -509,6 +510,7 @@ export class StreakService {
           'user.currentStreak',
           'user.lastStreakDate',
           'user.timezone',
+          'user.pushToken',
         ])
         .where('user.currentStreak > 0')
         .andWhere('user.lastStreakDate IS NOT NULL')
@@ -521,6 +523,7 @@ export class StreakService {
         currentStreak: number;
         lastStreakDate: Date;
         timezone: string;
+        pushToken?: string;
       }> = [];
 
       for (const user of users) {
@@ -542,6 +545,7 @@ export class StreakService {
             currentStreak: user.currentStreak,
             lastStreakDate: user.lastStreakDate!,
             timezone: userTimezone,
+            pushToken: user.pushToken,
           });
         }
       }

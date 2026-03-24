@@ -4,9 +4,13 @@ import { differenceInHours, parse } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
+import { pushNotificationService } from './pushNotification.service';
+import { AppDataSource } from '@/config/data-source';
+import { User } from '@/database/entities/user.entity';
 
 export class StreakNotificationService {
   private streakService: StreakService;
+  private userRepository = AppDataSource.getRepository(User);
 
   constructor() {
     this.streakService = new StreakService();
@@ -48,6 +52,7 @@ export class StreakNotificationService {
               type: 'STREAK_REMINDER',
               userId: user.id,
               currentStreak: user.currentStreak,
+              pushToken: user.pushToken,
             });
 
             logger.info('Streak reminder sent', {
@@ -71,8 +76,8 @@ export class StreakNotificationService {
   }
 
   /**
-   * Send notification to user
-   * Creates in-app notification for streak-related events
+   * Send notification to user — creates an in-app notification and, when a
+   * push token is available, also sends a device push notification.
    */
   private async sendNotification(
     userId: string,
@@ -82,6 +87,7 @@ export class StreakNotificationService {
       type: string;
       userId: string;
       currentStreak: number;
+      pushToken?: string;
     }
   ): Promise<void> {
     try {
@@ -106,6 +112,7 @@ export class StreakNotificationService {
           notificationType = AppNotificationType.SYSTEM;
       }
 
+      // 1. In-app notification (always)
       await notificationService.createNotification({
         userId: userId,
         type: notificationType,
@@ -117,14 +124,46 @@ export class StreakNotificationService {
         },
       });
 
-      logger.info('Streak notification created', {
+      // 2. Push notification (when token available)
+      if (notificationData.pushToken) {
+        await pushNotificationService.sendToUser({
+          userId,
+          pushToken: notificationData.pushToken,
+          title: notificationData.title,
+          body: notificationData.message,
+          data: {
+            type: notificationData.type,
+            currentStreak: notificationData.currentStreak,
+          },
+          channelId: 'default',
+          priority: 'high',
+        });
+      }
+
+      logger.info('Streak notification sent', {
         userId,
         type: notificationData.type,
         currentStreak: notificationData.currentStreak,
+        push: !!notificationData.pushToken,
       });
     } catch (error: any) {
-      logger.error('Failed to create streak notification', error);
+      logger.error('Failed to send streak notification', error);
       // Don't throw - we don't want notification failures to break streak logic
+    }
+  }
+
+  /**
+   * Look up a user's push token from the database.
+   */
+  private async getUserPushToken(userId: string): Promise<string | undefined> {
+    try {
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['pushToken'],
+      });
+      return user?.pushToken ?? undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -136,15 +175,17 @@ export class StreakNotificationService {
     milestone: number
   ): Promise<void> {
     try {
-      const messages = {
+      const messages: Record<number, string> = {
         7: "Amazing! You've completed a full week! 🎉",
         30: "Incredible! 30 days in a row! You're building a powerful habit! 🚀",
         100: "WOW! 100-day streak! You're a Bible reading champion! 🏆",
         365: "LEGENDARY! A full year of daily reading! You're an inspiration! ⭐",
       };
 
-      const message = messages[milestone as keyof typeof messages] ||
+      const message = messages[milestone] ||
         `Congratulations on your ${milestone}-day streak! Keep it up! 🔥`;
+
+      const pushToken = await this.getUserPushToken(userId);
 
       await this.sendNotification(userId, {
         title: `${milestone}-Day Streak Milestone! 🎊`,
@@ -152,6 +193,7 @@ export class StreakNotificationService {
         type: 'STREAK_MILESTONE',
         userId,
         currentStreak: milestone,
+        pushToken,
       });
 
       logger.info('Streak milestone notification sent', { userId, milestone });
@@ -169,19 +211,17 @@ export class StreakNotificationService {
     totalFreezes: number
   ): Promise<void> {
     try {
+      const pushToken = await this.getUserPushToken(userId);
       await this.sendNotification(userId, {
         title: 'Streak Freeze Earned! ❄️',
         message: `Congratulations on your ${currentStreak}-day streak! You've earned a streak freeze. You now have ${totalFreezes} freeze${totalFreezes > 1 ? 's' : ''} available.`,
         type: 'STREAK_FREEZE_AWARDED',
         userId,
         currentStreak,
+        pushToken,
       });
 
-      logger.info('Streak freeze award notification sent', {
-        userId,
-        currentStreak,
-        totalFreezes,
-      });
+      logger.info('Streak freeze award notification sent', { userId, currentStreak, totalFreezes });
     } catch (error: any) {
       logger.error('Error sending freeze award notification', error);
     }
@@ -196,19 +236,17 @@ export class StreakNotificationService {
     remainingFreezes: number
   ): Promise<void> {
     try {
+      const pushToken = await this.getUserPushToken(userId);
       await this.sendNotification(userId, {
         title: 'Streak Freeze Used! ❄️',
         message: `Your ${currentStreak}-day streak was saved! You have ${remainingFreezes} freeze${remainingFreezes !== 1 ? 's' : ''} remaining.`,
         type: 'STREAK_FREEZE_USED',
         userId,
         currentStreak,
+        pushToken,
       });
 
-      logger.info('Streak freeze used notification sent', {
-        userId,
-        currentStreak,
-        remainingFreezes,
-      });
+      logger.info('Streak freeze used notification sent', { userId, currentStreak, remainingFreezes });
     } catch (error: any) {
       logger.error('Error sending freeze used notification', error);
     }
