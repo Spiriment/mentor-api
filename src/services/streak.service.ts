@@ -545,7 +545,7 @@ export class StreakService {
             currentStreak: user.currentStreak,
             lastStreakDate: user.lastStreakDate!,
             timezone: userTimezone,
-            pushToken: user.pushToken,
+            pushToken: user.pushToken ?? undefined,
           });
         }
       }
