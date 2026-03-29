@@ -21,4 +21,5 @@ export enum MENTOR_APPROVAL_STATUS {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+  NEEDS_MORE_INFO = 'needs_more_info',
 }

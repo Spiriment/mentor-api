@@ -7,6 +7,12 @@ export * from './systemConfig.entity';
 
 // User entities
 export * from './user.entity';
+export * from './userDiscount.entity';
+export * from './spirimentSettings.entity';
+export * from './orgPlan.entity';
+export * from './userSubscription.entity';
+export * from './adminUser.entity';
+export * from './adminAuditLog.entity';
 export * from './menteeProfile.entity';
 export * from './mentorProfile.entity';
 

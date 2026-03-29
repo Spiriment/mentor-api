@@ -1,5 +1,14 @@
 import jwt, { SignOptions } from "jsonwebtoken";
-import { UserPayload, DecodedToken } from "../types";
+import {
+  UserPayload,
+  DecodedToken,
+  ADMIN_JWT_TYP,
+  ADMIN_REFRESH_JWT_TYP,
+  AdminAccessJwtPayload,
+  AdminRefreshJwtPayload,
+  DecodedAdminAccessToken,
+  DecodedAdminRefreshToken,
+} from "../types";
 import { UnauthorizedError } from "../errors";
 
 export class JwtService {
@@ -64,6 +73,86 @@ export class JwtService {
       } else {
         throw new UnauthorizedError("Failed to verify token");
       }
+    }
+  }
+
+  signAdminAccessToken(
+    payload: Omit<AdminAccessJwtPayload, "typ">,
+    expiresIn: string
+  ): string {
+    const full: AdminAccessJwtPayload = { ...payload, typ: ADMIN_JWT_TYP };
+    try {
+      const options: SignOptions & { algorithm: "RS256" } = {
+        algorithm: "RS256",
+        expiresIn: expiresIn as jwt.SignOptions["expiresIn"],
+      };
+      return jwt.sign(full, this.privateKey, options);
+    } catch (error) {
+      console.error("JWT Admin sign error:", error);
+      throw new UnauthorizedError("Failed to sign admin token");
+    }
+  }
+
+  signAdminRefreshToken(adminId: string, expiresIn: string): string {
+    const full: AdminRefreshJwtPayload = {
+      typ: ADMIN_REFRESH_JWT_TYP,
+      adminId,
+    };
+    try {
+      const options: SignOptions & { algorithm: "RS256" } = {
+        algorithm: "RS256",
+        expiresIn: expiresIn as jwt.SignOptions["expiresIn"],
+      };
+      return jwt.sign(full, this.privateKey, options);
+    } catch (error) {
+      console.error("JWT Admin refresh sign error:", error);
+      throw new UnauthorizedError("Failed to sign admin refresh token");
+    }
+  }
+
+  verifyAdminAccessToken(token: string): DecodedAdminAccessToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, {
+        algorithms: ["RS256"],
+      }) as DecodedAdminAccessToken;
+      if (decoded.typ !== ADMIN_JWT_TYP) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        throw error;
+      }
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedError("Token has expired");
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      throw new UnauthorizedError("Failed to verify token");
+    }
+  }
+
+  verifyAdminRefreshToken(token: string): DecodedAdminRefreshToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, {
+        algorithms: ["RS256"],
+      }) as DecodedAdminRefreshToken;
+      if (decoded.typ !== ADMIN_REFRESH_JWT_TYP) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        throw error;
+      }
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedError("Token has expired");
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      throw new UnauthorizedError("Failed to verify token");
     }
   }
 }

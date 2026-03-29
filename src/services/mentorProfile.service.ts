@@ -2,7 +2,7 @@ import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
-import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS } from '../common';
+import { Logger, USER_ROLE, MENTOR_APPROVAL_STATUS, AppError } from '../common';
 import { pushNotificationService } from './pushNotification.service';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '../database/entities/appNotification.entity';
@@ -140,52 +140,88 @@ export class MentorProfileService {
       Object.assign(profile, data);
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
-      
-      // Auto-approve mentor when onboarding is complete
-      // This allows them to be immediately visible to mentees
-      profile.isApproved = true;
-      profile.approvedAt = new Date();
 
-      const completedProfile = await this.mentorProfileRepository.save(profile);
- 
-       // Also update the User table to mark onboarding as complete
-       // For testing: Auto-approve (set to 'approved')
-       // For production: Set to 'pending' and require admin approval
-       const userUpdateData: any = {
-         isOnboardingComplete: true,
-         mentorApprovalStatus: MENTOR_APPROVAL_STATUS.APPROVED, // Change to PENDING for manual approval
-         mentorApprovedAt: new Date(), // Remove this line for manual approval
-       };
- 
-       if (data.notificationPreferences) {
-         userUpdateData.notificationPreferences = data.notificationPreferences;
-       }
- 
-       await this.userRepository.update(userId, userUpdateData);
+      const autoApprove =
+        process.env.MENTOR_AUTO_APPROVE_ON_ONBOARDING === 'true';
 
-      this.logger.info(`Completed mentor onboarding and auto-approved for user ${userId}`);
-
-      // Send push notification for auto-approval
-      if (completedProfile.user?.pushToken) {
-        await pushNotificationService.sendMentorApprovalNotification(
-          completedProfile.user.pushToken,
-          userId,
-          completedProfile.user.firstName || 'Mentor'
-        );
+      if (autoApprove) {
+        profile.isApproved = true;
+        profile.approvedAt = new Date();
+      } else {
+        profile.isApproved = false;
+        profile.approvedAt = undefined;
       }
 
-      // Create in-app notification for auto-approval
-      try {
-        const notificationService = getAppNotificationService();
-        await notificationService.createNotification({
-          userId,
-          type: AppNotificationType.MENTOR_APPROVAL,
-          title: 'Welcome, Mentor!',
-          message: 'Your profile has been approved. You can now start receiving session requests.',
-          data: { type: 'mentor_approval' },
-        });
-      } catch (notifError: any) {
-        this.logger.error('Failed to create in-app notification for mentor approval', notifError);
+      const completedProfile = await this.mentorProfileRepository.save(profile);
+
+      const userUpdateData: any = {
+        isOnboardingComplete: true,
+      };
+
+      if (autoApprove) {
+        userUpdateData.mentorApprovalStatus = MENTOR_APPROVAL_STATUS.APPROVED;
+        userUpdateData.mentorApprovedAt = new Date();
+      } else {
+        userUpdateData.mentorApprovalStatus = MENTOR_APPROVAL_STATUS.PENDING;
+        userUpdateData.mentorApprovedAt = null;
+      }
+
+      if (data.notificationPreferences) {
+        userUpdateData.notificationPreferences = data.notificationPreferences;
+      }
+
+      await this.userRepository.update(userId, userUpdateData);
+
+      if (autoApprove) {
+        this.logger.info(
+          `Completed mentor onboarding and auto-approved for user ${userId} (MENTOR_AUTO_APPROVE_ON_ONBOARDING=true)`
+        );
+
+        if (completedProfile.user?.pushToken) {
+          await pushNotificationService.sendMentorApprovalNotification(
+            completedProfile.user.pushToken,
+            userId,
+            completedProfile.user.firstName || 'Mentor'
+          );
+        }
+
+        try {
+          const notificationService = getAppNotificationService();
+          await notificationService.createNotification({
+            userId,
+            type: AppNotificationType.MENTOR_APPROVAL,
+            title: 'Welcome, Mentor!',
+            message:
+              'Your profile has been approved. You can now start receiving session requests.',
+            data: { type: 'mentor_approval' },
+          });
+        } catch (notifError: any) {
+          this.logger.error(
+            'Failed to create in-app notification for mentor approval',
+            notifError
+          );
+        }
+      } else {
+        this.logger.info(
+          `Completed mentor onboarding for user ${userId}; awaiting admin approval`
+        );
+
+        try {
+          const notificationService = getAppNotificationService();
+          await notificationService.createNotification({
+            userId,
+            type: AppNotificationType.SYSTEM,
+            title: 'Application submitted',
+            message:
+              'Thanks for completing your mentor application. Our team will review it shortly.',
+            data: { type: 'mentor_application_submitted' },
+          });
+        } catch (notifError: any) {
+          this.logger.error(
+            'Failed to create in-app notification for mentor application submitted',
+            notifError
+          );
+        }
       }
 
       return completedProfile;
@@ -295,11 +331,15 @@ export class MentorProfileService {
       const profile = await this.getProfile(userId);
 
       if (!profile) {
-        throw new Error('Mentor profile not found');
+        throw new AppError('Mentor profile not found', 404);
       }
 
       if (!profile.isOnboardingComplete) {
-        throw new Error('Mentor must complete onboarding before approval');
+        throw new AppError('Mentor must complete onboarding before approval', 400);
+      }
+
+      if (profile.isApproved) {
+        return profile;
       }
 
       profile.isApproved = true;
@@ -346,17 +386,168 @@ export class MentorProfileService {
     }
   }
 
+  async rejectMentor(
+    userId: string,
+    options?: { reason?: string }
+  ): Promise<MentorProfile> {
+    const profile = await this.mentorProfileRepository.findOne({
+      where: { userId },
+      relations: ['user'],
+    });
+
+    if (!profile) {
+      throw new AppError('Mentor profile not found', 404);
+    }
+    if (!profile.isOnboardingComplete) {
+      throw new AppError('Mentor must complete onboarding first', 400);
+    }
+
+    const user = profile.user;
+    if (
+      user?.mentorApprovalStatus === MENTOR_APPROVAL_STATUS.REJECTED &&
+      !profile.isApproved
+    ) {
+      return profile;
+    }
+
+    profile.isApproved = false;
+    profile.approvedAt = undefined;
+    await this.mentorProfileRepository.save(profile);
+
+    await this.userRepository.update(userId, {
+      mentorApprovalStatus: MENTOR_APPROVAL_STATUS.REJECTED,
+      mentorApprovedAt: null as any,
+    });
+
+    const reason =
+      options?.reason?.trim() ||
+      'Unfortunately we are unable to approve your mentor application at this time.';
+
+    if (user?.pushToken) {
+      await pushNotificationService.sendToUser({
+        userId,
+        pushToken: user.pushToken,
+        title: 'Mentor application update',
+        body: reason.slice(0, 180),
+        data: { type: 'mentor_application_rejected' },
+      });
+    }
+
+    try {
+      const notificationService = getAppNotificationService();
+      await notificationService.createNotification({
+        userId,
+        type: AppNotificationType.SYSTEM,
+        title: 'Mentor application',
+        message: reason,
+        data: { type: 'mentor_application_rejected' },
+      });
+    } catch (e) {
+      this.logger.error('rejectMentor in-app notification failed', e as Error);
+    }
+
+    this.logger.info(`Rejected mentor application for user ${userId}`);
+    return (await this.getProfile(userId)) as MentorProfile;
+  }
+
+  async markMentorNeedsMoreInfo(
+    userId: string,
+    options?: { message?: string }
+  ): Promise<MentorProfile> {
+    const profile = await this.mentorProfileRepository.findOne({
+      where: { userId },
+      relations: ['user'],
+    });
+
+    if (!profile) {
+      throw new AppError('Mentor profile not found', 404);
+    }
+    if (!profile.isOnboardingComplete) {
+      throw new AppError('Mentor must complete onboarding first', 400);
+    }
+
+    profile.isApproved = false;
+    profile.approvedAt = undefined;
+    await this.mentorProfileRepository.save(profile);
+
+    await this.userRepository.update(userId, {
+      mentorApprovalStatus: MENTOR_APPROVAL_STATUS.NEEDS_MORE_INFO,
+      mentorApprovedAt: null as any,
+    });
+
+    const user = profile.user;
+    const msg =
+      options?.message?.trim() ||
+      'We need a bit more information to continue reviewing your mentor application. Please open the app for details.';
+
+    if (user?.pushToken) {
+      await pushNotificationService.sendToUser({
+        userId,
+        pushToken: user.pushToken,
+        title: 'More information needed',
+        body: msg.slice(0, 180),
+        data: { type: 'mentor_application_needs_info' },
+      });
+    }
+
+    try {
+      const notificationService = getAppNotificationService();
+      await notificationService.createNotification({
+        userId,
+        type: AppNotificationType.SYSTEM,
+        title: 'More information needed',
+        message: msg,
+        data: { type: 'mentor_application_needs_info' },
+      });
+    } catch (e) {
+      this.logger.error(
+        'markMentorNeedsMoreInfo in-app notification failed',
+        e as Error
+      );
+    }
+
+    this.logger.info(`Marked mentor application needs_more_info for user ${userId}`);
+    return (await this.getProfile(userId)) as MentorProfile;
+  }
+
+  async appendInternalAdminNote(
+    userId: string,
+    adminUserId: string,
+    body: string
+  ): Promise<MentorProfile> {
+    const profile = await this.mentorProfileRepository.findOne({
+      where: { userId },
+    });
+    if (!profile) {
+      throw new AppError('Mentor profile not found', 404);
+    }
+
+    const prev = Array.isArray(profile.internalAdminNotes)
+      ? [...profile.internalAdminNotes]
+      : [];
+    prev.push({
+      createdAt: new Date().toISOString(),
+      adminUserId,
+      body: body.trim(),
+    });
+    profile.internalAdminNotes = prev;
+    return await this.mentorProfileRepository.save(profile);
+  }
+
   // Get all pending mentors
   async getPendingMentors(): Promise<MentorProfile[]> {
     try {
-      return await this.mentorProfileRepository.find({
-        where: {
-          isOnboardingComplete: true,
-          isApproved: false,
-        },
-        relations: ['user'],
-        order: { createdAt: 'DESC' },
-      });
+      return await this.mentorProfileRepository
+        .createQueryBuilder('mp')
+        .innerJoinAndSelect('mp.user', 'user')
+        .where('mp.isOnboardingComplete = :c', { c: true })
+        .andWhere('mp.isApproved = :a', { a: false })
+        .andWhere(
+          '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus = :pending)',
+          { pending: MENTOR_APPROVAL_STATUS.PENDING }
+        )
+        .orderBy('mp.updatedAt', 'DESC')
+        .getMany();
     } catch (error) {
       this.logger.error('Error getting pending mentors', error instanceof Error ? error : new Error(String(error)));
       throw error;
