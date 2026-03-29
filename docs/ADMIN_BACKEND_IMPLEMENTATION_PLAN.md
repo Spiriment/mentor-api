@@ -6,7 +6,7 @@ This plan aligns with [ADMIN_PORTAL_SPECIFICATION.md](./ADMIN_PORTAL_SPECIFICATI
 
 1. **Admin identity** — Separate admin accounts vs elevated app users (`adminRole` on `User`). Drives login, JWT claims, and whether spiriment-admin reuses `/api/auth` or uses `/api/admin/auth/*`.
 2. **RBAC** — Enforce Part C on every route; “authenticated app user” is not enough for admin APIs.
-3. **Legacy paths** — Today `GET /api/mentor-profiles/admin/pending` and `POST /api/mentor-profiles/:userId/approve` exist. Plan: implement Part D under `/api/admin/mentor-applications/*`, then deprecate old paths (same middleware + services underneath).
+3. **Legacy paths** — Removed: `GET /api/mentor-profiles/admin/pending` and `POST /api/mentor-profiles/:userId/approve`. Use `/api/admin/mentor-applications/*` only (admin JWT).
 
 ## Phase 0 — Skeleton (done)
 
