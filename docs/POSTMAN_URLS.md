@@ -200,26 +200,9 @@ GET http://localhost:6802/api/mentor-profiles/{userId}
 Authorization: Bearer YOUR_TOKEN_HERE
 ```
 
-#### Approve Mentor (Admin)
+#### Mentor applications (admin — Spiriment admin API)
 
-```
-POST http://localhost:6802/api/mentor-profiles/{userId}/approve
-```
-
-**Headers:**
-
-```
-Authorization: Bearer YOUR_TOKEN_HERE
-Content-Type: application/json
-```
-
-**Body:**
-
-```json
-{
-  "approvalNotes": "Approved after review"
-}
-```
+Listing pending applications, notes, and approve/reject/needs_more_info use **`/api/admin/mentor-applications`** with an **admin** JWT (see `docs/ADMIN_BACKEND_IMPLEMENTATION_PLAN.md`). The old `GET /api/mentor-profiles/admin/pending` and `POST /api/mentor-profiles/:userId/approve` routes have been removed.
 
 ---
 

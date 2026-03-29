@@ -534,26 +534,6 @@ export class MentorProfileService {
     return await this.mentorProfileRepository.save(profile);
   }
 
-  // Get all pending mentors
-  async getPendingMentors(): Promise<MentorProfile[]> {
-    try {
-      return await this.mentorProfileRepository
-        .createQueryBuilder('mp')
-        .innerJoinAndSelect('mp.user', 'user')
-        .where('mp.isOnboardingComplete = :c', { c: true })
-        .andWhere('mp.isApproved = :a', { a: false })
-        .andWhere(
-          '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus = :pending)',
-          { pending: MENTOR_APPROVAL_STATUS.PENDING }
-        )
-        .orderBy('mp.updatedAt', 'DESC')
-        .getMany();
-    } catch (error) {
-      this.logger.error('Error getting pending mentors', error instanceof Error ? error : new Error(String(error)));
-      throw error;
-    }
-  }
-
   // Update mentor profile (multiple fields at once)
   async updateProfile(
     userId: string,

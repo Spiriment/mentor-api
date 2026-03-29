@@ -42,10 +42,6 @@ router.post(
   mentorProfileController.completeOnboarding
 );
 
-// Admin functions
-router.get('/admin/pending', mentorProfileController.getPendingMentors);
-router.post('/:userId/approve', mentorProfileController.approveMentor);
-
 // Specific step handlers
 router.put(
   '/:userId/christian-experience',

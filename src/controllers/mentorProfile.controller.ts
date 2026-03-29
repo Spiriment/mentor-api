@@ -117,48 +117,6 @@ export class MentorProfileController {
     }
   };
 
-  // Get pending mentors (admin function)
-  getPendingMentors = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const mentors = await this.mentorProfileService.getPendingMentors();
-
-      res.json({
-        success: true,
-        data: mentors,
-        message: 'Pending mentors retrieved successfully',
-      });
-    } catch (error: any) {
-      this.logger.error('Error getting pending mentors', error);
-      next(error);
-    }
-  };
-
-  // Approve mentor (admin function)
-  approveMentor = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { userId } = req.params;
-      const { approvalNotes } = req.body;
-
-      const profile = await this.mentorProfileService.approveMentor(
-        userId,
-        approvalNotes
-      );
-
-      res.json({
-        success: true,
-        data: profile,
-        message: 'Mentor approved successfully',
-      });
-    } catch (error: any) {
-      this.logger.error('Error approving mentor', error);
-      next(error);
-    }
-  };
-
   // Specific step handlers
   updateChristianExperience = async (
     req: Request,
