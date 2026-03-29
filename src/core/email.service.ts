@@ -402,6 +402,30 @@ export class EmailService {
     });
   }
 
+  /** Mentor application outcomes (admin portal). Plain-text body in email. */
+  public async sendMentorApplicationStatusEmail(props: {
+    to: string;
+    firstName: string;
+    subject: string;
+    message: string;
+    actionUrl?: string;
+    actionText?: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: props.subject,
+      partialName: 'notification',
+      templateData: {
+        title: props.subject,
+        userName: props.firstName || 'there',
+        message: props.message,
+        actionUrl: props.actionUrl,
+        actionText: props.actionText || 'Open Spiriment',
+        appUrl: Config.appUrl || '',
+      },
+    });
+  }
+
   public async sendEmailVerificationEmail(
     to: string,
     userName: string,

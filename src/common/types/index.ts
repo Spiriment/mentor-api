@@ -14,6 +14,8 @@ export interface UserPayload {
   accountStatus: ACCOUNT_STATUS;
 }
 
+export * from "./adminJwt";
+
 export type DecodedToken<T extends UserPayload> = {
   iat: number;
   exp: number;

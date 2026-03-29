@@ -1,9 +1,3 @@
-import { Router } from 'express';
-import { adminController } from '../controllers/admin.controller';
+import { createAdminRouter } from '../admin/router';
 
-const router = Router();
-
-// Dashboard/Broadcast Routes
-router.post('/broadcast-push', adminController.broadcastPushNotification);
-
-export default router;
+export default createAdminRouter();

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AppDataSource } from '../config/data-source';
 import { User } from '../database/entities/user.entity';
 import { pushNotificationService } from '../services/pushNotification.service';
+import { adminAuditService } from '../services/adminAudit.service';
 import { Logger } from '../common';
 import { IsNull, Not } from 'typeorm';
 
@@ -49,6 +50,24 @@ export class AdminController {
       }
 
       if (users.length === 0) {
+        if (req.admin) {
+          try {
+            await adminAuditService.log({
+              adminUserId: req.admin.id,
+              action: 'admin.broadcast_push',
+              ip: req.ip,
+              metadata: {
+                recipientsCount: 0,
+                preferenceCategory: preferenceCategory ?? null,
+              },
+            });
+          } catch (auditErr) {
+            this.logger.error(
+              'Admin audit log failed',
+              auditErr instanceof Error ? auditErr : new Error(String(auditErr))
+            );
+          }
+        }
         return res.json({
           success: true,
           message: 'No eligible users with push tokens found',
@@ -77,6 +96,25 @@ export class AdminController {
       await pushNotificationService.sendToMany(manyNotifications);
 
       this.logger.info(`Broadcast notification sent to ${users.length} users`);
+
+      if (req.admin) {
+        try {
+          await adminAuditService.log({
+            adminUserId: req.admin.id,
+            action: 'admin.broadcast_push',
+            ip: req.ip,
+            metadata: {
+              recipientsCount: users.length,
+              preferenceCategory: preferenceCategory ?? null,
+            },
+          });
+        } catch (auditErr) {
+          this.logger.error(
+            'Admin audit log failed',
+            auditErr instanceof Error ? auditErr : new Error(String(auditErr))
+          );
+        }
+      }
 
       return res.json({
         success: true,

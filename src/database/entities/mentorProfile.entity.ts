@@ -75,6 +75,14 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'approvalNotes', type: 'text', nullable: true })
   approvalNotes?: string;
 
+  /** Admin-only threaded notes (JSON array of { createdAt, adminUserId, body }). */
+  @Column({ name: 'internalAdminNotes', type: 'json', nullable: true })
+  internalAdminNotes?: Array<{
+    createdAt: string;
+    adminUserId: string;
+    body: string;
+  }>;
+
   @Column({ name: 'approvedAt', nullable: true })
   approvedAt?: Date;
 
