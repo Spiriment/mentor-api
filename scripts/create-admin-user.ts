@@ -27,7 +27,9 @@ async function main() {
   });
 
   if (!parsed.success) {
-    logger.error('Invalid arguments', { issues: parsed.error.flatten() });
+    logger.error('Invalid arguments', undefined, {
+      issues: parsed.error.flatten(),
+    });
     logger.info(
       'Usage: ts-node -r tsconfig-paths/register scripts/create-admin-user.ts <email> <password> <super_admin|support>'
     );
