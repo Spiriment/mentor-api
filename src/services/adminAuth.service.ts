@@ -38,7 +38,16 @@ export class AdminAuthService {
     const repo = AppDataSource.getRepository(AdminUser);
     const admin = await repo.findOne({
       where: { email: email.trim().toLowerCase() },
-      select: ['id', 'email', 'password', 'role', 'isActive'],
+      select: [
+        'id',
+        'email',
+        'password',
+        'role',
+        'isActive',
+        'firstName',
+        'lastName',
+        'avatarUrl',
+      ],
     });
 
     if (!admin || !admin.isActive) {
@@ -86,6 +95,9 @@ export class AdminAuthService {
         id: admin.id,
         email: admin.email,
         role: admin.role,
+        firstName: admin.firstName ?? null,
+        lastName: admin.lastName ?? null,
+        avatarUrl: admin.avatarUrl ?? null,
       },
     };
   }
@@ -108,7 +120,7 @@ export class AdminAuthService {
     const repo = AppDataSource.getRepository(AdminUser);
     const admin = await repo.findOne({
       where: { id: decoded.adminId },
-      select: ['id', 'email', 'role', 'isActive'],
+      select: ['id', 'email', 'role', 'isActive', 'firstName', 'lastName', 'avatarUrl'],
     });
 
     if (!admin || !admin.isActive) {
@@ -147,6 +159,9 @@ export class AdminAuthService {
         id: admin.id,
         email: admin.email,
         role: admin.role,
+        firstName: admin.firstName ?? null,
+        lastName: admin.lastName ?? null,
+        avatarUrl: admin.avatarUrl ?? null,
       },
     };
   }
