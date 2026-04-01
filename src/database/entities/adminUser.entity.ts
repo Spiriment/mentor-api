@@ -24,4 +24,13 @@ export class AdminUser extends BaseEntity {
 
   @Column({ default: true })
   isActive!: boolean;
+
+  @Column({ name: 'firstName', type: 'varchar', length: 120, nullable: true })
+  firstName?: string | null;
+
+  @Column({ name: 'lastName', type: 'varchar', length: 120, nullable: true })
+  lastName?: string | null;
+
+  @Column({ name: 'avatarUrl', type: 'varchar', length: 500, nullable: true })
+  avatarUrl?: string | null;
 }
