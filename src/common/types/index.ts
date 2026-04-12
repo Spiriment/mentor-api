@@ -99,6 +99,7 @@ export type TokenResponse = {
   refreshToken: string;
   isEmailVerified?: boolean;
   accountStatus?: string;
+  isGoogleAuth?: boolean;
   token?: string; // Alias for accessToken for frontend compatibility
   user?: {
     id: string;
@@ -108,6 +109,7 @@ export type TokenResponse = {
     role: string;
     isVerified: boolean;
     isOnboardingComplete: boolean;
+    mentorApprovalStatus?: string;
   };
 };
 
