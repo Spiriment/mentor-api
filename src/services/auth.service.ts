@@ -1057,16 +1057,14 @@ export class AuthService {
       const emailVerified = payload.email_verified || false;
       const firstName = payload.given_name || '';
       const lastName = payload.family_name || '';
-      const profilePicture = payload.picture || null;
 
       if (!email) {
         throw new AppError('Email not provided by Google', 400);
       }
 
-      // Check if user exists by email
-      // Note: If you add googleId field to User entity, you can search by it too
+      // 1. Try to find user by googleId first (most reliable)
       let user = await this.UserRepository.findOne({
-        where: { email },
+        where: { googleId },
         select: {
           id: true,
           email: true,
@@ -1076,47 +1074,61 @@ export class AuthService {
           isActive: true,
           isEmailVerified: true,
           isOnboardingComplete: true,
-          password: true,
+          mentorApprovalStatus: true,
         },
       });
 
+      // 2. Fall back to email lookup (handles existing email/password accounts)
+      if (!user) {
+        user = await this.UserRepository.findOne({
+          where: { email },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            isActive: true,
+            isEmailVerified: true,
+            isOnboardingComplete: true,
+            mentorApprovalStatus: true,
+          },
+        });
+      }
+
       if (user) {
-        // User exists - update fields if needed
-        const updateData: any = {};
-
-        // Mark email as verified if Google says it's verified
-        if (emailVerified && !user.isEmailVerified) {
-          updateData.isEmailVerified = true;
-        }
-
-        // Update name if not set
-        if (!user.firstName && firstName) {
-          updateData.firstName = firstName;
-        }
-        if (!user.lastName && lastName) {
-          updateData.lastName = lastName;
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          await this.UserRepository.update(user.id, updateData);
-        }
-
+        // Existing user — update Google-provided fields
         if (!user.isActive) {
           throw new AppError('Account is inactive', 401);
         }
+
+        const updateData: any = { googleId }; // Always persist googleId
+
+        if (emailVerified && !user.isEmailVerified) {
+          updateData.isEmailVerified = true;
+          updateData.emailVerifiedAt = new Date();
+        }
+        if (!user.firstName && firstName) updateData.firstName = firstName;
+        if (!user.lastName && lastName) updateData.lastName = lastName;
+
+        await this.UserRepository.update(user.id, updateData);
+
+        this.logger.info('Existing user signed in via Google', {
+          userId: user.id,
+          email: user.email,
+        });
       } else {
-        // Create new user
+        // New user — create account (email already Google-verified, skip OTP)
         const newUser = this.UserRepository.create({
           email,
           firstName,
           lastName,
+          googleId,
           isEmailVerified: emailVerified,
+          emailVerifiedAt: emailVerified ? new Date() : undefined,
           isActive: true,
-          // Set a random password (user won't use it, but field is required)
-          password: await bcrypt.hash(
-            `google_${googleId}_${Date.now()}`,
-            10
-          ),
+          // Random unusable password — user will always sign in via Google
+          password: await bcrypt.hash(`google_${googleId}_${Date.now()}`, 10),
         });
 
         user = await this.UserRepository.save(newUser);
@@ -1126,10 +1138,7 @@ export class AuthService {
         });
       }
 
-      // Generate JWT tokens
-      const tokens = this.generateTokens(user);
-
-      // Fetch full user data for response
+      // Fetch the latest full user record for the response
       const fullUser = await this.UserRepository.findOne({
         where: { id: user.id },
       });
@@ -1141,8 +1150,13 @@ export class AuthService {
         );
       }
 
+      // Generate JWT tokens
+      const tokens = this.generateTokens(fullUser);
+
       return {
         ...tokens,
+        // isGoogleAuth tells the frontend to skip OTP/email-verification steps
+        isGoogleAuth: true,
         user: {
           id: fullUser.id,
           email: fullUser.email,
@@ -1151,9 +1165,10 @@ export class AuthService {
           role: fullUser.role || '',
           isVerified: fullUser.isEmailVerified || false,
           isOnboardingComplete: fullUser.isOnboardingComplete || false,
+          mentorApprovalStatus: fullUser.mentorApprovalStatus,
         },
-        isEmailVerified: user.isEmailVerified,
-        accountStatus: user.accountStatus,
+        isEmailVerified: fullUser.isEmailVerified,
+        accountStatus: fullUser.accountStatus,
       };
     } catch (error: any) {
       this.logger.error('Google Sign-In error', error);
