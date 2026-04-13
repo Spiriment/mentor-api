@@ -15,7 +15,7 @@ export class Phase4SubscriptionsPlansSettings1770600000000 implements MigrationI
     await queryRunner.query(`
       INSERT INTO \`spiriment_settings\` (\`id\`, \`data\`) VALUES (
         'global',
-        CAST('{"supportEmail":"support@spiriment.com","publicAppName":"Spiriment","maintenanceMode":false,"features":{"mentorApplications":true,"groupSessions":true}}' AS JSON)
+        '{"supportEmail":"support@spiriment.com","publicAppName":"Spiriment","maintenanceMode":false,"features":{"mentorApplications":true,"groupSessions":true}}'
       )
     `);
 
