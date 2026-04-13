@@ -3,7 +3,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class Phase4SubscriptionsPlansSettings1770600000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE \`spiriment_settings\` (
+      CREATE TABLE IF NOT EXISTS \`spiriment_settings\` (
         \`id\` varchar(64) NOT NULL,
         \`data\` json NOT NULL,
         \`createdAt\` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -13,14 +13,14 @@ export class Phase4SubscriptionsPlansSettings1770600000000 implements MigrationI
     `);
 
     await queryRunner.query(`
-      INSERT INTO \`spiriment_settings\` (\`id\`, \`data\`) VALUES (
+      INSERT IGNORE INTO \`spiriment_settings\` (\`id\`, \`data\`) VALUES (
         'global',
         '{"supportEmail":"support@spiriment.com","publicAppName":"Spiriment","maintenanceMode":false,"features":{"mentorApplications":true,"groupSessions":true}}'
       )
     `);
 
     await queryRunner.query(`
-      CREATE TABLE \`org_plans\` (
+      CREATE TABLE IF NOT EXISTS \`org_plans\` (
         \`id\` varchar(36) NOT NULL,
         \`planType\` varchar(16) NOT NULL,
         \`name\` varchar(255) NOT NULL,
@@ -35,9 +35,8 @@ export class Phase4SubscriptionsPlansSettings1770600000000 implements MigrationI
         PRIMARY KEY (\`id\`)
       ) ENGINE=InnoDB
     `);
-
     await queryRunner.query(`
-      CREATE TABLE \`user_subscriptions\` (
+      CREATE TABLE IF NOT EXISTS \`user_subscriptions\` (
         \`id\` varchar(36) NOT NULL,
         \`userId\` varchar(36) NOT NULL,
         \`tier\` varchar(24) NOT NULL,
