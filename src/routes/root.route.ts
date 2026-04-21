@@ -24,6 +24,9 @@ import mentorshipRequestRoutes from './mentorshipRequest.routes';
 import pushTokenRoutes from './pushToken.routes';
 import { monthlySummaryRoutes } from './monthlySummary.routes';
 import { streamRoutes } from './stream.routes';
+import { contactRoutes } from './contact.routes';
+import { blogRoutes } from './blog.routes';
+import { faqRoutes } from './faq.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
@@ -162,6 +165,11 @@ const createRootRoutes = () => {
 
   // Stream video call routes
   rootRouter.use('/api/stream', streamRoutes);
+
+  // Website interaction routes
+  rootRouter.use('/api/contact', contactRoutes);
+  rootRouter.use('/api/blog', blogRoutes);
+  rootRouter.use('/api/faq', faqRoutes);
 
   // Admin routes
   const adminRoutes = require('./admin.routes').default;

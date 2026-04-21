@@ -19,6 +19,10 @@ import exportsRoutes from './routes/exports.routes';
 import reportsRoutes from './routes/reports.routes';
 import adminUsersRoutes from './routes/adminUsers.routes';
 import profileRoutes from './routes/profile.routes';
+import notificationsRoutes from './routes/notifications.routes';
+import { blogRoutes } from '@/routes/blog.routes';
+import { faqRoutes } from '@/routes/faq.routes';
+import { contactRoutes } from '@/routes/contact.routes';
 
 const adminAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -66,6 +70,10 @@ export function createAdminRouter(): Router {
   protectedAdmin.use('/reports', reportsRoutes);
   protectedAdmin.use('/admin-users', adminUsersRoutes);
   protectedAdmin.use('/profile', profileRoutes);
+  protectedAdmin.use('/notifications', notificationsRoutes);
+  protectedAdmin.use('/blog', blogRoutes);
+  protectedAdmin.use('/faq', faqRoutes);
+  protectedAdmin.use('/contact', contactRoutes);
 
   protectedAdmin.get(
     '/message-templates/:templateId',
