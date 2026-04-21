@@ -4,5 +4,6 @@ import { adminDashboardController } from '@/controllers/adminDashboard.controlle
 const router = Router();
 
 router.get('/summary', adminDashboardController.getSummary);
+router.get('/analytics', adminDashboardController.getAnalytics);
 
 export default router;

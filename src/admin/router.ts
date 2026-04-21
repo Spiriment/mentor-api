@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { jwt } from '@/config/int-services';
+import { validate } from '@/common';
 import { adminController } from '../controllers/admin.controller';
-import { adminNotImplemented } from './handlers/notImplemented';
 import { adminMentorApplicationController } from '@/controllers/adminMentorApplication.controller';
+import { adminAuditLogController } from '@/controllers/adminAuditLog.controller';
 import { createAdminAuthMiddleware } from './middleware/adminAuth.middleware';
+import { adminAuditLogQuerySchema } from '@/validation/adminPhase5.validation';
 import authRoutes from './routes/auth.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import mentorApplicationsRoutes from './routes/mentorApplications.routes';
@@ -69,7 +71,11 @@ export function createAdminRouter(): Router {
     '/message-templates/:templateId',
     adminMentorApplicationController.getTemplatePreview
   );
-  protectedAdmin.get('/audit-log', adminNotImplemented);
+  protectedAdmin.get(
+    '/audit-log',
+    validate(adminAuditLogQuerySchema, 'query'),
+    adminAuditLogController.list
+  );
 
   protectedAdmin.post(
     '/broadcast-push',

@@ -11,6 +11,14 @@ export class AdminDashboardController {
       next(e);
     }
   };
+  getAnalytics = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const analytics = await adminDashboardService.getAnalytics();
+      return sendSuccessResponse(res, analytics);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminDashboardController = new AdminDashboardController();

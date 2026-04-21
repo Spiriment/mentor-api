@@ -1,10 +1,20 @@
 import { Router } from 'express';
-import { adminNotImplemented } from '../handlers/notImplemented';
+import { validate } from '@/common';
+import { adminReportController } from '@/controllers/adminReport.controller';
+import { adminReportListQuerySchema, adminReportPatchBodySchema } from '@/validation/adminPhase5.validation';
 
-/** Mentee / support reports queue (ADMIN_PORTAL_SPECIFICATION.md Part D.10). */
 const router = Router();
 
-router.get('/', adminNotImplemented);
-router.patch('/:id', adminNotImplemented);
+router.get(
+  '/',
+  validate(adminReportListQuerySchema, 'query'),
+  adminReportController.list
+);
+
+router.patch(
+  '/:id',
+  validate(adminReportPatchBodySchema, 'body'),
+  adminReportController.patch
+);
 
 export default router;

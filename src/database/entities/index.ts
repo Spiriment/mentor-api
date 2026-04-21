@@ -46,5 +46,8 @@ export * from './appNotification.entity';
 // Review entities
 export * from './review.entity';
 
+// Report entities
+export * from './menteeReport.entity';
+
 export * from './base.entity';
 export * from './baseInt.entity';

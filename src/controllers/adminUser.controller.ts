@@ -87,6 +87,44 @@ export class AdminUserController {
       next(e);
     }
   };
+
+  sendEmail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminUserService.sendEmailToUser(
+        req.params.userId,
+        {
+          subject: req.body.subject,
+          message: req.body.message,
+          actionUrl: req.body.actionUrl,
+          actionText: req.body.actionText,
+        },
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  broadcastEmail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminUserService.broadcastEmail(
+        {
+          subject: req.body.subject,
+          message: req.body.message,
+          actionUrl: req.body.actionUrl,
+          actionText: req.body.actionText,
+          role: req.body.role,
+        },
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminUserController = new AdminUserController();

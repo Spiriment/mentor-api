@@ -17,3 +17,18 @@ export const adminUserDiscountBodySchema = z.object({
   validFrom: z.string().max(40).optional(),
   validUntil: z.string().max(40).optional().nullable(),
 });
+
+export const adminSendUserEmailBodySchema = z.object({
+  subject: z.string().min(1).max(255),
+  message: z.string().min(1).max(5000),
+  actionUrl: z.string().url().optional(),
+  actionText: z.string().max(100).optional(),
+});
+
+export const adminBroadcastEmailBodySchema = z.object({
+  subject: z.string().min(1).max(255),
+  message: z.string().min(1).max(5000),
+  actionUrl: z.string().url().optional(),
+  actionText: z.string().max(100).optional(),
+  role: z.enum(['mentor', 'mentee', 'all']).optional(),
+});

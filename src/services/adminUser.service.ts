@@ -8,6 +8,15 @@ import { MentorProfile } from '@/database/entities/mentorProfile.entity';
 import { AppError, USER_ROLE } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import { adminSubscriptionService } from './adminSubscription.service';
+import { EmailService } from '@/core/email.service';
+
+let emailSingleton: EmailService | null = null;
+function adminEmail(): EmailService {
+  if (!emailSingleton) {
+    emailSingleton = new EmailService(null);
+  }
+  return emailSingleton;
+}
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -253,6 +262,95 @@ export class AdminUserService {
     });
 
     return { deleted: true, id: discountId };
+  }
+
+  async sendEmailToUser(
+    userId: string,
+    input: { subject: string; message: string; actionUrl?: string; actionText?: string },
+    adminUserId: string,
+    ip?: string
+  ) {
+    if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'firstName', 'isEmailVerified'],
+    });
+    if (!user) throw new AppError('User not found', 404);
+    if (!user.isEmailVerified) throw new AppError('User email is not verified', 422);
+
+    await adminEmail().sendMentorApplicationStatusEmail({
+      to: user.email,
+      firstName: user.firstName || '',
+      subject: input.subject,
+      message: input.message,
+      actionUrl: input.actionUrl,
+      actionText: input.actionText,
+    });
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.user.email.send',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { subject: input.subject },
+      ip: ip ?? null,
+    });
+
+    return { sent: true };
+  }
+
+  async broadcastEmail(
+    input: {
+      subject: string;
+      message: string;
+      actionUrl?: string;
+      actionText?: string;
+      role?: 'mentor' | 'mentee' | 'all';
+    },
+    adminUserId: string,
+    ip?: string
+  ) {
+    const qb = AppDataSource.getRepository(User)
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.email', 'user.firstName'])
+      .where('user.isEmailVerified = :v', { v: true });
+
+    if (input.role === 'mentor') {
+      qb.andWhere('user.role = :r', { r: USER_ROLE.MENTOR });
+    } else if (input.role === 'mentee') {
+      qb.andWhere('user.role = :r', { r: USER_ROLE.MENTEE });
+    }
+
+    const users = await qb.getMany();
+
+    let sent = 0;
+    let failed = 0;
+    for (const user of users) {
+      try {
+        await adminEmail().sendMentorApplicationStatusEmail({
+          to: user.email,
+          firstName: user.firstName || '',
+          subject: input.subject,
+          message: input.message,
+          actionUrl: input.actionUrl,
+          actionText: input.actionText,
+        });
+        sent++;
+      } catch {
+        failed++;
+      }
+    }
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.users.broadcast.email',
+      targetType: 'platform',
+      targetId: 'all',
+      metadata: { subject: input.subject, role: input.role ?? 'all', sent, failed },
+      ip: ip ?? null,
+    });
+
+    return { total: users.length, sent, failed };
   }
 }
 

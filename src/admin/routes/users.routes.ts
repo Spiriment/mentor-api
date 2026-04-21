@@ -6,6 +6,8 @@ import { requireAdminRole } from '../middleware/requireAdminRole.middleware';
 import {
   adminUserListQuerySchema,
   adminUserDiscountBodySchema,
+  adminSendUserEmailBodySchema,
+  adminBroadcastEmailBodySchema,
 } from '@/validation/adminUsers.validation';
 import { adminUserSubscriptionPutSchema } from '@/validation/adminPhase4.validation';
 
@@ -16,7 +18,18 @@ router.get(
   validate(adminUserListQuerySchema, 'query'),
   adminUserController.list
 );
+router.post(
+  '/broadcast-email',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  validate(adminBroadcastEmailBodySchema, 'body'),
+  adminUserController.broadcastEmail
+);
 router.get('/:userId', adminUserController.getById);
+router.post(
+  '/:userId/send-email',
+  validate(adminSendUserEmailBodySchema, 'body'),
+  adminUserController.sendEmail
+);
 router.post(
   '/:userId/discounts',
   requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
