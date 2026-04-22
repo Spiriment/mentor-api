@@ -2,6 +2,7 @@ import { AppDataSource } from '@/config/data-source';
 import { SpirimentSettings } from '@/database/entities/spirimentSettings.entity';
 import { AppError } from '@/common';
 import { adminAuditService } from './adminAudit.service';
+import { MENTOR_APPLICATION_TEMPLATES } from '@/admin/mentorApplicationTemplates';
 
 const GLOBAL_ID = 'global';
 
@@ -17,9 +18,12 @@ export class AdminSpirimentSettingsService {
           publicAppName: 'Spiriment',
           maintenanceMode: false,
           features: {
-            mentorApplications: true,
-            groupSessions: true,
+            notifyMentorApps: true,
+            notifySupportTickets: true,
+            notifySubscriptions: true,
+            notifyReports: true,
           },
+          emailTemplates: MENTOR_APPLICATION_TEMPLATES,
         },
       });
       await repo.save(row);
@@ -33,6 +37,7 @@ export class AdminSpirimentSettingsService {
       publicAppName?: string;
       maintenanceMode?: boolean;
       features?: Record<string, boolean>;
+      emailTemplates?: Record<string, { subject: string; body: string }>;
     },
     adminUserId: string,
     ip?: string
@@ -65,6 +70,16 @@ export class AdminSpirimentSettingsService {
           ? (data.features as Record<string, boolean>)
           : {};
       data.features = { ...prev, ...patch.features };
+    }
+    if (patch.emailTemplates !== undefined) {
+      const prevTpls =
+        data.emailTemplates &&
+        typeof data.emailTemplates === 'object' &&
+        !Array.isArray(data.emailTemplates)
+          ? (data.emailTemplates as Record<string, { subject: string; body: string }>)
+          : {};
+      // Delete existing global ID to let it recreate but let's actually just merge templates
+      data.emailTemplates = { ...prevTpls, ...patch.emailTemplates };
     }
 
     row.data = data;

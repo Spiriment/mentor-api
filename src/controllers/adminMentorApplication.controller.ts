@@ -69,7 +69,7 @@ export class AdminMentorApplicationController {
     next: NextFunction
   ) => {
     try {
-      const preview = adminMentorApplicationService.getMessageTemplatePreview(
+      const preview = await adminMentorApplicationService.getMessageTemplatePreview(
         req.params.templateId
       );
       return sendSuccessResponse(res, preview);

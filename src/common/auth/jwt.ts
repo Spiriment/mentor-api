@@ -11,6 +11,10 @@ import {
 } from "../types";
 import { UnauthorizedError } from "../errors";
 
+export const ADMIN_RESET_JWT_TYP = "admin_reset";
+export type AdminResetJwtPayload = { typ: typeof ADMIN_RESET_JWT_TYP; adminId: string };
+export type DecodedAdminResetToken = AdminResetJwtPayload & { iat: number; exp: number };
+
 export class JwtService {
   private readonly privateKey: string;
   private readonly publicKey: string;
@@ -139,6 +143,43 @@ export class JwtService {
         algorithms: ["RS256"],
       }) as DecodedAdminRefreshToken;
       if (decoded.typ !== ADMIN_REFRESH_JWT_TYP) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        throw error;
+      }
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedError("Token has expired");
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedError("Invalid token");
+      }
+      throw new UnauthorizedError("Failed to verify token");
+    }
+  }
+
+  signAdminPasswordResetToken(adminId: string, expiresIn: string = "15m"): string {
+    const full: AdminResetJwtPayload = { typ: ADMIN_RESET_JWT_TYP, adminId };
+    try {
+      const options: SignOptions & { algorithm: "RS256" } = {
+        algorithm: "RS256",
+        expiresIn: expiresIn as jwt.SignOptions["expiresIn"],
+      };
+      return jwt.sign(full, this.privateKey, options);
+    } catch (error) {
+      console.error("JWT Admin reset sign error:", error);
+      throw new UnauthorizedError("Failed to sign admin reset token");
+    }
+  }
+
+  verifyAdminPasswordResetToken(token: string): DecodedAdminResetToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, {
+        algorithms: ["RS256"],
+      }) as DecodedAdminResetToken;
+      if (decoded.typ !== ADMIN_RESET_JWT_TYP) {
         throw new UnauthorizedError("Invalid token");
       }
       return decoded;

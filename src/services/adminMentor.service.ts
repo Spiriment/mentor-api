@@ -5,6 +5,7 @@ import { User } from '@/database/entities/user.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
 import { SessionReview } from '@/database/entities/sessionReview.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import {
   AppError,
   Logger,
@@ -157,39 +158,77 @@ export class AdminMentorService {
       throw new AppError('Mentor profile not found', 404);
     }
 
-    const sessionRepo = AppDataSource.getRepository(Session);
-    const [sessionsCompleted, sessionsScheduled] = await Promise.all([
-      sessionRepo.count({
-        where: { mentorId: userId, status: SESSION_STATUS.COMPLETED },
-      }),
-      sessionRepo.count({
-        where: { mentorId: userId, status: SESSION_STATUS.SCHEDULED },
-      }),
-    ]);
+    const [sessionsCompleted, sessionsScheduled, recentSessions, menteeRequests, reviewRaw, subRow] =
+      await Promise.all([
+        AppDataSource.getRepository(Session).count({
+          where: { mentorId: userId, status: SESSION_STATUS.COMPLETED },
+        }),
+        AppDataSource.getRepository(Session).count({
+          where: { mentorId: userId, status: SESSION_STATUS.SCHEDULED },
+        }),
+        // Last 20 sessions with mentee info
+        AppDataSource.getRepository(Session)
+          .createQueryBuilder('s')
+          .innerJoinAndSelect('s.mentee', 'mentee')
+          .where('s.mentorId = :userId', { userId })
+          .orderBy('s.scheduledAt', 'DESC')
+          .take(20)
+          .getMany(),
+        // Accepted mentees via mentorship requests
+        AppDataSource.getRepository(MentorshipRequest)
+          .createQueryBuilder('mr')
+          .innerJoinAndSelect('mr.mentee', 'mentee')
+          .where('mr.mentorId = :userId', { userId })
+          .andWhere('mr.status = :status', { status: MENTORSHIP_REQUEST_STATUS.ACCEPTED })
+          .orderBy('mr.updatedAt', 'DESC')
+          .getMany(),
+        // Ratings
+        AppDataSource.getRepository(SessionReview)
+          .createQueryBuilder('r')
+          .select('AVG(r.rating)', 'avgRating')
+          .addSelect('COUNT(r.id)', 'reviewCount')
+          .addSelect(
+            'SUM(CASE WHEN r.rating <= 2 THEN 1 ELSE 0 END)',
+            'lowRatingCount'
+          )
+          .where('r.mentorId = :id', { id: userId })
+          .getRawOne<{ avgRating: string | null; reviewCount: string; lowRatingCount: string | null }>(),
+        adminSubscriptionService.findForUser(userId),
+      ]);
 
-    const reviewRepo = AppDataSource.getRepository(SessionReview);
-    const raw = await reviewRepo
-      .createQueryBuilder('r')
-      .select('AVG(r.rating)', 'avgRating')
-      .addSelect('COUNT(r.id)', 'reviewCount')
-      .addSelect(
-        'SUM(CASE WHEN r.rating <= 2 THEN 1 ELSE 0 END)',
-        'lowRatingCount'
-      )
-      .where('r.mentorId = :id', { id: userId })
-      .getRawOne<{ avgRating: string | null; reviewCount: string; lowRatingCount: string | null }>();
+    const reviewCount = reviewRaw?.reviewCount ? parseInt(reviewRaw.reviewCount, 10) : 0;
+    const avgRating = reviewRaw?.avgRating != null ? parseFloat(reviewRaw.avgRating) : null;
+    const lowRatingReviewsCount = reviewRaw?.lowRatingCount != null ? parseInt(reviewRaw.lowRatingCount, 10) : 0;
 
-    const reviewCount = raw?.reviewCount ? parseInt(raw.reviewCount, 10) : 0;
-    const avgRating =
-      raw?.avgRating != null ? parseFloat(raw.avgRating) : null;
-    const lowRatingReviewsCount =
-      raw?.lowRatingCount != null ? parseInt(raw.lowRatingCount, 10) : 0;
+    const { password: _p, ...safeUser } = user as User & { password?: string };
 
-    const { password: _p, ...safeUser } = user as User & {
-      password?: string;
-    };
+    const serializedSessions = recentSessions.map((s) => ({
+      id: s.id,
+      status: s.status,
+      type: s.type,
+      duration: s.duration,
+      scheduledAt: s.scheduledAt,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      mentee: {
+        id: s.mentee.id,
+        firstName: s.mentee.firstName,
+        lastName: s.mentee.lastName,
+        email: s.mentee.email,
+        country: s.mentee.country,
+      },
+    }));
 
-    const subRow = await adminSubscriptionService.findForUser(userId);
+    const serializedMentees = menteeRequests.map((mr) => ({
+      menteeId: mr.mentee!.id,
+      firstName: mr.mentee!.firstName,
+      lastName: mr.mentee!.lastName,
+      email: mr.mentee!.email,
+      country: mr.mentee!.country,
+      accountStatus: mr.mentee!.accountStatus,
+      lastActiveAt: mr.mentee!.lastActiveAt,
+      acceptedAt: mr.respondedAt,
+    }));
 
     return {
       user: safeUser,
@@ -198,6 +237,8 @@ export class AdminMentorService {
         completed: sessionsCompleted,
         scheduled: sessionsScheduled,
       },
+      sessions: serializedSessions,
+      mentees: serializedMentees,
       subscriptions: {
         current: subRow ? adminSubscriptionService.serialize(subRow) : null,
         currentTier: subRow?.tier ?? null,

@@ -2,6 +2,13 @@ import bcrypt from 'bcryptjs';
 import { AppDataSource } from '@/config/data-source';
 import { AdminUser, RefreshToken } from '@/database/entities';
 import { JwtService, AppError, Logger } from '@/common';
+import { EmailService } from '@/core/email.service';
+
+let emailSingleton: EmailService | null = null;
+function getEmailService(): EmailService {
+  if (!emailSingleton) emailSingleton = new EmailService(null);
+  return emailSingleton;
+}
 
 const ADMIN_ACCESS_TTL = process.env.ADMIN_JWT_ACCESS_EXPIRES_IN ?? '8h';
 const ADMIN_REFRESH_TTL = process.env.ADMIN_JWT_REFRESH_EXPIRES_IN ?? '7d';
@@ -179,5 +186,54 @@ export class AdminAuthService {
   /** Used by bootstrap script; bcrypt cost 10. */
   static async hashPassword(plain: string): Promise<string> {
     return bcrypt.hash(plain, 10);
+  }
+
+  async forgotPassword(email: string) {
+    const repo = AppDataSource.getRepository(AdminUser);
+    const admin = await repo.findOne({
+      where: { email: email.trim().toLowerCase() },
+      select: ['id', 'email', 'isActive', 'firstName'],
+    });
+
+    if (!admin) {
+      this.logger.warn('Admin forgot password failed - not found', { email });
+      return; // Do not leak existence
+    }
+
+    if (!admin.isActive) {
+      this.logger.warn('Admin forgot password failed - inactive', { email });
+      return;
+    }
+
+    const resetToken = this.jwt.signAdminPasswordResetToken(admin.id, '15m');
+    const emailSvc = getEmailService();
+    try {
+      await emailSvc.sendAdminPasswordResetEmail(admin.email, admin.firstName || 'Administrator', resetToken);
+      this.logger.info('Admin password reset email dispatched', { adminId: admin.id, email });
+    } catch (err) {
+      this.logger.error('Failed to send admin reset email', err instanceof Error ? err : new Error(String(err)));
+      // Still return success realistically so we don't bleed info
+    }
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const decoded = this.jwt.verifyAdminPasswordResetToken(token);
+    const repo = AppDataSource.getRepository(AdminUser);
+    const admin = await repo.findOne({
+      where: { id: decoded.adminId },
+    });
+
+    if (!admin || !admin.isActive) {
+      throw new AppError('Invalid or expired reset token', 400);
+    }
+
+    admin.password = await AdminAuthService.hashPassword(newPassword);
+    await repo.save(admin);
+    
+    // Invalidate refresh tokens associated with user across board
+    const refreshRepo = AppDataSource.getRepository(RefreshToken);
+    await refreshRepo.delete({ userId: admin.id, userType: ADMIN_REFRESH_USER_TYPE });
+
+    this.logger.info('Admin password successfully reset', { adminId: admin.id });
   }
 }

@@ -44,5 +44,9 @@ export const adminSpirimentSettingsPatchSchema = z
     publicAppName: z.string().min(1).max(120).optional(),
     maintenanceMode: z.boolean().optional(),
     features: z.record(z.string(), z.boolean()).optional(),
+    emailTemplates: z.record(z.string(), z.object({
+      subject: z.string().min(1),
+      body: z.string().min(1)
+    })).optional(),
   })
   .strict();

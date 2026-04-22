@@ -30,20 +30,23 @@ export const MENTOR_APPLICATION_TEMPLATES: Record<
 
 export function resolveMentorApplicationTemplate(
   templateId: string | undefined,
-  action: 'approve' | 'reject' | 'needs_more_info'
+  action: 'approve' | 'reject' | 'needs_more_info',
+  dynamicTemplates?: Record<string, { subject: string; body: string }>
 ): { subject: string; body: string } {
+  const mergedTemplates = { ...MENTOR_APPLICATION_TEMPLATES, ...dynamicTemplates };
+
   const byAction: Record<typeof action, MentorApplicationTemplateId> = {
     approve: 'mentor_application_approved_v1',
     reject: 'mentor_application_rejected_v1',
     needs_more_info: 'mentor_application_needs_more_info_v1',
   };
+
   if (
     templateId &&
-    MENTOR_APPLICATION_TEMPLATE_IDS.includes(
-      templateId as MentorApplicationTemplateId
-    )
+    Object.keys(mergedTemplates).includes(templateId)
   ) {
-    return MENTOR_APPLICATION_TEMPLATES[templateId as MentorApplicationTemplateId];
+    return mergedTemplates[templateId as MentorApplicationTemplateId] || mergedTemplates[byAction[action]];
   }
-  return MENTOR_APPLICATION_TEMPLATES[byAction[action]];
+
+  return mergedTemplates[byAction[action]];
 }

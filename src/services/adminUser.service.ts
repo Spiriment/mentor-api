@@ -5,6 +5,10 @@ import { User } from '@/database/entities/user.entity';
 import { UserDiscount } from '@/database/entities/userDiscount.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
+import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
+import { BibleProgress } from '@/database/entities/bibleProgress.entity';
+import { StudyProgress } from '@/database/entities/studyProgress.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { AppError, USER_ROLE } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import { adminSubscriptionService } from './adminSubscription.service';
@@ -131,11 +135,39 @@ export class AdminUserService {
       throw new AppError('User not found', 404);
     }
 
-    const discountRepo = AppDataSource.getRepository(UserDiscount);
-    const discounts = await discountRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-    });
+    const [discounts, sessions, bibleProgress, studyProgress, mentorshipRequest] =
+      await Promise.all([
+        AppDataSource.getRepository(UserDiscount).find({
+          where: { userId },
+          order: { createdAt: 'DESC' },
+        }),
+        // All sessions as mentee, with mentor info
+        AppDataSource.getRepository(Session)
+          .createQueryBuilder('s')
+          .innerJoinAndSelect('s.mentor', 'mentor')
+          .where('s.menteeId = :userId', { userId })
+          .orderBy('s.scheduledAt', 'DESC')
+          .take(20)
+          .getMany(),
+        // Bible reading progress
+        AppDataSource.getRepository(BibleProgress).find({
+          where: { userId },
+          order: { createdAt: 'DESC' },
+        }),
+        // Study path progress
+        AppDataSource.getRepository(StudyProgress).find({
+          where: { userId },
+          order: { lastStudiedAt: 'DESC' },
+        }),
+        // Current mentor via accepted mentorship request
+        AppDataSource.getRepository(MentorshipRequest)
+          .createQueryBuilder('mr')
+          .innerJoinAndSelect('mr.mentor', 'mentor')
+          .where('mr.menteeId = :userId', { userId })
+          .andWhere('mr.status = :status', { status: MENTORSHIP_REQUEST_STATUS.ACCEPTED })
+          .orderBy('mr.updatedAt', 'DESC')
+          .getOne(),
+      ]);
 
     let menteeProfile: MenteeProfile | null = null;
     let mentorProfile: MentorProfile | null = null;
@@ -149,21 +181,53 @@ export class AdminUserService {
       });
     }
 
-    const { password: _p, ...safeUser } = user as User & {
-      password?: string;
-    };
-
+    const { password: _p, ...safeUser } = user as User & { password?: string };
     const subscription = await adminSubscriptionService.findForUser(userId);
+
+    const serializedSessions = sessions.map((s) => ({
+      id: s.id,
+      status: s.status,
+      type: s.type,
+      duration: s.duration,
+      scheduledAt: s.scheduledAt,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      mentor: {
+        id: s.mentor.id,
+        firstName: s.mentor.firstName,
+        lastName: s.mentor.lastName,
+        email: s.mentor.email,
+      },
+    }));
 
     return {
       user: safeUser,
       menteeProfile,
       mentorProfile,
+      currentMentor: mentorshipRequest
+        ? {
+            id: mentorshipRequest.mentor!.id,
+            firstName: mentorshipRequest.mentor!.firstName,
+            lastName: mentorshipRequest.mentor!.lastName,
+            email: mentorshipRequest.mentor!.email,
+          }
+        : null,
+      sessions: serializedSessions,
+      bibleProgress,
+      studyProgress,
       discounts: discounts.map((d) => this.serializeDiscount(d)),
       subscription: subscription
         ? adminSubscriptionService.serialize(subscription)
         : null,
       subscriptionHistory: [] as unknown[],
+      // Activity fields already on user
+      activity: {
+        lastActiveAt: user.lastActiveAt,
+        currentStreak: user.currentStreak,
+        longestStreak: user.longestStreak,
+        lastStreakDate: user.lastStreakDate,
+        monthlyStreakData: user.monthlyStreakData,
+      },
     };
   }
 

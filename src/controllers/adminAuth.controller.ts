@@ -54,4 +54,23 @@ export class AdminAuthController {
       next(e);
     }
   };
+
+  forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.adminAuthService.forgotPassword(req.body.email);
+      return sendSuccessResponse(res, { message: 'Password reset instructions sent' });
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { token, password } = req.body;
+      await this.adminAuthService.resetPassword(token, password);
+      return sendSuccessResponse(res, { message: 'Password has been reset' });
+    } catch (e) {
+      next(e);
+    }
+  };
 }

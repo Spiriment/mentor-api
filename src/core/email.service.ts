@@ -497,6 +497,28 @@ export class EmailService {
     });
   }
 
+  public async sendAdminPasswordResetEmail(
+    to: string,
+    userName: string,
+    token: string,
+  ): Promise<void> {
+    const adminUrl = process.env.FRONTEND_ADMIN_URL || 'http://localhost:3002';
+    const actionUrl = `${adminUrl}/reset-password?token=${token}`;
+    
+    await this.sendEmailWithTemplate({
+      to,
+      subject: 'Password Reset Request - Spiriment Admin',
+      partialName: 'notification-email',
+      templateData: {
+        title: 'Password Reset Request',
+        greeting: `Hello ${userName},`,
+        message: 'We received a request to reset your admin password. Click the button below to set up a new password. If you did not request this, you can safely ignore this email.',
+        actionUrl,
+        actionText: 'Reset Password',
+      },
+    });
+  }
+
   public async sendAdminNewPasswordEmail(
     to: string,
     userName: string,

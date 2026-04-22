@@ -3,6 +3,8 @@ import { validate } from '@/common';
 import {
   adminLoginSchema,
   adminRefreshSchema,
+  adminForgotPasswordSchema,
+  adminResetPasswordSchema,
 } from '@/validation/adminAuth.validation';
 import { AdminAuthController } from '@/controllers/adminAuth.controller';
 import { AdminAuthService } from '@/services/adminAuth.service';
@@ -22,6 +24,16 @@ router.post(
   '/refresh',
   validate(adminRefreshSchema, 'body'),
   adminAuthController.refresh
+);
+router.post(
+  '/forgot-password',
+  validate(adminForgotPasswordSchema, 'body'),
+  adminAuthController.forgotPassword
+);
+router.post(
+  '/reset-password',
+  validate(adminResetPasswordSchema, 'body'),
+  adminAuthController.resetPassword
 );
 router.post(
   '/logout',

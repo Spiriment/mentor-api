@@ -12,6 +12,7 @@ import {
   MENTOR_APPLICATION_TEMPLATE_IDS,
 } from '@/admin/mentorApplicationTemplates';
 import { adminAuditService } from './adminAudit.service';
+import { adminSpirimentSettingsService } from './adminSpirimentSettings.service';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -276,7 +277,10 @@ export class AdminMentorApplicationService {
       throw new AppError('Invalid application id', 400);
     }
 
-    const tpl = resolveMentorApplicationTemplate(templateId, action);
+    const settings = await adminSpirimentSettingsService.getGlobal();
+    const dynamicTemplates = settings.data.emailTemplates as Record<string, { subject: string; body: string }> | undefined;
+
+    const tpl = resolveMentorApplicationTemplate(templateId, action, dynamicTemplates);
     const emailBody = (messageOverride?.trim() || tpl.body).slice(0, 8000);
     const emailSubject = tpl.subject;
 
@@ -345,18 +349,15 @@ export class AdminMentorApplicationService {
     };
   }
 
-  getMessageTemplatePreview(templateId: string) {
-    if (
-      !MENTOR_APPLICATION_TEMPLATE_IDS.includes(
-        templateId as (typeof MENTOR_APPLICATION_TEMPLATE_IDS)[number]
-      )
-    ) {
+  async getMessageTemplatePreview(templateId: string) {
+    const settings = await adminSpirimentSettingsService.getGlobal();
+    const dynamicTemplates = settings.data.emailTemplates as Record<string, { subject: string; body: string }> | undefined;
+    const mergedTemplates = { ...MENTOR_APPLICATION_TEMPLATES, ...dynamicTemplates };
+
+    if (!Object.keys(mergedTemplates).includes(templateId)) {
       throw new AppError('Unknown template', 404);
     }
-    const tpl =
-      MENTOR_APPLICATION_TEMPLATES[
-        templateId as keyof typeof MENTOR_APPLICATION_TEMPLATES
-      ];
+    const tpl = mergedTemplates[templateId as keyof typeof mergedTemplates];
     return { templateId, subject: tpl.subject, body: tpl.body };
   }
 }
