@@ -40,6 +40,22 @@ export const BlogController = {
     }
   },
 
+  async getPostById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const blogService = new BlogService(AppDataSource);
+      const post = await blogService.getPostById(id);
+      
+      if (!post) {
+        return res.status(404).json({ status: 'error', message: 'Post not found' });
+      }
+      
+      return res.status(200).json({ success: true, response: post });
+    } catch (error) {
+      return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+  },
+
   async createPost(req: Request, res: Response) {
     try {
       const parsedData = createBlogSchema.safeParse(req.body);

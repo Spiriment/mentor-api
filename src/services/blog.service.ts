@@ -38,6 +38,10 @@ export class BlogService {
     return this.blogRepo.findOne({ where: { slug, isPublished: true }, relations: ['author'] });
   }
 
+  async getPostById(id: string): Promise<BlogPost | null> {
+    return this.blogRepo.findOne({ where: { id }, relations: ['author'] });
+  }
+
   async getAllPublishedPosts(page = 1, limit = 10): Promise<{ posts: BlogPost[], total: number }> {
     const [posts, total] = await this.blogRepo.findAndCount({
       where: { isPublished: true },

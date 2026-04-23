@@ -14,6 +14,18 @@ export const FaqController = {
     }
   },
 
+  async getById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const faqService = new FaqService(AppDataSource);
+      const faq = await faqService.getById(id);
+      if (!faq) return res.status(404).json({ status: 'error', message: 'FAQ not found' });
+      return res.status(200).json({ success: true, response: faq });
+    } catch {
+      return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+  },
+
   async getPublished(req: Request, res: Response) {
     try {
       const faqService = new FaqService(AppDataSource);

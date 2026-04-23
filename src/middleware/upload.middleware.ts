@@ -15,7 +15,9 @@ const profileImagesDir = path.join(uploadDir, 'profile-images');
 const videoIntroductionsDir = path.join(uploadDir, 'video-introductions');
 const chatAttachmentsDir = path.join(uploadDir, 'chat-attachments');
 
-[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir].forEach((dir) => {
+const emailAttachmentsDir = path.join(uploadDir, 'email-attachments');
+
+[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir, emailAttachmentsDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     logger.info(`Created upload directory: ${dir}`);
@@ -33,6 +35,8 @@ const storage = multer.diskStorage({
       uploadPath = videoIntroductionsDir;
     } else if (file.fieldname === 'file') {
       uploadPath = chatAttachmentsDir;
+    } else if (file.fieldname === 'attachment') {
+      uploadPath = emailAttachmentsDir;
     }
 
     cb(null, uploadPath);
@@ -75,6 +79,9 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: Function) => {
     } else {
       cb(new Error('Invalid file type for chat attachment'), false);
     }
+  } else if (fieldname === 'attachment') {
+    // Allow any standard documents and media for emails
+    cb(null, true);
   } else {
     cb(new Error('Invalid field name'), false);
   }
@@ -104,6 +111,9 @@ export const uploadFiles = upload.fields([
 
 // Middleware for chat attachment
 export const uploadChatAttachment = upload.single('file');
+
+// Middleware for email attachments
+export const uploadEmailAttachment = upload.single('attachment');
 
 // Error handling middleware
 export const handleUploadError = (

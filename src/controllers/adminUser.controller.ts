@@ -97,6 +97,8 @@ export class AdminUserController {
           message: req.body.message,
           actionUrl: req.body.actionUrl,
           actionText: req.body.actionText,
+          attachmentPath: req.file?.path,
+          attachmentName: req.file?.originalname,
         },
         req.admin!.id,
         req.ip
@@ -116,6 +118,8 @@ export class AdminUserController {
           actionUrl: req.body.actionUrl,
           actionText: req.body.actionText,
           role: req.body.role,
+          attachmentPath: req.file?.path,
+          attachmentName: req.file?.originalname,
         },
         req.admin!.id,
         req.ip

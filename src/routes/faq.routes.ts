@@ -8,6 +8,7 @@ router.get('/published', FaqController.getPublished);
 
 // Admin
 router.get('/', FaqController.getAll);
+router.get('/id/:id', FaqController.getById);
 router.post('/', FaqController.create);
 router.put('/:id', FaqController.update);
 router.delete('/:id', FaqController.delete);

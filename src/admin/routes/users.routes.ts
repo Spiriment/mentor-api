@@ -3,6 +3,7 @@ import { validate } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminUserController } from '@/controllers/adminUser.controller';
 import { requireAdminRole } from '../middleware/requireAdminRole.middleware';
+import { uploadEmailAttachment } from '../../middleware/upload.middleware';
 import {
   adminUserListQuerySchema,
   adminUserDiscountBodySchema,
@@ -21,12 +22,14 @@ router.get(
 router.post(
   '/broadcast-email',
   requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  uploadEmailAttachment,
   validate(adminBroadcastEmailBodySchema, 'body'),
   adminUserController.broadcastEmail
 );
 router.get('/:userId', adminUserController.getById);
 router.post(
   '/:userId/send-email',
+  uploadEmailAttachment,
   validate(adminSendUserEmailBodySchema, 'body'),
   adminUserController.sendEmail
 );

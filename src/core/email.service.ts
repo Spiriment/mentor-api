@@ -291,6 +291,7 @@ export class EmailService {
       subject: string;
       partialName: string;
       templateData: Record<string, any>;
+      attachments?: { filename: string; path: string }[];
     },
     priority: number = 5
   ): Promise<void> {
@@ -303,6 +304,7 @@ export class EmailService {
       to: emailData.to,
       subject: emailData.subject,
       compiledContent: content,
+      attachments: emailData.attachments,
     };
 
     if (this.queueService) {
@@ -410,6 +412,7 @@ export class EmailService {
     message: string;
     actionUrl?: string;
     actionText?: string;
+    attachments?: { filename: string; path: string }[];
   }): Promise<void> {
     await this.sendEmailWithTemplate({
       to: props.to,
@@ -423,6 +426,7 @@ export class EmailService {
         actionText: props.actionText || 'Open Spiriment',
         appUrl: Config.appUrl || '',
       },
+      attachments: props.attachments,
     });
   }
 

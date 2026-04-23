@@ -30,6 +30,10 @@ export class FaqService {
     return this.faqRepo.find({ order: { sortOrder: 'ASC', createdAt: 'ASC' } });
   }
 
+  async getById(id: string): Promise<Faq | null> {
+    return this.faqRepo.findOne({ where: { id } });
+  }
+
   async getPublished(): Promise<Faq[]> {
     return this.faqRepo.find({ where: { isPublished: true }, order: { sortOrder: 'ASC' } });
   }

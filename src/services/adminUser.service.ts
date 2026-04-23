@@ -330,7 +330,7 @@ export class AdminUserService {
 
   async sendEmailToUser(
     userId: string,
-    input: { subject: string; message: string; actionUrl?: string; actionText?: string },
+    input: { subject: string; message: string; actionUrl?: string; actionText?: string; attachmentPath?: string; attachmentName?: string },
     adminUserId: string,
     ip?: string
   ) {
@@ -342,6 +342,10 @@ export class AdminUserService {
     if (!user) throw new AppError('User not found', 404);
     if (!user.isEmailVerified) throw new AppError('User email is not verified', 422);
 
+    const attachments = input.attachmentPath && input.attachmentName 
+      ? [{ filename: input.attachmentName, path: input.attachmentPath }]
+      : undefined;
+
     await adminEmail().sendMentorApplicationStatusEmail({
       to: user.email,
       firstName: user.firstName || '',
@@ -349,7 +353,18 @@ export class AdminUserService {
       message: input.message,
       actionUrl: input.actionUrl,
       actionText: input.actionText,
+      attachments,
     });
+
+    if (input.attachmentPath) {
+      setTimeout(() => {
+        try {
+          if (require('fs').existsSync(input.attachmentPath!)) {
+            require('fs').unlinkSync(input.attachmentPath!);
+          }
+        } catch (e) {}
+      }, 5000); // delete after a delay so nodemailer can read it or bullmq can serialize it
+    }
 
     await adminAuditService.log({
       adminUserId,
@@ -370,6 +385,8 @@ export class AdminUserService {
       actionUrl?: string;
       actionText?: string;
       role?: 'mentor' | 'mentee' | 'all';
+      attachmentPath?: string;
+      attachmentName?: string;
     },
     adminUserId: string,
     ip?: string
@@ -387,6 +404,10 @@ export class AdminUserService {
 
     const users = await qb.getMany();
 
+    const attachments = input.attachmentPath && input.attachmentName 
+      ? [{ filename: input.attachmentName, path: input.attachmentPath }]
+      : undefined;
+
     let sent = 0;
     let failed = 0;
     for (const user of users) {
@@ -398,6 +419,7 @@ export class AdminUserService {
           message: input.message,
           actionUrl: input.actionUrl,
           actionText: input.actionText,
+          attachments,
         });
         sent++;
       } catch {
@@ -413,6 +435,16 @@ export class AdminUserService {
       metadata: { subject: input.subject, role: input.role ?? 'all', sent, failed },
       ip: ip ?? null,
     });
+
+    if (input.attachmentPath) {
+      setTimeout(() => {
+        try {
+          if (require('fs').existsSync(input.attachmentPath!)) {
+            require('fs').unlinkSync(input.attachmentPath!);
+          }
+        } catch (e) {}
+      }, 5000);
+    }
 
     return { total: users.length, sent, failed };
   }
