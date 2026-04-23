@@ -14,10 +14,10 @@ const uploadDir = path.join(process.cwd(), 'uploads');
 const profileImagesDir = path.join(uploadDir, 'profile-images');
 const videoIntroductionsDir = path.join(uploadDir, 'video-introductions');
 const chatAttachmentsDir = path.join(uploadDir, 'chat-attachments');
-
 const emailAttachmentsDir = path.join(uploadDir, 'email-attachments');
+const blogImagesDir = path.join(uploadDir, 'blog-images');
 
-[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir, emailAttachmentsDir].forEach((dir) => {
+[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir, emailAttachmentsDir, blogImagesDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     logger.info(`Created upload directory: ${dir}`);
@@ -37,6 +37,8 @@ const storage = multer.diskStorage({
       uploadPath = chatAttachmentsDir;
     } else if (file.fieldname === 'attachment') {
       uploadPath = emailAttachmentsDir;
+    } else if (file.fieldname === 'blogImage') {
+      uploadPath = blogImagesDir;
     }
 
     cb(null, uploadPath);
@@ -79,9 +81,13 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: Function) => {
     } else {
       cb(new Error('Invalid file type for chat attachment'), false);
     }
-  } else if (fieldname === 'attachment') {
-    // Allow any standard documents and media for emails
-    cb(null, true);
+  } else if (file.fieldname === 'attachment' || file.fieldname === 'blogImage') {
+    // Allow any standard documents and media for emails, images for blog
+    if (file.fieldname === 'blogImage' && !file.mimetype.startsWith('image/')) {
+      cb(new Error('Blog image must be an image file'), false);
+    } else {
+      cb(null, true);
+    }
   } else {
     cb(new Error('Invalid field name'), false);
   }
@@ -114,6 +120,9 @@ export const uploadChatAttachment = upload.single('file');
 
 // Middleware for email attachments
 export const uploadEmailAttachment = upload.single('attachment');
+
+// Middleware for blog images
+export const uploadBlogImage = upload.single('blogImage');
 
 // Error handling middleware
 export const handleUploadError = (
@@ -174,6 +183,16 @@ export const handleUploadError = (
     });
   }
 
+  if (error.message.includes('Blog image must be an image file')) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        message: 'Blog image must be an image file (JPEG, PNG, etc.)',
+        code: 'INVALID_IMAGE_TYPE',
+      },
+    });
+  }
+
   if (error.message.includes('Invalid file type for chat attachment')) {
     return res.status(400).json({
       success: false,
@@ -200,6 +219,8 @@ export const getFileUrl = (
       ? 'profile-images'
       : fieldname === 'videoIntroduction'
       ? 'video-introductions'
+      : fieldname === 'blogImage'
+      ? 'blog-images'
       : 'chat-attachments';
   return `${baseUrl}/uploads/${uploadPath}/${filename}`;
 };

@@ -126,4 +126,21 @@ export const BlogController = {
       return res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
   },
+  async uploadImage(req: Request, res: Response) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ status: 'error', message: 'No image provided' });
+      }
+
+      const blogService = new BlogService(AppDataSource);
+      const url = blogService.getFileUrl(req, req.file.filename, req.file.fieldname);
+
+      return res.status(200).json({ 
+        success: true, 
+        location: url // TinyMCE expects 'location' field
+      });
+    } catch (error) {
+      return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+  },
 };

@@ -62,4 +62,10 @@ export class BlogService {
     });
     return { posts, total };
   }
+
+  getFileUrl(req: any, filename: string, fieldname: string): string {
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const uploadPath = fieldname === 'blogImage' ? 'blog-images' : 'profile-images';
+    return `${baseUrl}/uploads/${uploadPath}/${filename}`;
+  }
 }

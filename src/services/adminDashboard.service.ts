@@ -1,3 +1,4 @@
+import { In } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
@@ -87,7 +88,7 @@ export class AdminDashboardService {
     const [users, sessions, subscriptions, mauRaw, dauRaw] = await Promise.all([
       userRepo.find({ select: ['id', 'role', 'createdAt'] }),
       sessionRepo.find({ select: ['id', 'scheduledAt'] }),
-      subRepo.find({ where: { status: 'active' }, select: ['id', 'tier'] }),
+      subRepo.find({ where: { status: In(['active', 'trialing']) }, select: ['id', 'tier'] }),
       // Real MAU per calendar month
       userRepo
         .createQueryBuilder('user')
@@ -144,6 +145,14 @@ export class AdminDashboardService {
       userGrowthMap[mo] = { mentees: 0, mentors: 0 };
       sessionDataMap[mo] = 0;
     }
+
+    const subGrowthMap: Record<string, number> = {};
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      subGrowthMap[key] = 0;
+    }
     users.forEach((u) => {
       if (u.createdAt >= sixMonthsAgo) {
         const mo = MONTH_NAMES[u.createdAt.getMonth()];
@@ -160,11 +169,41 @@ export class AdminDashboardService {
       }
     });
 
-    const userGrowth = Object.keys(userGrowthMap).map((mo) => ({
-      month: mo,
-      mentees: userGrowthMap[mo].mentees,
-      mentors: userGrowthMap[mo].mentors,
-    }));
+    // Also get all subscriptions (including non-active for growth chart if needed, 
+    // but here we just use the ones we fetched which were active/trialing)
+    subscriptions.forEach((s: any) => {
+      const d = new Date(s.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (subGrowthMap[key] !== undefined) {
+        subGrowthMap[key]++;
+      }
+    });
+
+    // Cumulative growth for subscriptions
+    let cumulativeSubs = 0;
+    const subscriptionGrowth = Object.keys(subGrowthMap).sort().map(key => {
+      cumulativeSubs += subGrowthMap[key];
+      const [year, month] = key.split('-');
+      return {
+        month: `${MONTH_NAMES[parseInt(month, 10) - 1]} '${year.slice(2)}`,
+        count: cumulativeSubs,
+        revenue: cumulativeSubs * 15, // Mock revenue estimation ($15 avg per sub)
+      };
+    });
+
+    // Cumulative growth for users
+    let cumulativeMentees = 0;
+    let cumulativeMentors = 0;
+    const userGrowth = Object.keys(userGrowthMap).sort().map((mo) => {
+      cumulativeMentees += userGrowthMap[mo].mentees;
+      cumulativeMentors += userGrowthMap[mo].mentors;
+      return {
+        month: mo,
+        mentees: cumulativeMentees,
+        mentors: cumulativeMentors,
+        total: cumulativeMentees + cumulativeMentors,
+      };
+    });
     const sessionData = Object.keys(sessionDataMap).map((mo) => ({
       month: mo,
       sessions: sessionDataMap[mo],
@@ -183,7 +222,7 @@ export class AdminDashboardService {
       { name: 'Premium', value: subDist.Premium, color: 'hsl(131, 22%, 29%)' },
     ].filter((s) => s.value > 0);
 
-    return { userGrowth, subDistribution, sessionData, dauData, mauData };
+    return { userGrowth, subDistribution, sessionData, dauData, mauData, subscriptionGrowth };
   }
 }
 
