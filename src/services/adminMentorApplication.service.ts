@@ -104,8 +104,8 @@ export class AdminMentorApplicationService {
       qb.andWhere('mp.isOnboardingComplete = :ic', { ic: true });
       qb.andWhere('mp.isApproved = :fa', { fa: false });
       qb.andWhere(
-        '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus = :pen)',
-        { pen: MENTOR_APPROVAL_STATUS.PENDING }
+        '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus IN (:...st))',
+        { st: [MENTOR_APPROVAL_STATUS.PENDING, MENTOR_APPROVAL_STATUS.NEEDS_MORE_INFO] }
       );
     }
 

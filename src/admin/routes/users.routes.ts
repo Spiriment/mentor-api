@@ -50,5 +50,10 @@ router.put(
   validate(adminUserSubscriptionPutSchema, 'body'),
   adminUserController.putSubscription
 );
+router.patch(
+  '/:userId/status',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  adminUserController.updateStatus
+);
 
 export default router;

@@ -41,8 +41,8 @@ export class AdminDashboardService {
       .where('mp.isOnboardingComplete = :c', { c: true })
       .andWhere('mp.isApproved = :a', { a: false })
       .andWhere(
-        '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus = :p)',
-        { p: MENTOR_APPROVAL_STATUS.PENDING }
+        '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus IN (:...st))',
+        { st: [MENTOR_APPROVAL_STATUS.PENDING, MENTOR_APPROVAL_STATUS.NEEDS_MORE_INFO] }
       )
       .getCount();
 

@@ -448,6 +448,33 @@ export class AdminUserService {
 
     return { total: users.length, sent, failed };
   }
+
+  async updateAccountStatus(
+    userId: string,
+    status: string,
+    adminUserId: string,
+    ip?: string
+  ) {
+    if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+    const repo = AppDataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: userId } });
+    if (!user) throw new AppError('User not found', 404);
+
+    const oldStatus = user.accountStatus;
+    user.accountStatus = status as any;
+    await repo.save(user);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.user.status.update',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { oldStatus, newStatus: status },
+      ip: ip ?? null,
+    });
+
+    return { success: true, accountStatus: status };
+  }
 }
 
 export const adminUserService = new AdminUserService();

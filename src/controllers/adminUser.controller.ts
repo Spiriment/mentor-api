@@ -129,6 +129,20 @@ export class AdminUserController {
       next(e);
     }
   };
+
+  updateStatus = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminUserService.updateAccountStatus(
+        req.params.userId,
+        req.body.status,
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminUserController = new AdminUserController();
