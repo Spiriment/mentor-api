@@ -27,14 +27,24 @@ export class AdminOrgPlanService {
     };
   }
 
-  async list(planType: OrgPlanType) {
+  async list(planType: OrgPlanType, page = 1, limit = 50) {
     const repo = AppDataSource.getRepository(OrgPlan);
-    const rows = await repo.find({
+    const [rows, total] = await repo.findAndCount({
       where: { planType, status: 'active' },
       relations: ['billingAdmin'],
       order: { createdAt: 'DESC' },
+      take: limit,
+      skip: (page - 1) * limit,
     });
-    return { data: rows.map((p) => this.serialize(p)) };
+    return {
+      data: rows.map((p) => this.serialize(p)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async create(
@@ -169,10 +179,102 @@ export class AdminOrgPlanService {
     }
     const users = await AppDataSource.getRepository(User).find({
       where: { orgPlanId: planId },
-      select: ['id', 'firstName', 'lastName', 'email', 'createdAt', 'isActive', 'role'],
+      select: [
+        'id',
+        'firstName',
+        'lastName',
+        'email',
+        'createdAt',
+        'isActive',
+        'role',
+      ],
       order: { createdAt: 'DESC' },
     });
     return { data: users };
+  }
+
+  async getReport(planId: string) {
+    if (!isUuid(planId)) {
+      throw new AppError('Invalid plan id', 400);
+    }
+
+    const users = await AppDataSource.getRepository(User).find({
+      where: { orgPlanId: planId },
+      select: [
+        'id',
+        'firstName',
+        'lastName',
+        'currentStreak',
+        'longestStreak',
+        'monthlyStreakData',
+      ],
+    });
+
+    if (users.length === 0) {
+      return {
+        totalSessions: 0,
+        avgStreak: 0,
+        totalMembers: 0,
+        activityChart: [],
+        topPerformers: [],
+      };
+    }
+
+    const totalMembers = users.length;
+    const totalCurrentStreak = users.reduce(
+      (acc, u) => acc + (u.currentStreak || 0),
+      0
+    );
+    const avgStreak = Math.round(totalCurrentStreak / totalMembers);
+
+    // Mock session aggregation for the report
+    const totalSessions = users.reduce(
+      (acc, u) => acc + (u.longestStreak || 0) * 2,
+      0
+    );
+
+    const today = new Date();
+    const monthKey = `${today.getFullYear()}-${String(
+      today.getMonth() + 1
+    ).padStart(2, '0')}`;
+    
+    // Group activity by Day of Week (0=Sun, 1=Mon, ..., 6=Sat)
+    const dowActivity = new Array(7).fill(0);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    users.forEach((u) => {
+      const days = u.monthlyStreakData?.[monthKey] || [];
+      days.forEach((d) => {
+        if (d >= 1 && d <= 31) {
+          // Calculate day of week for this specific day in the current month
+          const date = new Date(today.getFullYear(), today.getMonth(), d);
+          const dow = date.getDay();
+          dowActivity[dow]++;
+        }
+      });
+    });
+
+    const activityChart = dayNames.map((name, index) => ({
+      day: name,
+      activeUsers: dowActivity[index],
+    }));
+
+    const topPerformers = users
+      .sort((a, b) => (b.currentStreak || 0) - (a.currentStreak || 0))
+      .slice(0, 3)
+      .map((u) => ({
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`.trim() || 'Anonymous',
+        streak: u.currentStreak,
+      }));
+
+    return {
+      totalSessions: Math.round(totalSessions),
+      avgStreak,
+      totalMembers,
+      activityChart,
+      topPerformers,
+    };
   }
 }
 

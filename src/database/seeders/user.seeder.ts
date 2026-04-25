@@ -3,7 +3,7 @@ import { Seeder, SeederFactoryManager } from 'typeorm-extension';
 import { User } from '@/database/entities/user.entity';
 import { encryptionService } from '@/config/int-services';
 import { faker } from '@faker-js/faker';
-import { ACCOUNT_STATUS, GENDER } from '@/common/constants';
+import { ACCOUNT_STATUS, GENDER, USER_ROLE, MENTOR_APPROVAL_STATUS } from '@/common/constants';
 
 export default class UserSeeder implements Seeder {
   public async run(
@@ -20,13 +20,13 @@ export default class UserSeeder implements Seeder {
 
     const hashedPassword = await encryptionService.hash('Password');
 
-    const users = Array.from({ length: 1000 }, () => {
+    const users = Array.from({ length: 1000 }, (_, index) => {
       const firstName = faker.person.firstName();
       const lastName = faker.person.lastName();
       const email = faker.internet.email({ firstName, lastName });
       const gender = faker.helpers.arrayElement(Object.values(GENDER));
 
-      const shouldHaveReferral = faker.datatype.boolean({ probability: 0.6 });
+      const isMentor = index % 10 === 0;
 
       return {
         email,
@@ -37,6 +37,9 @@ export default class UserSeeder implements Seeder {
           : undefined,
         password: hashedPassword,
         gender,
+        role: isMentor ? USER_ROLE.MENTOR : USER_ROLE.MENTEE,
+        mentorApprovalStatus: isMentor ? MENTOR_APPROVAL_STATUS.APPROVED : undefined,
+        mentorApprovedAt: isMentor ? faker.date.past() : undefined,
         isActive: faker.datatype.boolean({ probability: 0.9 }),
         accountStatus: faker.helpers.arrayElement(
           Object.values(ACCOUNT_STATUS)
@@ -67,6 +70,8 @@ export default class UserSeeder implements Seeder {
               currency: 'NGN',
             }
           : undefined,
+
+        country: faker.location.country(),
 
         createdAt: faker.date.past({ years: 1 }),
         updatedAt: faker.date.recent(),

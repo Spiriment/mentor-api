@@ -545,6 +545,29 @@ export class AdminUserService {
 
     return { success: true, accountStatus: status };
   }
+  async deleteUser(
+    userId: string,
+    adminUserId: string,
+    ip?: string
+  ) {
+    if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+    const repo = AppDataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: userId } });
+    if (!user) throw new AppError('User not found', 404);
+
+    await repo.remove(user);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.user.delete',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { deletedEmail: user.email },
+      ip: ip ?? null,
+    });
+
+    return { success: true };
+  }
 }
 
 export const adminUserService = new AdminUserService();

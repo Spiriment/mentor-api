@@ -23,6 +23,8 @@
     "migration:revert": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/config/data-source.ts",
     "dev": "npm run start:dev",
     "db-seed": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/seed-runner.ts",
+    "seed:blogs": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/blog.seeder.ts",
+    "seed:faqs": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/faq.seeder.ts",
     "db-seed:prod": "NODE_ENV=production node database/seeders/seed-runner.js",
     "db-seed:staging": "NODE_ENV=staging node database/seeders/seed-runner.js",
     "build-and-seed:prod": "npm run build:main && npm run db-seed:prod",

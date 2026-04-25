@@ -41,5 +41,6 @@ router.delete('/church/:id', adminOrgPlanController.deleteChurch);
 router.delete('/family/:id', adminOrgPlanController.deleteFamily);
 
 router.get('/:id/members', adminOrgPlanController.getMembers);
+router.get('/:id/report', adminOrgPlanController.getReport);
 
 export default router;

@@ -165,6 +165,18 @@ export class AdminUserController {
       next(e);
     }
   };
+  deleteUser = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminUserService.deleteUser(
+        req.params.userId,
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminUserController = new AdminUserController();

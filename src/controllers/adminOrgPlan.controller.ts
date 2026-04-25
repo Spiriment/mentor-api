@@ -3,18 +3,22 @@ import { sendSuccessResponse } from '@/common/helpers';
 import { adminOrgPlanService } from '@/services/adminOrgPlan.service';
 
 export class AdminOrgPlanController {
-  listChurch = async (_req: Request, res: Response, next: NextFunction) => {
+  listChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await adminOrgPlanService.list('church');
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await adminOrgPlanService.list('church', page, limit);
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);
     }
   };
 
-  listFamily = async (_req: Request, res: Response, next: NextFunction) => {
+  listFamily = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await adminOrgPlanService.list('family');
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await adminOrgPlanService.list('family', page, limit);
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);
@@ -122,6 +126,15 @@ export class AdminOrgPlanController {
   getMembers = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await adminOrgPlanService.getMembers(req.params.id);
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  getReport = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminOrgPlanService.getReport(req.params.id);
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);
