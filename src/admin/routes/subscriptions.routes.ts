@@ -4,5 +4,6 @@ import { adminSubscriptionController } from '@/controllers/adminSubscription.con
 const router = Router();
 
 router.get('/summary', adminSubscriptionController.getSummary);
+router.get('/individual', adminSubscriptionController.listIndividual);
 
 export default router;

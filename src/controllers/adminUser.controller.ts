@@ -12,7 +12,7 @@ export class AdminUserController {
         limit: q.limit ? Number(q.limit) : undefined,
         sort: q.sort,
         search: q.search,
-        role: q.role as 'mentee' | 'mentor' | 'all' | undefined,
+        role: q.role as 'mentee' | 'mentor' | 'inactive' | 'all' | undefined,
         country: q.country,
         churchSearch: q.churchSearch,
       });
@@ -135,6 +135,28 @@ export class AdminUserController {
       const result = await adminUserService.updateAccountStatus(
         req.params.userId,
         req.body.status,
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  bulkEmail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userIds = Array.isArray(req.body.userIds) ? req.body.userIds : [];
+      const result = await adminUserService.bulkSendEmail(
+        {
+          userIds,
+          subject: req.body.subject,
+          message: req.body.message,
+          actionUrl: req.body.actionUrl,
+          actionText: req.body.actionText,
+          attachmentPath: req.file?.path,
+          attachmentName: req.file?.originalname,
+        },
         req.admin!.id,
         req.ip
       );

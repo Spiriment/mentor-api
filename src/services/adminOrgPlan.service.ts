@@ -18,6 +18,9 @@ export class AdminOrgPlanService {
       totalSeats: p.totalSeats,
       usedSeats: p.usedSeats,
       billingAdminUserId: p.billingAdminUserId ?? null,
+      billingAdminName: p.billingAdmin
+        ? `${p.billingAdmin.firstName} ${p.billingAdmin.lastName}`
+        : null,
       metadata: p.metadata ?? null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
@@ -28,6 +31,7 @@ export class AdminOrgPlanService {
     const repo = AppDataSource.getRepository(OrgPlan);
     const rows = await repo.find({
       where: { planType, status: 'active' },
+      relations: ['billingAdmin'],
       order: { createdAt: 'DESC' },
     });
     return { data: rows.map((p) => this.serialize(p)) };
@@ -157,6 +161,18 @@ export class AdminOrgPlanService {
       adminUserId,
       ip
     );
+  }
+
+  async getMembers(planId: string) {
+    if (!isUuid(planId)) {
+      throw new AppError('Invalid plan id', 400);
+    }
+    const users = await AppDataSource.getRepository(User).find({
+      where: { orgPlanId: planId },
+      select: ['id', 'firstName', 'lastName', 'email', 'createdAt', 'isActive', 'role'],
+      order: { createdAt: 'DESC' },
+    });
+    return { data: users };
   }
 }
 

@@ -1,5 +1,6 @@
-import { Entity, Column } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { User } from './user.entity';
 
 export type OrgPlanType = 'church' | 'family';
 export type OrgPlanStatus = 'active' | 'inactive';
@@ -23,6 +24,10 @@ export class OrgPlan extends BaseEntity {
 
   @Column({ name: 'billingAdminUserId', type: 'varchar', length: 36, nullable: true })
   billingAdminUserId?: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'billingAdminUserId' })
+  billingAdmin?: User | null;
 
   @Column({ type: 'json', nullable: true })
   metadata?: Record<string, unknown> | null;

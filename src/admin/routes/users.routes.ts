@@ -26,6 +26,12 @@ router.post(
   validate(adminBroadcastEmailBodySchema, 'body'),
   adminUserController.broadcastEmail
 );
+router.post(
+  '/bulk-email',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  uploadEmailAttachment,
+  adminUserController.bulkEmail
+);
 router.get('/:userId', adminUserController.getById);
 router.post(
   '/:userId/send-email',

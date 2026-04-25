@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { runSeeder } from 'typeorm-extension';
 import UserSeeder from './user.seeder';
 import MentorSeeder from './mentor.seeder';
+import SubscriptionSeeder from './subscription.seeder';
 import { AppDataSource } from '@/config/data-source';
 
 const runSeeders = async () => {
@@ -26,6 +27,10 @@ const runSeeders = async () => {
     console.log('\n📦 Running MentorSeeder...');
     await runSeeder(AppDataSource, MentorSeeder);
     console.log('✅ Mentors seeded successfully!');
+
+    console.log('\n📦 Running SubscriptionSeeder...');
+    await runSeeder(AppDataSource, SubscriptionSeeder);
+    console.log('✅ Subscriptions seeded successfully!');
 
     console.log('\n🎉 All seeders have been run successfully!');
   } catch (err) {

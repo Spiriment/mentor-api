@@ -31,7 +31,7 @@ export class AdminUserService {
     limit?: number;
     sort?: string;
     search?: string;
-    role?: 'mentee' | 'mentor' | 'all';
+    role?: 'mentee' | 'mentor' | 'inactive' | 'all';
     country?: string;
     churchSearch?: string;
   }) {
@@ -46,6 +46,8 @@ export class AdminUserService {
       qb.andWhere('user.role = :r', { r: USER_ROLE.MENTEE });
     } else if (roleFilter === 'mentor') {
       qb.andWhere('user.role = :r', { r: USER_ROLE.MENTOR });
+    } else if (roleFilter === 'inactive') {
+      qb.andWhere('user.isActive = :ia', { ia: false });
     }
 
     if (params.country) {
@@ -441,6 +443,74 @@ export class AdminUserService {
         try {
           if (require('fs').existsSync(input.attachmentPath!)) {
             require('fs').unlinkSync(input.attachmentPath!);
+          }
+        } catch (e) {}
+      }, 5000);
+    }
+
+    return { total: users.length, sent, failed };
+  }
+
+  async bulkSendEmail(
+    input: {
+      userIds: string[];
+      subject: string;
+      message: string;
+      actionUrl?: string;
+      actionText?: string;
+      attachmentPath?: string;
+      attachmentName?: string;
+    },
+    adminUserId: string,
+    ip?: string
+  ) {
+    if (!input.userIds.length) return { total: 0, sent: 0, failed: 0 };
+
+    const users = await AppDataSource.getRepository(User)
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.email', 'user.firstName'])
+      .where('user.id IN (:...ids)', { ids: input.userIds })
+      .andWhere('user.isEmailVerified = :v', { v: true })
+      .getMany();
+
+    const attachments = input.attachmentPath && input.attachmentName 
+      ? [{ filename: input.attachmentName, path: input.attachmentPath }]
+      : undefined;
+
+    let sent = 0;
+    let failed = 0;
+    for (const user of users) {
+      try {
+        await adminEmail().sendMentorApplicationStatusEmail({
+          to: user.email,
+          firstName: user.firstName || '',
+          subject: input.subject,
+          message: input.message,
+          actionUrl: input.actionUrl,
+          actionText: input.actionText,
+          attachments,
+        });
+        sent++;
+      } catch {
+        failed++;
+      }
+    }
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.users.bulk.email',
+      targetType: 'user',
+      targetId: 'multiple',
+      metadata: { subject: input.subject, count: input.userIds.length, sent, failed },
+      ip: ip ?? null,
+    });
+
+    if (input.attachmentPath) {
+      setTimeout(() => {
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(input.attachmentPath!)) {
+            fs.unlinkSync(input.attachmentPath!);
           }
         } catch (e) {}
       }, 5000);

@@ -145,4 +145,7 @@ export class User extends BaseEntity {
 
   @Column({ name: 'pushNotificationsEnabled', type: 'boolean', default: true })
   pushNotificationsEnabled!: boolean;
+
+  @Column({ name: 'orgPlanId', type: 'varchar', length: 36, nullable: true })
+  orgPlanId?: string | null;
 }

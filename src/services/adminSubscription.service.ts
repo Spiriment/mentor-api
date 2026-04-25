@@ -1,4 +1,4 @@
-import { In } from 'typeorm';
+import { In, IsNull } from 'typeorm';
 import { validate as isUuid } from 'uuid';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
@@ -110,10 +110,11 @@ export class AdminSubscriptionService {
       .getRawOne<{ sum: string }>();
 
     const totalMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
+    const revenueHistory = await this.getRevenueHistory();
 
     return {
       ...base,
-      revenue: { totalMrrCents, currency: 'USD' },
+      revenue: { totalMrrCents, currency: 'USD', history: revenueHistory },
       revenueNote: null,
     };
   }
@@ -130,6 +131,33 @@ export class AdminSubscriptionService {
         ? { totalMrrCents: full.revenue.totalMrrCents }
         : {}),
     };
+  }
+
+  async getRevenueHistory() {
+    // Generate mock data for the last 12 months as requested
+    const now = new Date();
+    const history = [];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    // Starting point for our mock growth
+    const baseRevenueCents = 1200000; // $12,000.00
+    
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthLabel = months[d.getMonth()];
+      
+      // Artificial growth pattern: 2-5% growth each month + random noise
+      const growthFactor = Math.pow(1.04, 11 - i); 
+      const noise = 0.95 + (Math.random() * 0.1); // +/- 5%
+      const amount = Math.floor(baseRevenueCents * growthFactor * noise);
+      
+      history.push({
+        month: monthLabel,
+        year: d.getFullYear(),
+        revenueCents: amount,
+      });
+    }
+    return history;
   }
 
   async upsertForUser(
@@ -226,6 +254,36 @@ export class AdminSubscriptionService {
     });
 
     return this.serialize(withUser!);
+  }
+
+  async listIndividualSubscribers(page = 1, limit = 50) {
+    const subRepo = AppDataSource.getRepository(UserSubscription);
+    const [rows, total] = await subRepo.findAndCount({
+      where: {
+        status: In(ACTIVE_STATUSES),
+        user: { orgPlanId: IsNull() },
+      },
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    return {
+      data: rows.map((r) => ({
+        ...this.serialize(r),
+        userName: r.user
+          ? `${r.user.firstName} ${r.user.lastName}`.trim() || 'No Name'
+          : 'Unknown',
+        userEmail: r.user?.email,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 }
 

@@ -40,4 +40,6 @@ router.patch(
 router.delete('/church/:id', adminOrgPlanController.deleteChurch);
 router.delete('/family/:id', adminOrgPlanController.deleteFamily);
 
+router.get('/:id/members', adminOrgPlanController.getMembers);
+
 export default router;

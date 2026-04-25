@@ -118,6 +118,15 @@ export class AdminOrgPlanController {
       next(e);
     }
   };
+
+  getMembers = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminOrgPlanService.getMembers(req.params.id);
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminOrgPlanController = new AdminOrgPlanController();
