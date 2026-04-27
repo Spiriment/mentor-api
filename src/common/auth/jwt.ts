@@ -8,6 +8,15 @@ import {
   AdminRefreshJwtPayload,
   DecodedAdminAccessToken,
   DecodedAdminRefreshToken,
+  CHURCH_PORTAL_JWT_TYP,
+  CHURCH_PORTAL_REFRESH_JWT_TYP,
+  CHURCH_PORTAL_INVITE_JWT_TYP,
+  ChurchPortalAccessJwtPayload,
+  ChurchPortalRefreshJwtPayload,
+  ChurchPortalInviteJwtPayload,
+  DecodedChurchPortalAccessToken,
+  DecodedChurchPortalRefreshToken,
+  DecodedChurchPortalInviteToken,
 } from "../types";
 import { UnauthorizedError } from "../errors";
 
@@ -194,6 +203,80 @@ export class JwtService {
         throw new UnauthorizedError("Invalid token");
       }
       throw new UnauthorizedError("Failed to verify token");
+    }
+  }
+
+  // ── Church Portal tokens ──────────────────────────────────────────────────
+
+  signChurchPortalAccessToken(
+    payload: Omit<ChurchPortalAccessJwtPayload, "typ">,
+    expiresIn: string = "15m"
+  ): string {
+    const full: ChurchPortalAccessJwtPayload = { ...payload, typ: CHURCH_PORTAL_JWT_TYP };
+    try {
+      return jwt.sign(full, this.privateKey, { algorithm: "RS256", expiresIn: expiresIn as any });
+    } catch {
+      throw new UnauthorizedError("Failed to sign church portal token");
+    }
+  }
+
+  signChurchPortalRefreshToken(portalUserId: string, expiresIn: string = "7d"): string {
+    const full: ChurchPortalRefreshJwtPayload = { typ: CHURCH_PORTAL_REFRESH_JWT_TYP, portalUserId };
+    try {
+      return jwt.sign(full, this.privateKey, { algorithm: "RS256", expiresIn: expiresIn as any });
+    } catch {
+      throw new UnauthorizedError("Failed to sign church portal refresh token");
+    }
+  }
+
+  signChurchPortalInviteToken(
+    payload: Omit<ChurchPortalInviteJwtPayload, "typ">,
+    expiresIn: string = "48h"
+  ): string {
+    const full: ChurchPortalInviteJwtPayload = { ...payload, typ: CHURCH_PORTAL_INVITE_JWT_TYP };
+    try {
+      return jwt.sign(full, this.privateKey, { algorithm: "RS256", expiresIn: expiresIn as any });
+    } catch {
+      throw new UnauthorizedError("Failed to sign church portal invite token");
+    }
+  }
+
+  verifyChurchPortalAccessToken(token: string): DecodedChurchPortalAccessToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, { algorithms: ["RS256"] }) as DecodedChurchPortalAccessToken;
+      if (decoded.typ !== CHURCH_PORTAL_JWT_TYP) throw new UnauthorizedError("Invalid token type");
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) throw error;
+      if (error instanceof jwt.TokenExpiredError) throw new UnauthorizedError("Token has expired");
+      if (error instanceof jwt.JsonWebTokenError) throw new UnauthorizedError("Invalid token");
+      throw new UnauthorizedError("Failed to verify church portal token");
+    }
+  }
+
+  verifyChurchPortalRefreshToken(token: string): DecodedChurchPortalRefreshToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, { algorithms: ["RS256"] }) as DecodedChurchPortalRefreshToken;
+      if (decoded.typ !== CHURCH_PORTAL_REFRESH_JWT_TYP) throw new UnauthorizedError("Invalid token type");
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) throw error;
+      if (error instanceof jwt.TokenExpiredError) throw new UnauthorizedError("Token has expired");
+      if (error instanceof jwt.JsonWebTokenError) throw new UnauthorizedError("Invalid token");
+      throw new UnauthorizedError("Failed to verify church portal refresh token");
+    }
+  }
+
+  verifyChurchPortalInviteToken(token: string): DecodedChurchPortalInviteToken {
+    try {
+      const decoded = jwt.verify(token, this.publicKey, { algorithms: ["RS256"] }) as DecodedChurchPortalInviteToken;
+      if (decoded.typ !== CHURCH_PORTAL_INVITE_JWT_TYP) throw new UnauthorizedError("Invalid token type");
+      return decoded;
+    } catch (error) {
+      if (error instanceof UnauthorizedError) throw error;
+      if (error instanceof jwt.TokenExpiredError) throw new UnauthorizedError("Invite link has expired");
+      if (error instanceof jwt.JsonWebTokenError) throw new UnauthorizedError("Invalid invite link");
+      throw new UnauthorizedError("Failed to verify church portal invite token");
     }
   }
 }

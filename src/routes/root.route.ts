@@ -30,6 +30,7 @@ import { faqRoutes } from './faq.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
+import { createChurchPortalRouter } from '@/church-portal/router';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -170,6 +171,12 @@ const createRootRoutes = () => {
   rootRouter.use('/api/contact', contactRoutes);
   rootRouter.use('/api/blog', blogRoutes);
   rootRouter.use('/api/faq', faqRoutes);
+
+  // Church portal routes
+  rootRouter.use('/api/church-portal', (req, res, next) => {
+    const services = initializeServices();
+    createChurchPortalRouter(services.emailService!)(req, res, next);
+  });
 
   // Admin routes
   const adminRoutes = require('./admin.routes').default;

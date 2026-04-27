@@ -37,6 +37,9 @@ import {
   ContactMessage,
   BlogPost,
   Faq,
+  ChurchPortal,
+  ChurchPortalUser,
+  ChurchPortalRefreshToken,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -94,6 +97,9 @@ export const AppDataSource = new DataSource({
     ContactMessage,
     BlogPost,
     Faq,
+    ChurchPortal,
+    ChurchPortalUser,
+    ChurchPortalRefreshToken,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

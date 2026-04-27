@@ -4,35 +4,47 @@ export class AddReengagementFieldsToUser1733235000000
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Add lastActiveAt column
-    await queryRunner.addColumn(
-      'users',
-      new TableColumn({
-        name: 'lastActiveAt',
-        type: 'datetime',
-        isNullable: true,
-      })
-    );
+    const hasLastActiveAt = await queryRunner.hasColumn('users', 'lastActiveAt');
+    if (!hasLastActiveAt) {
+      await queryRunner.addColumn(
+        'users',
+        new TableColumn({
+          name: 'lastActiveAt',
+          type: 'datetime',
+          isNullable: true,
+        })
+      );
+    }
 
-    // Add lastReengagementEmailSentAt column
-    await queryRunner.addColumn(
+    const hasLastReengagementEmailSentAt = await queryRunner.hasColumn(
       'users',
-      new TableColumn({
-        name: 'lastReengagementEmailSentAt',
-        type: 'datetime',
-        isNullable: true,
-      })
+      'lastReengagementEmailSentAt'
     );
+    if (!hasLastReengagementEmailSentAt) {
+      await queryRunner.addColumn(
+        'users',
+        new TableColumn({
+          name: 'lastReengagementEmailSentAt',
+          type: 'datetime',
+          isNullable: true,
+        })
+      );
+    }
 
-    // Add reengagementEmailsSent column
-    await queryRunner.addColumn(
+    const hasReengagementEmailsSent = await queryRunner.hasColumn(
       'users',
-      new TableColumn({
-        name: 'reengagementEmailsSent',
-        type: 'json',
-        isNullable: true,
-      })
+      'reengagementEmailsSent'
     );
+    if (!hasReengagementEmailsSent) {
+      await queryRunner.addColumn(
+        'users',
+        new TableColumn({
+          name: 'reengagementEmailsSent',
+          type: 'json',
+          isNullable: true,
+        })
+      );
+    }
 
     // Set lastActiveAt to current date for existing users
     await queryRunner.query(
@@ -41,8 +53,25 @@ export class AddReengagementFieldsToUser1733235000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.dropColumn('users', 'reengagementEmailsSent');
-    await queryRunner.dropColumn('users', 'lastReengagementEmailSentAt');
-    await queryRunner.dropColumn('users', 'lastActiveAt');
+    const hasReengagementEmailsSent = await queryRunner.hasColumn(
+      'users',
+      'reengagementEmailsSent'
+    );
+    if (hasReengagementEmailsSent) {
+      await queryRunner.dropColumn('users', 'reengagementEmailsSent');
+    }
+
+    const hasLastReengagementEmailSentAt = await queryRunner.hasColumn(
+      'users',
+      'lastReengagementEmailSentAt'
+    );
+    if (hasLastReengagementEmailSentAt) {
+      await queryRunner.dropColumn('users', 'lastReengagementEmailSentAt');
+    }
+
+    const hasLastActiveAt = await queryRunner.hasColumn('users', 'lastActiveAt');
+    if (hasLastActiveAt) {
+      await queryRunner.dropColumn('users', 'lastActiveAt');
+    }
   }
 }

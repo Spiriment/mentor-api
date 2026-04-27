@@ -6,18 +6,28 @@ export class AddSessionDurationToMentorProfile1733234500000
   name = 'AddSessionDurationToMentorProfile1733234500000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Add sessionDuration column to mentor_profiles table
-    await queryRunner.query(`
-      ALTER TABLE \`mentor_profiles\`
-      ADD COLUMN \`sessionDuration\` int NOT NULL DEFAULT 60 AFTER \`menteeCapacity\`
-    `);
+    const hasSessionDuration = await queryRunner.hasColumn(
+      'mentor_profiles',
+      'sessionDuration'
+    );
+    if (!hasSessionDuration) {
+      await queryRunner.query(`
+        ALTER TABLE \`mentor_profiles\`
+        ADD COLUMN \`sessionDuration\` int NOT NULL DEFAULT 60 AFTER \`menteeCapacity\`
+      `);
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Revert: Remove the sessionDuration column
-    await queryRunner.query(`
-      ALTER TABLE \`mentor_profiles\`
-      DROP COLUMN \`sessionDuration\`
-    `);
+    const hasSessionDuration = await queryRunner.hasColumn(
+      'mentor_profiles',
+      'sessionDuration'
+    );
+    if (hasSessionDuration) {
+      await queryRunner.query(`
+        ALTER TABLE \`mentor_profiles\`
+        DROP COLUMN \`sessionDuration\`
+      `);
+    }
   }
 }

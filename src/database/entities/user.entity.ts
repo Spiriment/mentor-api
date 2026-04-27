@@ -148,4 +148,7 @@ export class User extends BaseEntity {
 
   @Column({ name: 'orgPlanId', type: 'varchar', length: 36, nullable: true })
   orgPlanId?: string | null;
+
+  @Column({ name: 'churchPortalId', type: 'varchar', length: 36, nullable: true })
+  churchPortalId?: string | null;
 }

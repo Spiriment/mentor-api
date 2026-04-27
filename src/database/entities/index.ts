@@ -54,4 +54,7 @@ export * from './baseInt.entity';
 export * from './contactMessage.entity';
 export * from './blogPost.entity';
 export * from './faq.entity';
+
+// Church portal entities
+export * from '../../church-portal/entities';
 
