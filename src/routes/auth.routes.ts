@@ -160,6 +160,10 @@ const createAuthRoutes = (
     authController.updateAuthenticatedUserProfile
   );
 
+  // Church portal membership — join, change, or leave a church
+  router.get('/church', authenticateToken, authController.getChurchPortal);
+  router.patch('/church', authenticateToken, authController.updateChurchPortal);
+
   return router;
 };
 

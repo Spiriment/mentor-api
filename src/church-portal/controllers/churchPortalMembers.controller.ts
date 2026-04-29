@@ -47,6 +47,18 @@ export class ChurchPortalMembersController {
     }
   };
 
+  removeMember = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.membersService.removeMember(
+        req.churchPortalUser!.churchPortalId,
+        req.params.userId
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getMemberStreak = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = await this.membersService.getMemberStreak(

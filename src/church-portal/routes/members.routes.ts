@@ -11,6 +11,7 @@ export function createChurchPortalMembersRoutes(controller: ChurchPortalMembersC
   router.get('/:userId', controller.getMember);
   router.get('/:userId/sessions', controller.getMemberSessions);
   router.get('/:userId/streak', controller.getMemberStreak);
+  router.delete('/:userId', controller.removeMember);
 
   return router;
 }

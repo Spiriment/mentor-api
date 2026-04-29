@@ -701,4 +701,68 @@ export class AuthController {
       next(error);
     }
   };
+
+  // Get current user's church portal info
+  getChurchPortal = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
+
+      const fullUser = await this.userRepository.findOne({
+        where: { id: user.id },
+        select: ['churchPortalId'],
+      });
+
+      if (!fullUser?.churchPortalId) {
+        return sendSuccessResponse(res, { church: null });
+      }
+
+      const { ChurchPortal } = await import('@/church-portal/entities/churchPortal.entity');
+      const portalRepo = this.userRepository.manager.getRepository(ChurchPortal);
+      const portal = await portalRepo.findOne({
+        where: { id: fullUser.churchPortalId },
+        select: ['id', 'name', 'slug', 'logoUrl', 'denomination'],
+      });
+
+      return sendSuccessResponse(res, { church: portal ?? null });
+    } catch (error: any) {
+      this.logger.error('Error fetching church portal', error);
+      next(error);
+    }
+  };
+
+  // Join, switch, or leave a church portal
+  updateChurchPortal = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
+
+      const { slug } = req.body as { slug?: string };
+
+      if (slug && slug.trim()) {
+        const { ChurchPortal } = await import('@/church-portal/entities/churchPortal.entity');
+        const portalRepo = this.userRepository.manager.getRepository(ChurchPortal);
+        const portal = await portalRepo.findOne({
+          where: { slug: slug.trim().toLowerCase(), status: 'active' },
+          select: ['id', 'name', 'slug', 'logoUrl', 'denomination'],
+        });
+        if (!portal) {
+          throw new AppError('Church not found. Please check the code and try again.', StatusCodes.NOT_FOUND, 'PORTAL_NOT_FOUND');
+        }
+
+        await this.userRepository.update(user.id, { churchPortalId: portal.id });
+
+        return sendSuccessResponse(res, {
+          message: `You have joined ${portal.name}`,
+          church: { id: portal.id, name: portal.name, slug: portal.slug, logoUrl: portal.logoUrl, denomination: portal.denomination },
+        });
+      } else {
+        await this.userRepository.update(user.id, { churchPortalId: null });
+        return sendSuccessResponse(res, { message: 'You have left your church.' });
+      }
+    } catch (error: any) {
+      this.logger.error('Error updating church portal', error);
+      next(error);
+    }
+  };
 }

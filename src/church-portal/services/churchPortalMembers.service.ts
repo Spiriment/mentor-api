@@ -84,6 +84,14 @@ export class ChurchPortalMembersService {
     };
   }
 
+  async removeMember(churchPortalId: string, userId: string) {
+    const userRepo = AppDataSource.getRepository(User);
+    const member = await userRepo.findOne({ where: { id: userId, churchPortalId }, select: ['id'] });
+    if (!member) throw new NotFoundError('Member not found in this church');
+    await userRepo.update(userId, { churchPortalId: null });
+    return { message: 'Member removed from this church.' };
+  }
+
   async getMemberStreak(churchPortalId: string, userId: string) {
     const userRepo = AppDataSource.getRepository(User);
     const user = await userRepo.findOne({
