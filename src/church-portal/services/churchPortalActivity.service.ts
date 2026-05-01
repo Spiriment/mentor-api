@@ -131,7 +131,7 @@ export class ChurchPortalActivityService {
     };
   }
 
-  async getBibleReading(churchPortalId: string) {
+  async getBibleReading(churchPortalId: string, page = 1, limit = 10) {
     const userRepo = AppDataSource.getRepository(User);
 
     const users = await userRepo.find({
@@ -146,10 +146,14 @@ export class ChurchPortalActivityService {
         ? Math.round(users.reduce((acc, u) => acc + (u.currentStreak || 0), 0) / totalUsers)
         : 0;
     const topStreaker = users[0] || null;
+    const total = users.length;
+    const totalPages = Math.ceil(total / limit);
+    const start = (page - 1) * limit;
 
     return {
-      leaderboard: users.slice(0, 10),
+      leaderboard: users.slice(start, start + limit),
       summary: { totalUsers, avgCurrentStreak, topStreaker },
+      meta: { total, page, limit, totalPages },
     };
   }
 }

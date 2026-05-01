@@ -39,7 +39,12 @@ export class ChurchPortalActivityController {
 
   getBibleReading = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await this.activityService.getBibleReading(req.churchPortalUser!.churchPortalId);
+      const { page, limit } = req.query as Record<string, string>;
+      const data = await this.activityService.getBibleReading(
+        req.churchPortalUser!.churchPortalId,
+        page ? parseInt(page) : 1,
+        limit ? parseInt(limit) : 10
+      );
       res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {
       next(err);
