@@ -16,6 +16,7 @@ import { UserRepository } from '@/repository/user.repository';
 import { DataSource } from 'typeorm';
 import { User } from '@/database/entities';
 import { sendSuccessResponse } from '@/common/helpers';
+import { churchPortalJoinRequestService } from '@/church-portal/services/churchPortalJoinRequest.service';
 
 export class AuthController {
   private logger: Logger;
@@ -702,64 +703,51 @@ export class AuthController {
     }
   };
 
-  // Get current user's church portal info
+  // Get current user's church portal info (linked church and/or pending join request)
   getChurchPortal = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
       if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
 
-      const fullUser = await this.userRepository.findOne({
-        where: { id: user.id },
-        select: ['churchPortalId'],
+      const state = await churchPortalJoinRequestService.getAppUserMembershipState(user.id);
+      return sendSuccessResponse(res, {
+        membershipStatus: state.membershipStatus,
+        church: state.church,
+        pendingJoin: state.pendingJoin,
       });
-
-      if (!fullUser?.churchPortalId) {
-        return sendSuccessResponse(res, { church: null });
-      }
-
-      const { ChurchPortal } = await import('@/church-portal/entities/churchPortal.entity');
-      const portalRepo = this.userRepository.manager.getRepository(ChurchPortal);
-      const portal = await portalRepo.findOne({
-        where: { id: fullUser.churchPortalId },
-        select: ['id', 'name', 'slug', 'logoUrl', 'denomination'],
-      });
-
-      return sendSuccessResponse(res, { church: portal ?? null });
     } catch (error: any) {
       this.logger.error('Error fetching church portal', error);
       next(error);
     }
   };
 
-  // Join, switch, or leave a church portal
+  /** Request to join via church join code or URL slug; pastors approve in Church Portal. */
   updateChurchPortal = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
       if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
 
-      const { slug } = req.body as { slug?: string };
+      const { slug, code } = req.body as { slug?: string; code?: string };
 
-      if (slug && slug.trim()) {
-        const { ChurchPortal } = await import('@/church-portal/entities/churchPortal.entity');
-        const portalRepo = this.userRepository.manager.getRepository(ChurchPortal);
-        const portal = await portalRepo.findOne({
-          where: { slug: slug.trim().toLowerCase(), status: 'active' },
-          select: ['id', 'name', 'slug', 'logoUrl', 'denomination'],
-        });
-        if (!portal) {
-          throw new AppError('Church not found. Please check the code and try again.', StatusCodes.NOT_FOUND, 'PORTAL_NOT_FOUND');
-        }
+      const wantsLeave =
+        (!slug || !String(slug).trim()) &&
+        (!code || !String(code).trim());
 
-        await this.userRepository.update(user.id, { churchPortalId: portal.id });
-
-        return sendSuccessResponse(res, {
-          message: `You have joined ${portal.name}`,
-          church: { id: portal.id, name: portal.name, slug: portal.slug, logoUrl: portal.logoUrl, denomination: portal.denomination },
-        });
-      } else {
-        await this.userRepository.update(user.id, { churchPortalId: null });
+      if (wantsLeave) {
+        await churchPortalJoinRequestService.clearMembershipAndRequests(user.id);
         return sendSuccessResponse(res, { message: 'You have left your church.' });
       }
+
+      const result = await churchPortalJoinRequestService.requestJoin(user.id, {
+        slug: slug?.trim(),
+        code: code?.trim(),
+      });
+
+      return sendSuccessResponse(res, {
+        message: result.message,
+        membershipStatus: result.membershipStatus,
+        church: result.church,
+      });
     } catch (error: any) {
       this.logger.error('Error updating church portal', error);
       next(error);

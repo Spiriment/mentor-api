@@ -20,10 +20,20 @@ export class ChurchPortalAuthService {
     this.emailService = emailService;
   }
 
-  async getPortalInfo(slug: string) {
+  async getPortalInfo(slug?: string, joinCode?: string) {
     const repo = AppDataSource.getRepository(ChurchPortal);
+    const normalizedCode = joinCode?.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (normalizedCode && normalizedCode.length >= 4) {
+      const byCode = await repo.findOne({
+        where: { joinCode: normalizedCode, status: 'active' },
+        select: ['id', 'name', 'slug', 'logoUrl', 'denomination', 'timezone'],
+      });
+      if (byCode) return byCode;
+    }
+    const s = slug?.trim().toLowerCase();
+    if (!s) throw new NotFoundError('Church portal not found');
     const portal = await repo.findOne({
-      where: { slug, status: 'active' },
+      where: { slug: s, status: 'active' },
       select: ['id', 'name', 'slug', 'logoUrl', 'denomination', 'timezone'],
     });
     if (!portal) throw new NotFoundError('Church portal not found');
@@ -36,7 +46,7 @@ export class ChurchPortalAuthService {
 
     const portal = await portalRepo.findOne({
       where: { id: churchPortalId, status: 'active' },
-      select: ['id', 'name', 'slug', 'logoUrl'],
+      select: ['id', 'name', 'slug', 'logoUrl', 'joinCode'],
     });
     if (!portal) throw new UnauthorizedError('Church portal not found or inactive');
 
@@ -71,7 +81,13 @@ export class ChurchPortalAuthService {
       accessToken,
       refreshToken: refreshTokenValue,
       portalUser: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role },
-      portal: { id: portal.id, name: portal.name, slug: portal.slug, logoUrl: portal.logoUrl },
+      portal: {
+        id: portal.id,
+        name: portal.name,
+        slug: portal.slug,
+        logoUrl: portal.logoUrl,
+        joinCode: portal.joinCode ?? null,
+      },
     };
   }
 

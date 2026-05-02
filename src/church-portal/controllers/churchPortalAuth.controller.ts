@@ -15,12 +15,17 @@ export class ChurchPortalAuthController {
 
   getPortalInfo = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { slug } = req.query as { slug: string };
-      if (!slug) {
-        res.status(StatusCodes.BAD_REQUEST).json({ status: 'error', message: 'slug is required' });
+      const { slug, code } = req.query as { slug?: string; code?: string };
+      if (!slug && !code) {
+        res
+          .status(StatusCodes.BAD_REQUEST)
+          .json({ status: 'error', message: 'slug or code is required' });
         return;
       }
-      const portal = await this.authService.getPortalInfo(slug);
+      const portal = await this.authService.getPortalInfo(
+        typeof slug === 'string' ? slug : undefined,
+        typeof code === 'string' ? code : undefined
+      );
       res.status(StatusCodes.OK).json({ status: 'success', data: portal });
     } catch (err) {
       next(err);

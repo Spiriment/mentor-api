@@ -1,9 +1,45 @@
 import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { ChurchPortalMembersService } from '../services/churchPortalMembers.service';
+import { churchPortalJoinRequestService } from '../services/churchPortalJoinRequest.service';
 
 export class ChurchPortalMembersController {
   constructor(private readonly membersService: ChurchPortalMembersService) {}
+
+  listJoinRequests = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await churchPortalJoinRequestService.listPendingForPortal(
+        req.churchPortalUser!.churchPortalId
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  approveJoinRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await churchPortalJoinRequestService.approve(
+        req.churchPortalUser!.churchPortalId,
+        req.params.userId
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  rejectJoinRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await churchPortalJoinRequestService.reject(
+        req.churchPortalUser!.churchPortalId,
+        req.params.userId
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
 
   listMembers = async (req: Request, res: Response, next: NextFunction) => {
     try {

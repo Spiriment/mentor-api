@@ -40,6 +40,11 @@ export class ChurchPortal extends BaseEntity {
   })
   status!: string;
 
+  /** Shareable code for mobile members (distinct from URL slug). */
+  @Column({ name: 'joinCode', type: 'varchar', length: 12, unique: true, nullable: true })
+  joinCode?: string | null;
+
   @Column({ name: 'metadata', type: 'json', nullable: true })
   metadata?: Record<string, any> | null;
 }
+

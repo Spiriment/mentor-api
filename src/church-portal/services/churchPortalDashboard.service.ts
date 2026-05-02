@@ -2,11 +2,17 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
+import { ChurchPortal } from '../entities/churchPortal.entity';
 
 export class ChurchPortalDashboardService {
   async getSummary(churchPortalId: string) {
     const userRepo = AppDataSource.getRepository(User);
     const sessionRepo = AppDataSource.getRepository(Session);
+    const portalRepo = AppDataSource.getRepository(ChurchPortal);
+    const portalRow = await portalRepo.findOne({
+      where: { id: churchPortalId },
+      select: ['joinCode', 'name', 'slug'],
+    });
 
     const [totalMentors, totalMentees] = await Promise.all([
       userRepo.count({ where: { churchPortalId, role: USER_ROLE.MENTOR } }),
@@ -37,7 +43,15 @@ export class ChurchPortalDashboardService {
         ? Math.round(churchUsers.reduce((acc, u) => acc + (u.currentStreak || 0), 0) / churchUsers.length)
         : 0;
 
-    return { totalMentors, totalMentees, weeklySessions, avgStreak };
+    return {
+      totalMentors,
+      totalMentees,
+      weeklySessions,
+      avgStreak,
+      joinCode: portalRow?.joinCode ?? null,
+      portalName: portalRow?.name,
+      portalSlug: portalRow?.slug,
+    };
   }
 
   async getActivityFeed(churchPortalId: string) {

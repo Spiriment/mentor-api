@@ -10,6 +10,7 @@ import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ConflictError, NotFoundError } from '@/common/errors';
+import { generateUniqueJoinCode } from '@/church-portal/utils/joinCode';
 import type {
   CreateChurchPortalInput,
   UpdateChurchPortalInput,
@@ -86,7 +87,10 @@ export class AdminChurchPortalService {
       status: 'active',
     });
 
-    return repo.save(portal);
+    let saved = await repo.save(portal);
+    saved.joinCode = await generateUniqueJoinCode(repo);
+    saved = await repo.save(saved);
+    return saved;
   }
 
   async updatePortal(portalId: string, data: UpdateChurchPortalInput) {

@@ -106,10 +106,15 @@ export class ChurchPortalActivityService {
     }));
   }
 
-  async getSessions(churchPortalId: string, page = 1, limit = 20) {
+  async getSessions(
+    churchPortalId: string,
+    page = 1,
+    limit = 20,
+    timeFilter: 'all' | 'past' | 'upcoming' | 'canceled' = 'all'
+  ) {
     const sessionRepo = AppDataSource.getRepository(Session);
 
-    const [sessions, total] = await sessionRepo
+    const qb = sessionRepo
       .createQueryBuilder('s')
       .innerJoin(User, 'mentor', 'mentor.id = s.mentorId AND mentor.churchPortalId = :cpId')
       .innerJoin(User, 'mentee', 'mentee.id = s.menteeId')
@@ -119,7 +124,24 @@ export class ChurchPortalActivityService {
         'mentor.firstName', 'mentor.lastName',
         'mentee.firstName', 'mentee.lastName',
       ])
-      .setParameter('cpId', churchPortalId)
+      .setParameter('cpId', churchPortalId);
+
+    const now = new Date();
+    if (timeFilter === 'canceled') {
+      qb.andWhere('s.status = :cancelled', { cancelled: SESSION_STATUS.CANCELLED });
+    } else if (timeFilter === 'upcoming') {
+      qb.andWhere('s.status != :cancelled', { cancelled: SESSION_STATUS.CANCELLED }).andWhere(
+        's.scheduledAt >= :now',
+        { now }
+      );
+    } else if (timeFilter === 'past') {
+      qb.andWhere('s.status != :cancelled', { cancelled: SESSION_STATUS.CANCELLED }).andWhere(
+        's.scheduledAt < :now',
+        { now }
+      );
+    }
+
+    const [sessions, total] = await qb
       .orderBy('s.scheduledAt', 'DESC')
       .limit(limit)
       .offset((page - 1) * limit)
