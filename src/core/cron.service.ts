@@ -11,6 +11,7 @@ import { sessionAutoUpdateService } from "@/services/sessionAutoUpdate.service";
 import { AssignmentReminderService } from "@/services/assignmentReminder.service";
 import { EmailService } from "./email.service";
 import { subMonths } from "date-fns";
+import { SubscriptionService } from "@/services/subscription.service";
 
 export class CronService {
   private dataSource: DataSource;
@@ -236,6 +237,79 @@ export class CronService {
 
       this.tasks.set("assignment-reminder", assignmentReminderTask);
       logger.info("Assignment reminder cron job scheduled (every hour)");
+
+      // ── Subscription cron jobs ──────────────────────────────────────────────
+      const subEmailService = new EmailService(null);
+      const subscriptionService = new SubscriptionService(subEmailService);
+
+      // Daily at 09:00 UTC — trial reminders (7 days out and 1 day out)
+      const trialReminderTask = cron.schedule(
+        "0 9 * * *",
+        async () => {
+          try {
+            const sevenDay = await subscriptionService.getExpiringTrials(7);
+            for (const sub of sevenDay) {
+              if (sub.user?.email) {
+                await subscriptionService.sendTrialReminderEmail(sub.user, 7);
+              }
+            }
+            const oneDay = await subscriptionService.getExpiringTrials(1);
+            for (const sub of oneDay) {
+              if (sub.user?.email) {
+                await subscriptionService.sendTrialReminderEmail(sub.user, 1);
+              }
+            }
+            logger.info(`Trial reminder emails sent: 7-day=${sevenDay.length}, 1-day=${oneDay.length}`);
+          } catch (err) {
+            logger.error("Error in trial reminder cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("trial-reminder", trialReminderTask);
+      logger.info("Trial reminder cron job scheduled (daily 09:00 UTC)");
+
+      // Daily at 10:00 UTC — convert expired trials to Basic
+      const trialConvertTask = cron.schedule(
+        "0 10 * * *",
+        async () => {
+          try {
+            const converted = await subscriptionService.convertExpiredTrials();
+            if (converted > 0) {
+              logger.info(`Converted ${converted} expired trials to Basic`);
+            }
+          } catch (err) {
+            logger.error("Error in trial conversion cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("trial-convert", trialConvertTask);
+      logger.info("Trial conversion cron job scheduled (daily 10:00 UTC)");
+
+      // Daily at 11:00 UTC — downgrade past_due accounts after 3-day grace period
+      const gracePeriodTask = cron.schedule(
+        "0 11 * * *",
+        async () => {
+          try {
+            const overdue = await subscriptionService.getPastDueSubscriptions(3);
+            for (const sub of overdue) {
+              if (sub.user) {
+                await subscriptionService.downgradeToBasic(sub.user.id);
+                await subscriptionService.sendGracePeriodDowngradeEmail(sub.user);
+              }
+            }
+            if (overdue.length > 0) {
+              logger.info(`Downgraded ${overdue.length} past_due accounts to Basic after grace period`);
+            }
+          } catch (err) {
+            logger.error("Error in grace period downgrade cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("grace-period-downgrade", gracePeriodTask);
+      logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
 
     } catch (error) {
       logger.error(

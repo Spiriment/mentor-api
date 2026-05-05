@@ -31,6 +31,8 @@ import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
 import { createChurchPortalRouter } from '@/church-portal/router';
+import subscriptionRoutes from './subscription.routes';
+import stripeWebhookRoutes from './stripeWebhook.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -171,6 +173,12 @@ const createRootRoutes = () => {
   rootRouter.use('/api/contact', contactRoutes);
   rootRouter.use('/api/blog', blogRoutes);
   rootRouter.use('/api/faq', faqRoutes);
+
+  // Subscription routes
+  rootRouter.use('/api/subscription', subscriptionRoutes);
+
+  // Stripe webhook — must use raw body, registered BEFORE express.json() would touch it
+  rootRouter.use('/api/stripe/webhook', stripeWebhookRoutes);
 
   // Church portal routes
   rootRouter.use('/api/church-portal', (req, res, next) => {

@@ -1,0 +1,34 @@
+import { Request, Response, NextFunction } from 'express';
+import { StatusCodes } from 'http-status-codes';
+import { AppDataSource } from '@/config/data-source';
+import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
+import { AppError } from '@/common';
+
+const TIER_RANK: Record<SubscriptionTier, number> = { none: 0, basic: 1, pro: 2, premium: 3 };
+
+export const requireSubscription = (minTier: SubscriptionTier) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
+    }
+
+    const sub = await AppDataSource.getRepository(UserSubscription).findOne({
+      where: { user: { id: req.user.id } },
+    });
+
+    const activeTier: SubscriptionTier =
+      sub && ['active', 'trialing'].includes(sub.status) ? sub.tier : 'none';
+
+    if (TIER_RANK[activeTier] < TIER_RANK[minTier]) {
+      return next(
+        new AppError(
+          `This feature requires a ${minTier} subscription or higher.`,
+          StatusCodes.PAYMENT_REQUIRED,
+          'SUBSCRIPTION_REQUIRED'
+        )
+      );
+    }
+
+    next();
+  };
+};

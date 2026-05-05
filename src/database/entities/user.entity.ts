@@ -151,4 +151,7 @@ export class User extends BaseEntity {
 
   @Column({ name: 'churchPortalId', type: 'varchar', length: 36, nullable: true })
   churchPortalId?: string | null;
+
+  @Column({ name: 'stripeCustomerId', type: 'varchar', length: 64, nullable: true })
+  stripeCustomerId?: string | null;
 }

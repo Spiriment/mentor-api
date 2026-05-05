@@ -11,6 +11,8 @@ export * from './userDiscount.entity';
 export * from './spirimentSettings.entity';
 export * from './orgPlan.entity';
 export * from './userSubscription.entity';
+export * from './promoCode.entity';
+export * from './promoCodeRedemption.entity';
 export * from './adminUser.entity';
 export * from './adminAuditLog.entity';
 export * from './menteeProfile.entity';
