@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { SessionController } from '../controllers/session.controller';
 import { authenticateToken, requireRole } from '../middleware/auth.middleware';
+import { requireSubscription } from '../middleware/requireSubscription.middleware';
 import { validate } from '@/common/middleware/validation';
 import {
   createSessionSchema,
@@ -23,6 +24,7 @@ router.use(authenticateToken);
 router.post(
   '/',
   requireRole(['mentee']),
+  requireSubscription('pro'),
   validate(createSessionSchema),
   sessionController.createSession
 );

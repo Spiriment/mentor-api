@@ -7,9 +7,13 @@ import {
   type SubscriptionTier,
   type SubscriptionStatus,
 } from '@/database/entities/userSubscription.entity';
+import { PromoCode, type PromoCodeType } from '@/database/entities/promoCode.entity';
+import { PromoCodeRedemption } from '@/database/entities/promoCodeRedemption.entity';
 import { AppError } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminAuditService } from './adminAudit.service';
+
+const MAX_INTERNAL_TEST_CODES = 3;
 
 const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing'];
 
@@ -284,6 +288,153 @@ export class AdminSubscriptionService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  // ─── Promo codes ─────────────────────────────────────────────────────────────
+
+  private get promoRepo() {
+    return AppDataSource.getRepository(PromoCode);
+  }
+
+  private get redemptionRepo() {
+    return AppDataSource.getRepository(PromoCodeRedemption);
+  }
+
+  private serializePromo(p: PromoCode, redemptionCount?: number) {
+    return {
+      id: p.id,
+      code: p.code,
+      type: p.type,
+      discountPercent: p.discountPercent,
+      tier: p.tier,
+      usageLimit: p.usageLimit ?? null,
+      usedCount: p.usedCount,
+      expiresAt: p.expiresAt ?? null,
+      isActive: p.isActive,
+      notes: p.notes ?? null,
+      redemptionCount: redemptionCount ?? p.usedCount,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
+  }
+
+  async createPromoCode(
+    input: {
+      type: PromoCodeType;
+      discountPercent?: number;
+      tier?: string;
+      usageLimit?: number | null;
+      expiresAt?: string | null;
+      notes?: string | null;
+    },
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (input.type === 'internal_test') {
+      const existingCount = await this.promoRepo.count({
+        where: { type: 'internal_test', isActive: true },
+      });
+      if (existingCount >= MAX_INTERNAL_TEST_CODES) {
+        throw new AppError(
+          `Maximum of ${MAX_INTERNAL_TEST_CODES} active internal test codes allowed`,
+          400,
+        );
+      }
+    }
+
+    const code = this.generateCode(input.type);
+
+    const promo = this.promoRepo.create({
+      code,
+      type: input.type,
+      discountPercent: input.type === 'internal_test' ? 100 : (input.discountPercent ?? 20),
+      tier: input.tier ?? 'premium',
+      usageLimit: input.usageLimit ?? null,
+      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      isActive: true,
+      notes: input.notes ?? null,
+    });
+
+    const saved = await this.promoRepo.save(promo);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.promo_code.create',
+      targetType: 'promo_code',
+      targetId: saved.id,
+      metadata: { code: saved.code, type: saved.type },
+      ip: ip ?? null,
+    });
+
+    return this.serializePromo(saved);
+  }
+
+  async listPromoCodes(page = 1, limit = 50, type?: PromoCodeType) {
+    const where: any = {};
+    if (type) where.type = type;
+
+    const [rows, total] = await this.promoRepo.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    return {
+      data: rows.map((p) => this.serializePromo(p)),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async updatePromoCode(
+    id: string,
+    input: {
+      discountPercent?: number;
+      tier?: string;
+      usageLimit?: number | null;
+      expiresAt?: string | null;
+      isActive?: boolean;
+      notes?: string | null;
+    },
+    adminUserId: string,
+    ip?: string,
+  ) {
+    const promo = await this.promoRepo.findOne({ where: { id } });
+    if (!promo) throw new AppError('Promo code not found', 404);
+
+    if (input.discountPercent !== undefined && promo.type !== 'internal_test') {
+      promo.discountPercent = input.discountPercent;
+    }
+    if (input.tier !== undefined) promo.tier = input.tier;
+    if (input.usageLimit !== undefined) promo.usageLimit = input.usageLimit;
+    if (input.expiresAt !== undefined) {
+      promo.expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+    }
+    if (input.isActive !== undefined) promo.isActive = input.isActive;
+    if (input.notes !== undefined) promo.notes = input.notes;
+
+    const saved = await this.promoRepo.save(promo);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.promo_code.update',
+      targetType: 'promo_code',
+      targetId: saved.id,
+      metadata: { isActive: saved.isActive },
+      ip: ip ?? null,
+    });
+
+    return this.serializePromo(saved);
+  }
+
+  private generateCode(type: PromoCodeType): string {
+    const prefix = type === 'internal_test' ? 'INT' : 'AMB';
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let suffix = '';
+    for (let i = 0; i < 8; i++) {
+      suffix += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return `${prefix}-${suffix}`;
   }
 }
 

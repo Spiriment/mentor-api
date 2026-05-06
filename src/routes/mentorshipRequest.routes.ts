@@ -1,6 +1,7 @@
 import express from 'express';
 import { MentorshipRequestController } from '../controllers/mentorshipRequest.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireSubscription } from '../middleware/requireSubscription.middleware';
 
 const router = express.Router();
 const controller = new MentorshipRequestController();
@@ -8,8 +9,8 @@ const controller = new MentorshipRequestController();
 // All mentorship request routes require authentication
 router.use(authenticateToken);
 
-// POST /api/mentorship-requests - Create a mentorship request
-router.post('/', controller.createRequest);
+// POST /api/mentorship-requests - Create a mentorship request (Pro+ required)
+router.post('/', requireSubscription('pro'), controller.createRequest);
 
 // GET /api/mentorship-requests - Get all mentorship requests for the authenticated user
 router.get('/', controller.getRequests);
