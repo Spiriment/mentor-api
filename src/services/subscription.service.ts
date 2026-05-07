@@ -99,12 +99,37 @@ export class SubscriptionService {
 
   // ─── Checkout ────────────────────────────────────────────────────────────────
 
+  private getAgeDiscountPercent(birthday: Date | string | null | undefined): number | null {
+    if (!birthday) return null;
+    const dob = new Date(birthday);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    if (age >= 10 && age <= 14) return 50;
+    if (age >= 15 && age <= 18) return 30;
+    return null;
+  }
+
   async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium'): Promise<string> {
+    let couponId: string | undefined;
+
+    const ageDiscount = this.getAgeDiscountPercent(user.birthday);
+    if (ageDiscount !== null) {
+      couponId = await stripeService.createPercentageCoupon(
+        ageDiscount,
+        `age-${user.id.slice(0, 8)}`,
+      );
+    }
+
     const url = await stripeService.createCheckoutSession({
       user,
       tier,
       successUrl: APP_DEEP_LINK_SUCCESS,
       cancelUrl: APP_DEEP_LINK_CANCEL,
+      couponId,
     });
     return url;
   }

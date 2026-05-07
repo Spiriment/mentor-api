@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccessResponse } from '@/common/helpers';
+import { AppError } from '@/common';
 import { adminOrgPlanService } from '@/services/adminOrgPlan.service';
 
 export class AdminOrgPlanController {
@@ -136,6 +137,42 @@ export class AdminOrgPlanController {
     try {
       const result = await adminOrgPlanService.getReport(req.params.id);
       return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  assignMember = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId, tier } = req.body as { userId: string; tier: 'basic' | 'pro' | 'premium' };
+      if (!userId) throw new AppError('userId is required', 400);
+      if (!['basic', 'pro', 'premium'].includes(tier)) throw new AppError('tier must be basic, pro, or premium', 400);
+
+      const result = await adminOrgPlanService.assignMember(
+        req.params.id,
+        userId,
+        tier,
+        req.admin!.id,
+        req.ip,
+      );
+      return sendSuccessResponse(res, result, 201);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  removeMember = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId } = req.body as { userId: string };
+      if (!userId) throw new AppError('userId is required', 400);
+
+      await adminOrgPlanService.removeMember(
+        req.params.id,
+        userId,
+        req.admin!.id,
+        req.ip,
+      );
+      return sendSuccessResponse(res, { removed: true });
     } catch (e) {
       next(e);
     }

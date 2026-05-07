@@ -42,5 +42,7 @@ router.delete('/family/:id', adminOrgPlanController.deleteFamily);
 
 router.get('/:id/members', adminOrgPlanController.getMembers);
 router.get('/:id/report', adminOrgPlanController.getReport);
+router.post('/:id/members', adminOrgPlanController.assignMember);
+router.delete('/:id/members', adminOrgPlanController.removeMember);
 
 export default router;

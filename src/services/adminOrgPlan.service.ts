@@ -5,8 +5,15 @@ import {
   OrgPlan,
   type OrgPlanType,
 } from '@/database/entities/orgPlan.entity';
+import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
 import { adminAuditService } from './adminAudit.service';
+import { stripeService } from './stripe.service';
+import { SubscriptionService } from './subscription.service';
+import { EmailService } from '@/core/email.service';
+
+const CHURCH_DISCOUNT_PERCENT = 20;
+const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
 
 export class AdminOrgPlanService {
   private serialize(p: OrgPlan) {
@@ -275,6 +282,102 @@ export class AdminOrgPlanService {
       activityChart,
       topPerformers,
     };
+  }
+
+  // ─── Member assignment ────────────────────────────────────────────────────────
+
+  async assignMember(
+    planId: string,
+    userId: string,
+    tier: 'basic' | 'pro' | 'premium',
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+    if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+    const userRepo = AppDataSource.getRepository(User);
+
+    const plan = await planRepo.findOne({ where: { id: planId, status: 'active' } });
+    if (!plan) throw new AppError('Plan not found or inactive', 404);
+    if (plan.planType !== 'church') throw new AppError('Member assignment is only supported for church plans', 400);
+
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new AppError('User not found', 404);
+    if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
+
+    // Determine discount: 25% for 50+ member churches, 20% otherwise
+    const discountPercent = plan.usedSeats >= 50 ? CHURCH_BULK_DISCOUNT_PERCENT : CHURCH_DISCOUNT_PERCENT;
+
+    // Create a Stripe coupon and checkout session with the church discount
+    const couponLabel = `church-${plan.id.slice(0, 8)}`;
+    const couponId = await stripeService.createPercentageCoupon(discountPercent, couponLabel);
+
+    const successUrl = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
+    const cancelUrl = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
+
+    const checkoutUrl = await stripeService.createCheckoutSession({
+      user,
+      tier,
+      successUrl,
+      cancelUrl,
+      couponId,
+    });
+
+    // Assign user to plan immediately — subscription row updates via webhook on payment
+    user.orgPlanId = planId;
+    await userRepo.save(user);
+
+    // Increment used seats
+    plan.usedSeats = plan.usedSeats + 1;
+    await planRepo.save(plan);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.org_plan.assign_member',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { planId, tier, discountPercent },
+      ip: ip ?? null,
+    });
+
+    return { checkoutUrl, discountPercent, tier };
+  }
+
+  async removeMember(
+    planId: string,
+    userId: string,
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+    if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+    const userRepo = AppDataSource.getRepository(User);
+
+    const plan = await planRepo.findOne({ where: { id: planId } });
+    if (!plan) throw new AppError('Plan not found', 404);
+
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new AppError('User not found', 404);
+    if (user.orgPlanId !== planId) throw new AppError('User is not a member of this plan', 400);
+
+    user.orgPlanId = null;
+    await userRepo.save(user);
+
+    plan.usedSeats = Math.max(0, plan.usedSeats - 1);
+    await planRepo.save(plan);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.org_plan.remove_member',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { planId },
+      ip: ip ?? null,
+    });
   }
 }
 
