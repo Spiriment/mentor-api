@@ -10,6 +10,8 @@ export * from './user.entity';
 export * from './userDiscount.entity';
 export * from './spirimentSettings.entity';
 export * from './orgPlan.entity';
+export * from './familyPlan.entity';
+export * from './familyMember.entity';
 export * from './userSubscription.entity';
 export * from './promoCode.entity';
 export * from './promoCodeRedemption.entity';

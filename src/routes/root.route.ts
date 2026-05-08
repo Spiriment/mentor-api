@@ -33,6 +33,7 @@ import { EncryptionServiceImpl } from '@/common';
 import { createChurchPortalRouter } from '@/church-portal/router';
 import subscriptionRoutes from './subscription.routes';
 import stripeWebhookRoutes from './stripeWebhook.routes';
+import familyPlanRoutes from './familyPlan.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -176,6 +177,9 @@ const createRootRoutes = () => {
 
   // Subscription routes
   rootRouter.use('/api/subscription', subscriptionRoutes);
+
+  // Family plan routes
+  rootRouter.use('/api/family', familyPlanRoutes);
 
   // Stripe webhook — must use raw body, registered BEFORE express.json() would touch it
   rootRouter.use('/api/stripe/webhook', stripeWebhookRoutes);

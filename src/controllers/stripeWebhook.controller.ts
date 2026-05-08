@@ -5,6 +5,7 @@ import { EmailService } from '@/core/email.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
+import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { logger } from '@/config/int-services';
 
 const emailService = new EmailService(null);
@@ -61,6 +62,15 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             ? new Date((stripeSub.current_period_end as number) * 1000)
             : null,
         });
+
+        // If this subscription belongs to a family member, sync the stripeSubscriptionId
+        const familyMember = await AppDataSource.getRepository(FamilyMember).findOne({
+          where: { userId },
+        });
+        if (familyMember && !familyMember.isParent) {
+          familyMember.stripeSubscriptionId = stripeSub.id;
+          await AppDataSource.getRepository(FamilyMember).save(familyMember);
+        }
         break;
       }
 
