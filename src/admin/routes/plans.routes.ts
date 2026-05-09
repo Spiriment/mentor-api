@@ -45,4 +45,11 @@ router.get('/:id/report', adminOrgPlanController.getReport);
 router.post('/:id/members', adminOrgPlanController.assignMember);
 router.delete('/:id/members', adminOrgPlanController.removeMember);
 
+// ─── Family plan admin (FamilyPlan entity) ────────────────────────────────────
+router.get('/family-plans', adminOrgPlanController.listFamilyPlans);
+router.get('/family-plans/:id', adminOrgPlanController.getFamilyPlan);
+router.delete('/family-plans/:id', adminOrgPlanController.adminDeactivateFamilyPlan);
+router.delete('/family-plans/:id/members', adminOrgPlanController.adminRemoveFamilyMember);
+router.patch('/family-plans/:id/members', adminOrgPlanController.adminChangeFamilyMemberTier);
+
 export default router;

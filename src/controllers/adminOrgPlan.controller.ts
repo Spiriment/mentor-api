@@ -177,6 +177,56 @@ export class AdminOrgPlanController {
       next(e);
     }
   };
+
+  // ─── Family plan admin ────────────────────────────────────────────────────────
+
+  listFamilyPlans = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await adminOrgPlanService.listFamilyPlans(page, limit);
+      return sendSuccessResponse(res, result);
+    } catch (e) { next(e); }
+  };
+
+  getFamilyPlan = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminOrgPlanService.getFamilyPlan(req.params.id);
+      return sendSuccessResponse(res, result);
+    } catch (e) { next(e); }
+  };
+
+  adminRemoveFamilyMember = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId } = req.body as { userId: string };
+      if (!userId) throw new AppError('userId is required', 400);
+      await adminOrgPlanService.adminRemoveFamilyMember(
+        req.params.id, userId, req.admin!.id, req.ip,
+      );
+      return sendSuccessResponse(res, { removed: true });
+    } catch (e) { next(e); }
+  };
+
+  adminChangeFamilyMemberTier = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId, tier } = req.body as { userId: string; tier: string };
+      if (!userId) throw new AppError('userId is required', 400);
+      if (!['basic', 'pro', 'premium'].includes(tier)) throw new AppError('tier must be basic, pro, or premium', 400);
+      const result = await adminOrgPlanService.adminChangeFamilyMemberTier(
+        req.params.id, userId, tier as any, req.admin!.id, req.ip,
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) { next(e); }
+  };
+
+  adminDeactivateFamilyPlan = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await adminOrgPlanService.adminDeactivateFamilyPlan(
+        req.params.id, req.admin!.id, req.ip,
+      );
+      return sendSuccessResponse(res, { deactivated: true });
+    } catch (e) { next(e); }
+  };
 }
 
 export const adminOrgPlanController = new AdminOrgPlanController();

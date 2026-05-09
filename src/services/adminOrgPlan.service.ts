@@ -5,7 +5,9 @@ import {
   OrgPlan,
   type OrgPlanType,
 } from '@/database/entities/orgPlan.entity';
-import { UserSubscription } from '@/database/entities/userSubscription.entity';
+import { FamilyPlan } from '@/database/entities/familyPlan.entity';
+import { FamilyMember } from '@/database/entities/familyMember.entity';
+import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
@@ -376,6 +378,201 @@ export class AdminOrgPlanService {
       targetType: 'user',
       targetId: userId,
       metadata: { planId },
+      ip: ip ?? null,
+    });
+  }
+
+  // ─── Admin: Family plan management ───────────────────────────────────────────
+
+  private get familyPlanRepo() { return AppDataSource.getRepository(FamilyPlan); }
+  private get familyMemberRepo() { return AppDataSource.getRepository(FamilyMember); }
+
+  private serializeFamilyPlan(p: FamilyPlan, memberCount = 0, totalMonthlyEur = 0) {
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      parentUserId: p.parentUserId,
+      parentName: p.parent
+        ? `${p.parent.firstName} ${p.parent.lastName}`.trim()
+        : null,
+      parentEmail: p.parent?.email ?? null,
+      memberCount,
+      totalMonthlyEur,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
+  }
+
+  private serializeFamilyMember(m: FamilyMember) {
+    const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
+    const base = TIER_PRICE[m.tier] ?? 0;
+    const monthlyPriceEur = Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
+    return {
+      id: m.id,
+      userId: m.userId,
+      firstName: m.user?.firstName ?? '',
+      lastName: m.user?.lastName ?? '',
+      email: m.user?.email ?? '',
+      tier: m.tier,
+      ageDiscountPercent: m.ageDiscountPercent,
+      monthlyPriceEur,
+      isParent: m.isParent,
+      stripeSubscriptionId: m.stripeSubscriptionId ?? null,
+      createdAt: m.createdAt,
+    };
+  }
+
+  async listFamilyPlans(page = 1, limit = 50) {
+    const [rows, total] = await this.familyPlanRepo.findAndCount({
+      relations: ['parent'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    const data = await Promise.all(
+      rows.map(async (p) => {
+        const members = await this.familyMemberRepo.find({ where: { familyPlanId: p.id } });
+        const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
+        const totalMonthlyEur = members.reduce((sum, m) => {
+          const base = TIER_PRICE[m.tier] ?? 0;
+          return sum + Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
+        }, 0);
+        return this.serializeFamilyPlan(p, members.length, Math.round(totalMonthlyEur * 100) / 100);
+      }),
+    );
+
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async getFamilyPlan(planId: string) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+
+    const plan = await this.familyPlanRepo.findOne({
+      where: { id: planId },
+      relations: ['parent'],
+    });
+    if (!plan) throw new AppError('Family plan not found', 404);
+
+    const members = await this.familyMemberRepo.find({
+      where: { familyPlanId: planId },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
+    const totalMonthlyEur = members.reduce((sum, m) => {
+      const base = TIER_PRICE[m.tier] ?? 0;
+      return sum + Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
+    }, 0);
+
+    return {
+      ...this.serializeFamilyPlan(plan, members.length, Math.round(totalMonthlyEur * 100) / 100),
+      members: members.map((m) => this.serializeFamilyMember(m)),
+    };
+  }
+
+  async adminRemoveFamilyMember(
+    planId: string,
+    memberUserId: string,
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+    if (!isUuid(memberUserId)) throw new AppError('Invalid user id', 400);
+
+    const plan = await this.familyPlanRepo.findOne({ where: { id: planId } });
+    if (!plan) throw new AppError('Family plan not found', 404);
+
+    const member = await this.familyMemberRepo.findOne({
+      where: { familyPlanId: planId, userId: memberUserId },
+    });
+    if (!member) throw new AppError('Member not found in this plan', 404);
+    if (member.isParent) throw new AppError('Cannot remove the plan owner via admin — deactivate the plan instead', 400);
+
+    if (member.stripeSubscriptionId) {
+      await stripeService.cancelSubscription(member.stripeSubscriptionId);
+    }
+
+    await this.familyMemberRepo.remove(member);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.family_plan.remove_member',
+      targetType: 'user',
+      targetId: memberUserId,
+      metadata: { planId },
+      ip: ip ?? null,
+    });
+  }
+
+  async adminChangeFamilyMemberTier(
+    planId: string,
+    memberUserId: string,
+    newTier: SubscriptionTier,
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+    if (!isUuid(memberUserId)) throw new AppError('Invalid user id', 400);
+
+    const member = await this.familyMemberRepo.findOne({
+      where: { familyPlanId: planId, userId: memberUserId },
+    });
+    if (!member) throw new AppError('Member not found in this plan', 404);
+
+    const oldTier = member.tier;
+    member.tier = newTier;
+    await this.familyMemberRepo.save(member);
+
+    // Also update the UserSubscription row
+    const subRepo = AppDataSource.getRepository(UserSubscription);
+    const sub = await subRepo.findOne({ where: { user: { id: memberUserId } } });
+    if (sub) {
+      sub.tier = newTier;
+      await subRepo.save(sub);
+    }
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.family_plan.change_tier',
+      targetType: 'user',
+      targetId: memberUserId,
+      metadata: { planId, oldTier, newTier },
+      ip: ip ?? null,
+    });
+
+    return this.serializeFamilyMember({ ...member, user: await AppDataSource.getRepository(User).findOne({ where: { id: memberUserId } }) as User });
+  }
+
+  async adminDeactivateFamilyPlan(
+    planId: string,
+    adminUserId: string,
+    ip?: string,
+  ) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+
+    const plan = await this.familyPlanRepo.findOne({ where: { id: planId } });
+    if (!plan) throw new AppError('Family plan not found', 404);
+
+    // Cancel all member Stripe subscriptions
+    const members = await this.familyMemberRepo.find({ where: { familyPlanId: planId } });
+    for (const m of members) {
+      if (m.stripeSubscriptionId) {
+        await stripeService.cancelSubscription(m.stripeSubscriptionId).catch(() => {});
+      }
+    }
+
+    plan.status = 'inactive';
+    await this.familyPlanRepo.save(plan);
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.family_plan.deactivate',
+      targetType: 'family_plan',
+      targetId: planId,
+      metadata: { memberCount: members.length },
       ip: ip ?? null,
     });
   }
