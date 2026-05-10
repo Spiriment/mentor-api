@@ -12,6 +12,7 @@ export * from './spirimentSettings.entity';
 export * from './orgPlan.entity';
 export * from './familyPlan.entity';
 export * from './familyMember.entity';
+export * from './aiChapterSummary.entity';
 export * from './userSubscription.entity';
 export * from './promoCode.entity';
 export * from './promoCodeRedemption.entity';
