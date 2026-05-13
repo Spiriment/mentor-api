@@ -250,6 +250,12 @@ export class AdminMentorService {
         averageRating: avgRating,
         lowRatingReviewsCount,
       },
+      agreement: {
+        accepted: !!profile.agreementAcceptedAt,
+        acceptedAt: profile.agreementAcceptedAt ?? null,
+        version: profile.agreementVersion ?? null,
+        eSignature: profile.eSignature ?? null,
+      },
     };
   }
 

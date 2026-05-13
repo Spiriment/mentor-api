@@ -121,4 +121,10 @@ router.put(
   mentorProfileController.updateCurrentBook
 );
 
+// Accept mentor agreement
+router.post(
+  '/:userId/accept-agreement',
+  mentorProfileController.acceptAgreement
+);
+
 export { router as mentorProfileRoutes };

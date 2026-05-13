@@ -63,6 +63,15 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'profileImage', nullable: true })
   profileImage?: string;
 
+  @Column({ name: 'agreementAcceptedAt', type: 'datetime', nullable: true })
+  agreementAcceptedAt?: Date | null;
+
+  @Column({ name: 'agreementVersion', type: 'varchar', length: 16, nullable: true })
+  agreementVersion?: string | null;
+
+  @Column({ name: 'eSignature', type: 'varchar', length: 255, nullable: true })
+  eSignature?: string | null;
+
   @Column({ name: 'isOnboardingComplete', default: false })
   isOnboardingComplete!: boolean;
 

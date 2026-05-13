@@ -463,4 +463,45 @@ export class MentorProfileController {
       next(error);
     }
   };
+
+  acceptAgreement = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { userId } = req.params;
+      const { eSignature, agreementVersion } = req.body as {
+        eSignature?: string;
+        agreementVersion?: string;
+      };
+
+      if (!eSignature?.trim()) {
+        return res.status(400).json({ success: false, message: 'eSignature is required' });
+      }
+
+      const repo = (await import('@/config/data-source')).AppDataSource.getRepository(
+        (await import('@/database/entities/mentorProfile.entity')).MentorProfile
+      );
+
+      const profile = await repo.findOne({ where: { userId } });
+      if (!profile) {
+        return res.status(404).json({ success: false, message: 'Mentor profile not found' });
+      }
+
+      profile.agreementAcceptedAt = new Date();
+      profile.agreementVersion = agreementVersion ?? '1.0';
+      profile.eSignature = eSignature.trim();
+      await repo.save(profile);
+
+      res.json({
+        success: true,
+        data: {
+          agreementAcceptedAt: profile.agreementAcceptedAt,
+          agreementVersion: profile.agreementVersion,
+          eSignature: profile.eSignature,
+        },
+        message: 'Agreement accepted successfully',
+      });
+    } catch (error: any) {
+      this.logger.error('Error saving agreement acceptance', error);
+      next(error);
+    }
+  };
 }
