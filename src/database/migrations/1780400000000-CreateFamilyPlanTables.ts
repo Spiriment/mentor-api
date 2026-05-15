@@ -11,7 +11,7 @@ export class CreateFamilyPlanTables1780400000000 implements MigrationInterface {
         createdAt  DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
         updatedAt  DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
         CONSTRAINT fk_fp_parent FOREIGN KEY (parentUserId) REFERENCES users(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      ) ENGINE=InnoDB
     `);
 
     await queryRunner.query(`
@@ -28,7 +28,7 @@ export class CreateFamilyPlanTables1780400000000 implements MigrationInterface {
         CONSTRAINT fk_fm_plan FOREIGN KEY (familyPlanId) REFERENCES family_plans(id) ON DELETE CASCADE,
         CONSTRAINT fk_fm_user FOREIGN KEY (userId)       REFERENCES users(id)        ON DELETE CASCADE,
         UNIQUE KEY uq_fm_user (userId)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      ) ENGINE=InnoDB
     `);
   }
 
