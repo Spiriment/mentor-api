@@ -4,12 +4,6 @@ import { ContactMessage, ContactStatus } from '@/database/entities/contactMessag
 import { User } from '@/database/entities/user.entity';
 
 export const adminNotificationsController = {
-  /**
-   * Returns a summary of actionable items for the admin:
-   * - Unread contact/volunteer/partnership submissions
-   * - Pending mentor applications
-   * - New users in the last 7 days
-   */
   async getSummary(req: Request, res: Response) {
     try {
       const contactRepo = AppDataSource.getRepository(ContactMessage);
@@ -18,11 +12,7 @@ export const adminNotificationsController = {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      const [
-        unreadContacts,
-        pendingApplications,
-        newUsers,
-      ] = await Promise.all([
+      const [unreadContacts, pendingMentors, newUsers] = await Promise.all([
         contactRepo.findAndCount({
           where: { status: ContactStatus.UNREAD },
           order: { createdAt: 'DESC' },
@@ -31,14 +21,16 @@ export const adminNotificationsController = {
         userRepo
           .createQueryBuilder('u')
           .where('u.mentorApprovalStatus = :status', { status: 'pending' })
-          .getCount(),
+          .orderBy('u.createdAt', 'DESC')
+          .take(10)
+          .getMany(),
         userRepo
           .createQueryBuilder('u')
           .where('u.createdAt >= :date', { date: sevenDaysAgo })
           .getCount(),
       ]);
 
-      const notifications = unreadContacts[0].map((c) => ({
+      const contactNotifications = unreadContacts[0].map((c) => ({
         id: c.id,
         type: 'contact' as const,
         title: `New ${c.type === 'PARTNERSHIP' ? 'Partnership' : c.type === 'VOLUNTEER' ? 'Volunteer' : 'Contact'} inquiry`,
@@ -47,18 +39,52 @@ export const adminNotificationsController = {
         link: '/contacts',
       }));
 
+      const mentorNotifications = pendingMentors.map((u) => ({
+        id: `mentor-${u.id}`,
+        type: 'mentor_application' as const,
+        title: 'New mentor application',
+        body: `${[u.firstName, u.lastName].filter(Boolean).join(' ') || u.email} is awaiting review`,
+        createdAt: u.createdAt,
+        link: `/applications`,
+      }));
+
+      const notifications = [...mentorNotifications, ...contactNotifications]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 15);
+
       return res.json({
         success: true,
         response: {
           notifications,
           counts: {
             unreadContacts: unreadContacts[1],
-            pendingApplications,
+            pendingApplications: pendingMentors.length,
             newUsersThisWeek: newUsers,
-            total: unreadContacts[1] + pendingApplications,
+            total: unreadContacts[1] + pendingMentors.length,
           },
         },
       });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: { message: error.message } });
+    }
+  },
+
+  async markContactRead(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const contactRepo = AppDataSource.getRepository(ContactMessage);
+      await contactRepo.update(id, { status: ContactStatus.READ });
+      return res.json({ success: true });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: { message: error.message } });
+    }
+  },
+
+  async markAllContactsRead(req: Request, res: Response) {
+    try {
+      const contactRepo = AppDataSource.getRepository(ContactMessage);
+      await contactRepo.update({ status: ContactStatus.UNREAD }, { status: ContactStatus.READ });
+      return res.json({ success: true });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: { message: error.message } });
     }

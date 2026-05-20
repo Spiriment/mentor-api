@@ -4,5 +4,7 @@ import { adminNotificationsController } from '@/controllers/adminNotifications.c
 const router = Router();
 
 router.get('/summary', adminNotificationsController.getSummary);
+router.patch('/contacts/read-all', adminNotificationsController.markAllContactsRead);
+router.patch('/contacts/:id/read', adminNotificationsController.markContactRead);
 
 export default router;
