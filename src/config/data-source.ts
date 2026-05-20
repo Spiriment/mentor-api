@@ -41,6 +41,8 @@ import {
   ChurchPortalUser,
   ChurchPortalRefreshToken,
   ChurchPortalJoinRequest,
+  PromoCode,
+  PromoCodeRedemption,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -102,6 +104,8 @@ export const AppDataSource = new DataSource({
     ChurchPortalUser,
     ChurchPortalRefreshToken,
     ChurchPortalJoinRequest,
+    PromoCode,
+    PromoCodeRedemption,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

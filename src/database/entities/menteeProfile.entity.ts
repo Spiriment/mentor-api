@@ -78,4 +78,10 @@ export class MenteeProfile extends BaseEntity {
 
   @Column({ name: 'studyDays', default: 0 })
   studyDays?: number;
+
+  @Column({ name: 'agreementVersion', type: 'varchar', length: 16, nullable: true })
+  agreementVersion?: string | null;
+
+  @Column({ name: 'eSignature', type: 'varchar', length: 255, nullable: true })
+  eSignature?: string | null;
 }

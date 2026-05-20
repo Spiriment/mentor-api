@@ -114,4 +114,10 @@ router.put(
   menteeProfileController.updateCurrentBook
 );
 
+// Accept mentee T&C agreement
+router.post(
+  '/:userId/accept-agreement',
+  menteeProfileController.acceptAgreement
+);
+
 export { router as menteeProfileRoutes };

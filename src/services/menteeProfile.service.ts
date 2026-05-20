@@ -256,4 +256,8 @@ export class MenteeProfileService {
       throw error;
     }
   }
+
+  async saveProfile(profile: MenteeProfile): Promise<MenteeProfile> {
+    return this.menteeProfileRepository.save(profile);
+  }
 }

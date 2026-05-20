@@ -462,4 +462,32 @@ export class MenteeProfileController {
       next(error);
     }
   };
+
+  acceptAgreement = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+      const { userId } = req.params;
+      const { eSignature, agreementVersion } = req.body as {
+        eSignature?: string;
+        agreementVersion?: string;
+      };
+
+      if (!eSignature?.trim()) {
+        return res.status(400).json({ success: false, message: 'eSignature is required' });
+      }
+
+      const profile = await this.menteeProfileService.getOrCreateProfile(userId);
+      profile.agreementVersion = agreementVersion ?? '1.0';
+      profile.eSignature = eSignature.trim();
+      await this.menteeProfileService.saveProfile(profile);
+
+      return res.json({
+        success: true,
+        message: 'Agreement accepted',
+        data: { agreementVersion: profile.agreementVersion, eSignature: profile.eSignature },
+      });
+    } catch (error: any) {
+      this.logger.error('Error accepting mentee agreement', error);
+      next(error);
+    }
+  };
 }
