@@ -5,7 +5,7 @@ export const createBlogSchema = z.object({
   slug: z.string().min(1, "Slug is required"),
   content: z.string().min(1, "Content is required"),
   excerpt: z.string().optional().nullable(),
-  coverImage: z.string().url("Must be a valid URL").optional().nullable(),
+  coverImage: z.string().url("Must be a valid URL").optional().nullable().or(z.literal("")),
   isPublished: z.boolean().optional().default(false),
   publishedAt: z.string().datetime().optional().nullable(),
 });
