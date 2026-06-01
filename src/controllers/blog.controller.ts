@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { BlogService } from '../services/blog.service';
+import { FileUploadService } from '../core/fileUpload.service';
 import { AppDataSource } from '../config/data-source';
 import { createBlogSchema, updateBlogSchema } from '../validation/blog.dto';
 
@@ -132,12 +133,14 @@ export const BlogController = {
         return res.status(400).json({ status: 'error', message: 'No image provided' });
       }
 
-      const blogService = new BlogService(AppDataSource);
-      const url = blogService.getFileUrl(req, req.file.filename, req.file.fieldname);
+      const fileUploadService = new FileUploadService();
+      const result = await fileUploadService.uploadFile(req.file.path, {
+        folder: 'mentor-app/blog',
+      });
 
-      return res.status(200).json({ 
-        success: true, 
-        location: url // TinyMCE expects 'location' field
+      return res.status(200).json({
+        success: true,
+        location: result.secure_url, // TinyMCE expects 'location' field
       });
     } catch (error) {
       return res.status(500).json({ status: 'error', message: 'Internal server error' });
