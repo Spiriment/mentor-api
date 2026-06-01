@@ -920,10 +920,12 @@ export class EmailService {
     userName: string;
     monthName: string;
     year: number;
+    totalDaysRead: number;
     totalReadingMinutes: number;
     longestStreak: number;
     sessionsCount: number;
     topBook: string;
+    topBookChapters?: number;
   }): Promise<void> {
     await this.sendEmailWithTemplate({
       to: props.to,

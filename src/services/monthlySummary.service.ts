@@ -259,10 +259,12 @@ export class MonthlySummaryService {
               userName: user.firstName || user.email,
               monthName,
               year,
+              totalDaysRead: summary.totalDaysRead ?? 0,
               totalReadingMinutes: Math.round(summary.totalReadingMinutes),
               longestStreak: summary.longestStreak,
               sessionsCount: summary.sessionsCount,
               topBook: summary.topBook || 'None',
+              topBookChapters: summary.topBookChapters ?? 0,
             });
             successCount++;
           }
