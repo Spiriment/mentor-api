@@ -22,6 +22,8 @@ import profileRoutes from './routes/profile.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import searchRoutes from './routes/search.routes';
 import churchPortalsRoutes from './routes/churchPortals.routes';
+import sessionsRoutes from './routes/sessions.routes';
+import quizzesRoutes from './routes/quizzes.routes';
 import { blogRoutes } from '@/routes/blog.routes';
 import { faqRoutes } from '@/routes/faq.routes';
 import { contactRoutes } from '@/routes/contact.routes';
@@ -75,6 +77,8 @@ export function createAdminRouter(): Router {
   protectedAdmin.use('/notifications', notificationsRoutes);
   protectedAdmin.use('/search', searchRoutes);
   protectedAdmin.use('/church-portals', churchPortalsRoutes);
+  protectedAdmin.use('/sessions', sessionsRoutes);
+  protectedAdmin.use('/quizzes', quizzesRoutes);
   protectedAdmin.use('/blog', blogRoutes);
   protectedAdmin.use('/faq', faqRoutes);
   protectedAdmin.use('/contact', contactRoutes);
