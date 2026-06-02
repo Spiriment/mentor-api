@@ -1,0 +1,99 @@
+import { Request, Response } from 'express';
+import { SubscriptionService } from '@/services/subscription.service';
+import { EmailService } from '@/core/email.service';
+import { AppDataSource } from '@/config/data-source';
+import { User } from '@/database/entities/user.entity';
+import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
+import { logger } from '@/config/int-services';
+
+const emailService = new EmailService(null);
+const subscriptionService = new SubscriptionService(emailService);
+
+const PRODUCT_TIER_MAP: Record<string, SubscriptionTier> = {
+  'com.spiriment.mentor.basic.monthly': 'basic',
+  'com.spiriment.mentor.pro.monthly': 'pro',
+  'com.spiriment.mentor.premium.monthly': 'premium',
+};
+
+function tierFromProductId(productId: string): SubscriptionTier {
+  return PRODUCT_TIER_MAP[productId] ?? 'basic';
+}
+
+export const handleRevenueCatWebhook = async (req: Request, res: Response): Promise<void> => {
+  const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
+  if (secret) {
+    const authHeader = req.headers['authorization'];
+    if (authHeader !== secret) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+  }
+
+  const event = req.body?.event;
+  if (!event) {
+    res.status(400).json({ error: 'Missing event' });
+    return;
+  }
+
+  const { type, app_user_id, product_id, expiration_at_ms } = event;
+  logger.info('RevenueCat webhook received', { type, app_user_id, product_id });
+
+  const userRepo = AppDataSource.getRepository(User);
+  const user = await userRepo.findOne({ where: { id: app_user_id } });
+  if (!user) {
+    // User not found — still return 200 so RevenueCat doesn't retry
+    logger.warn('RevenueCat webhook: user not found', { app_user_id });
+    res.json({ received: true });
+    return;
+  }
+
+  try {
+    switch (type) {
+      case 'INITIAL_PURCHASE':
+      case 'RENEWAL':
+      case 'PRODUCT_CHANGE': {
+        const tier = tierFromProductId(product_id);
+        await subscriptionService.upsertSubscription(user.id, {
+          tier,
+          status: 'active',
+          externalProvider: 'revenuecat',
+          externalRef: product_id,
+          expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
+        });
+        break;
+      }
+
+      case 'CANCELLATION':
+      case 'EXPIRATION': {
+        await subscriptionService.upsertSubscription(user.id, {
+          tier: 'basic',
+          status: 'canceled',
+          externalProvider: 'revenuecat',
+          externalRef: product_id,
+          expiresAt: null,
+        });
+        break;
+      }
+
+      case 'BILLING_ISSUE': {
+        const sub = await subscriptionService.getSubscriptionForUser(user.id);
+        if (sub.status === 'active') {
+          await subscriptionService.upsertSubscription(user.id, {
+            tier: sub.tier as SubscriptionTier,
+            status: 'past_due',
+            externalProvider: 'revenuecat',
+          });
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    res.json({ received: true });
+  } catch (err: any) {
+    logger.error('RevenueCat webhook processing error', err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: 'Processing failed' });
+  }
+};

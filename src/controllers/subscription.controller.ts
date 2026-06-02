@@ -3,6 +3,13 @@ import { StatusCodes } from 'http-status-codes';
 import { SubscriptionService } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { AppError } from '@/common';
+import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
+
+const REVENUECAT_PRODUCT_TIER_MAP: Record<string, SubscriptionTier> = {
+  'com.spiriment.mentor.basic.monthly': 'basic',
+  'com.spiriment.mentor.pro.monthly': 'pro',
+  'com.spiriment.mentor.premium.monthly': 'premium',
+};
 
 const emailService = new EmailService(null);
 const subscriptionService = new SubscriptionService(emailService);
@@ -55,6 +62,27 @@ export const redeemPromoCode = async (req: Request, res: Response, next: NextFun
     }
     const result = await subscriptionService.redeemPromoCode(req.user!, code.trim().toUpperCase());
     res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const syncAppleIAP = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { productId, expiresAt } = req.body as { productId: string; expiresAt?: number };
+    const tier = REVENUECAT_PRODUCT_TIER_MAP[productId];
+    if (!tier) {
+      throw new AppError(`Unknown product ID: ${productId}`, 400);
+    }
+    await subscriptionService.upsertSubscription(req.user!.id, {
+      tier,
+      status: 'active',
+      externalProvider: 'revenuecat',
+      externalRef: productId,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+    });
+    const subscription = await subscriptionService.getSubscriptionForUser(req.user!.id);
+    res.json({ success: true, data: subscription });
   } catch (err) {
     next(err);
   }

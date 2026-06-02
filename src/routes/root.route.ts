@@ -33,6 +33,7 @@ import { EncryptionServiceImpl } from '@/common';
 import { createChurchPortalRouter } from '@/church-portal/router';
 import subscriptionRoutes from './subscription.routes';
 import stripeWebhookRoutes from './stripeWebhook.routes';
+import revenueCatWebhookRoutes from './revenueCatWebhook.routes';
 import familyPlanRoutes from './familyPlan.routes';
 import aiRoutes from './ai.routes';
 
@@ -187,6 +188,9 @@ const createRootRoutes = () => {
 
   // Stripe webhook — must use raw body, registered BEFORE express.json() would touch it
   rootRouter.use('/api/stripe/webhook', stripeWebhookRoutes);
+
+  // RevenueCat webhook (Apple IAP events)
+  rootRouter.use('/api/revenuecat/webhook', revenueCatWebhookRoutes);
 
   // Church portal routes
   rootRouter.use('/api/church-portal', (req, res, next) => {

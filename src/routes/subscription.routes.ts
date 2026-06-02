@@ -6,6 +6,7 @@ import {
   getBillingPortal,
   cancelSubscription,
   redeemPromoCode,
+  syncAppleIAP,
 } from '@/controllers/subscription.controller';
 
 const router = Router();
@@ -17,5 +18,6 @@ router.post('/checkout', createCheckout);
 router.post('/portal', getBillingPortal);
 router.post('/cancel', cancelSubscription);
 router.post('/redeem', redeemPromoCode);
+router.post('/apple-iap/sync', syncAppleIAP);
 
 export default router;
