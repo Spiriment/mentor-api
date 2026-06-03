@@ -36,6 +36,7 @@ import stripeWebhookRoutes from './stripeWebhook.routes';
 import revenueCatWebhookRoutes from './revenueCatWebhook.routes';
 import familyPlanRoutes from './familyPlan.routes';
 import aiRoutes from './ai.routes';
+import quizRoutes from './quiz.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -185,6 +186,7 @@ const createRootRoutes = () => {
 
   // AI routes (Pro+ gated)
   rootRouter.use('/api/ai', aiRoutes);
+  rootRouter.use('/api/quiz', quizRoutes);
 
   // Stripe webhook — must use raw body, registered BEFORE express.json() would touch it
   rootRouter.use('/api/stripe/webhook', stripeWebhookRoutes);

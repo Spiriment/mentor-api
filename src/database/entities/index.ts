@@ -60,6 +60,12 @@ export * from './contactMessage.entity';
 export * from './blogPost.entity';
 export * from './faq.entity';
 
+// Quiz entities
+export * from './quizBook.entity';
+export * from './quizQuestion.entity';
+export * from './quizAttempt.entity';
+export * from './quizStreak.entity';
+
 // Church portal entities
 export * from '../../church-portal/entities';
 

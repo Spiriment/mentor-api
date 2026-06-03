@@ -99,8 +99,12 @@ export class StreakService {
     monthlyStreakData: { [key: string]: number[] };
   }> {
     try {
-      const user = await this.userRepository.findOne({
+      return await AppDataSource.transaction(async (manager) => {
+      const userRepository = manager.getRepository(User);
+      // Pessimistic write lock prevents concurrent requests racing on the same user row
+      const user = await userRepository.findOne({
         where: { id: userId },
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!user) {
@@ -263,8 +267,8 @@ export class StreakService {
         todayInUserTz
       );
 
-      // Update user in database
-      await this.userRepository.update(userId, {
+      // Update user in database (inside transaction — race condition safe)
+      await userRepository.update(userId, {
         currentStreak: newCurrentStreak,
         longestStreak: newLongestStreak,
         lastStreakDate: todayInUserTz,
@@ -306,6 +310,7 @@ export class StreakService {
         freezeUsed,
         monthlyStreakData: newMonthlyStreakData,
       };
+      }); // end transaction
     } catch (error: any) {
       logger.error('Error incrementing streak', error);
       throw error;

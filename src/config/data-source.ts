@@ -43,6 +43,10 @@ import {
   ChurchPortalJoinRequest,
   PromoCode,
   PromoCodeRedemption,
+  QuizBook,
+  QuizQuestion,
+  QuizAttempt,
+  QuizStreak,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -106,6 +110,10 @@ export const AppDataSource = new DataSource({
     ChurchPortalJoinRequest,
     PromoCode,
     PromoCodeRedemption,
+    QuizBook,
+    QuizQuestion,
+    QuizAttempt,
+    QuizStreak,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'
