@@ -19,10 +19,7 @@ const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing'];
 
 export class AdminSubscriptionService {
   serialize(row: UserSubscription): Record<string, unknown> {
-    const userId =
-      row.user?.id ??
-      (row as unknown as { userId?: string }).userId ??
-      undefined;
+    const userId = row.userId ?? row.user?.id ?? undefined;
     return {
       id: row.id,
       userId,
@@ -43,10 +40,22 @@ export class AdminSubscriptionService {
     if (!isUuid(userId)) {
       throw new AppError('Invalid user id', 400);
     }
-    return AppDataSource.getRepository(UserSubscription).findOne({
-      where: { user: { id: userId } },
+    const repo = AppDataSource.getRepository(UserSubscription);
+    let row = await repo.findOne({
+      where: { userId },
       relations: ['user'],
     });
+    if (!row) {
+      row = await repo.findOne({
+        where: { user: { id: userId } },
+        relations: ['user'],
+      });
+      if (row && !row.userId) {
+        row.userId = userId;
+        await repo.save(row);
+      }
+    }
+    return row;
   }
 
   async getSummary(adminRole: ADMIN_ROLE) {
@@ -190,10 +199,7 @@ export class AdminSubscriptionService {
     }
 
     const repo = AppDataSource.getRepository(UserSubscription);
-    let row = await repo.findOne({
-      where: { user: { id: userId } },
-      relations: ['user'],
-    });
+    let row = await this.findForUser(userId);
 
     const resolveExpiresAt = (): Date | null => {
       if (
@@ -208,6 +214,7 @@ export class AdminSubscriptionService {
 
     if (!row) {
       row = repo.create({
+        userId,
         user: { id: userId } as User,
         tier: input.tier,
         status: input.status,
@@ -220,6 +227,7 @@ export class AdminSubscriptionService {
         notes: input.notes ?? null,
       });
     } else {
+      row.userId = userId;
       row.tier = input.tier;
       row.status = input.status;
       if (input.mrrCents !== undefined) {

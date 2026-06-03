@@ -230,6 +230,10 @@ export class AdminMentorService {
       acceptedAt: mr.respondedAt,
     }));
 
+    const subscriptionCurrent = subRow
+      ? adminSubscriptionService.serialize(subRow)
+      : null;
+
     return {
       user: safeUser,
       profile,
@@ -239,8 +243,9 @@ export class AdminMentorService {
       },
       sessions: serializedSessions,
       mentees: serializedMentees,
+      subscription: subscriptionCurrent,
       subscriptions: {
-        current: subRow ? adminSubscriptionService.serialize(subRow) : null,
+        current: subscriptionCurrent,
         currentTier: subRow?.tier ?? null,
         currentStatus: subRow?.status ?? null,
         history: [] as unknown[],

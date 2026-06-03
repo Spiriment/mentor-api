@@ -11,6 +11,9 @@ export type SubscriptionStatus =
 
 @Entity('user_subscriptions')
 export class UserSubscription extends BaseEntity {
+  @Column({ name: 'userId', type: 'varchar', length: 36 })
+  userId!: string;
+
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
   user!: User;
