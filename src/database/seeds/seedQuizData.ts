@@ -24,14 +24,8 @@ async function seed() {
 
   // Dynamically load the static data (it lives in the mobile app, copy path as needed)
   // We inline a minimal loader here — point to wherever the file is accessible
-  let BIBLE_QUIZ_DATA: any[];
-  try {
-    // Try loading from mobile app workspace
-    BIBLE_QUIZ_DATA = require('../../../mentor-app/src/data/bibleQuiz').BIBLE_QUIZ_DATA;
-  } catch {
-    console.error('Could not load bibleQuiz.ts. Run this script from the repo root or adjust the path.');
-    process.exit(1);
-  }
+  // Quiz data is bundled as JSON alongside this seed script
+  const BIBLE_QUIZ_DATA: any[] = require('./quizData.json');
 
   const bookRepo = AppDataSource.getRepository(QuizBook);
   const questionRepo = AppDataSource.getRepository(QuizQuestion);

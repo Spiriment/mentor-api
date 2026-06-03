@@ -7,7 +7,7 @@
     "build": "tsc && tsc-alias && npm run copy-assets",
     "build:staging": "NODE_ENV=staging tsc && tsc-alias && npm run copy-assets",
     "build:main": "NODE_ENV=production tsc && tsc-alias && npm run copy-assets",
-    "copy-assets": "cp -r src/mails dist/",
+    "copy-assets": "cp -r src/mails dist/ && cp -r src/database/seeds/*.json dist/database/seeds/ 2>/dev/null || true",
     "start": "node -r tsconfig-paths/register dist/index.js",
     "start:dev": "cross-env NODE_ENV=development ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "typeorm": "typeorm-ts-node-commonjs",
