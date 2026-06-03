@@ -337,4 +337,18 @@ export class QuizService {
     await this.questionRepo.save(entities);
     return { imported: entities.length };
   }
+
+  // ─── Feedback ─────────────────────────────────────────────────────────────
+
+  async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {
+    // Update the most recent attempt for this user/book/version
+    const attempt = await this.attemptRepo.findOne({
+      where: { userId, book, version },
+      order: { completedAt: 'DESC' },
+    });
+    if (attempt) {
+      attempt.helpful = helpful;
+      await this.attemptRepo.save(attempt);
+    }
+  }
 }

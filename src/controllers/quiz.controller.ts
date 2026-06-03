@@ -47,3 +47,11 @@ export const getQuizStreak = async (req: Request, res: Response, next: NextFunct
     res.json({ success: true, data: streak });
   } catch (err) { next(err); }
 };
+
+export const submitFeedback = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { book, version, helpful } = req.body;
+    await quizService.submitFeedback(req.user!.id, book, Number(version), Boolean(helpful));
+    res.json({ success: true });
+  } catch (err) { next(err); }
+};

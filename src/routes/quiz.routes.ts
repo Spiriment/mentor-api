@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { getBooks, getQuestions, submitAttempt, getAttemptHistory, getQuizStreak } from '@/controllers/quiz.controller';
+import { getBooks, getQuestions, submitAttempt, getAttemptHistory, getQuizStreak, submitFeedback } from '@/controllers/quiz.controller';
 
 const router = Router();
 
@@ -9,6 +9,7 @@ router.get('/books/:book/questions', getQuestions);
 
 router.use(authenticateToken);
 router.post('/attempt', submitAttempt);
+router.post('/feedback', submitFeedback);
 router.get('/attempts', getAttemptHistory);
 router.get('/streak', getQuizStreak);
 

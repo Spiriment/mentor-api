@@ -30,4 +30,7 @@ export class QuizAttempt extends BaseEntity {
   // Store per-question answers for review
   @Column({ type: 'json', nullable: true })
   answers?: { questionId: string; selected: string; correct: boolean }[];
+
+  @Column({ type: 'boolean', nullable: true, default: null })
+  helpful?: boolean | null;
 }
