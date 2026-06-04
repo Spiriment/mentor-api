@@ -112,6 +112,16 @@ export class AuthController {
     }
   };
 
+  appleSignIn = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tokens = await this.authService.appleSignIn(req.body);
+      this.logger.info('Apple Sign-In successful');
+      return sendSuccessResponse(res, tokens);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   sendVerificationEmail = async (
     req: Request,
     res: Response,

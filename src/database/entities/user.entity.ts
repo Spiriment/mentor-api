@@ -49,6 +49,9 @@ export class User extends BaseEntity {
   @Column({ name: 'googleId', nullable: true, unique: true, select: false })
   googleId?: string;
 
+  @Column({ name: 'appleId', nullable: true, unique: true, select: false })
+  appleId?: string;
+
   @Column({
     name: 'otpTokenExpiry',
     nullable: true,

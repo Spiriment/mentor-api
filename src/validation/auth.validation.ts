@@ -182,3 +182,17 @@ export const googleSignInSchema = z.object({
 });
 
 export type GoogleSignInDTO = z.infer<typeof googleSignInSchema>;
+
+// Apple OAuth schema
+export const appleSignInSchema = z.object({
+  identityToken: z.string().min(1, 'Apple identity token is required'),
+  fullName: z
+    .object({
+      givenName: z.string().nullable().optional(),
+      familyName: z.string().nullable().optional(),
+    })
+    .optional(),
+  email: z.string().email().nullable().optional(),
+});
+
+export type AppleSignInDTO = z.infer<typeof appleSignInSchema>;

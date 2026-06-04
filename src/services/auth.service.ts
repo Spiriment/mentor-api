@@ -28,6 +28,7 @@ import {
   UpdateProfileDTO,
   SelectRoleDTO,
   GoogleSignInDTO,
+  AppleSignInDTO,
 } from '../validation/auth.validation';
 import { EmailService } from '@/core/email.service';
 import { RoleEnum } from '@/common/auth/rbac';
@@ -38,6 +39,7 @@ import { generateOTP } from '@/common/helpers/auth';
 import { FileUploadService } from '@/core/fileUpload.service';
 import { StatusCodes } from 'http-status-codes';
 import { OAuth2Client } from 'google-auth-library';
+import appleSigninAuth from 'apple-signin-auth';
 
 export class AuthService {
   private logger: Logger;
@@ -1178,6 +1180,144 @@ export class AuthService {
       }
       throw new AppError(
         error.message || 'Google authentication failed',
+        401
+      );
+    }
+  };
+
+  appleSignIn = async (data: AppleSignInDTO): Promise<TokenResponse> => {
+    try {
+      const appleIdTokenClaims = await appleSigninAuth.verifyIdToken(
+        data.identityToken,
+        {
+          audience: process.env.APPLE_CLIENT_ID || 'com.spiriment.mentor',
+          ignoreExpiration: false,
+        }
+      );
+
+      const appleId = appleIdTokenClaims.sub;
+      // Apple only provides email on first login
+      const email = appleIdTokenClaims.email || data.email || null;
+      const firstName = data.fullName?.givenName || '';
+      const lastName = data.fullName?.familyName || '';
+
+      if (!appleId) {
+        throw new AppError('Invalid Apple token', 401);
+      }
+
+      // 1. Try to find user by appleId
+      let user = await this.UserRepository.findOne({
+        where: { appleId } as any,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          isActive: true,
+          isEmailVerified: true,
+          isOnboardingComplete: true,
+          mentorApprovalStatus: true,
+        },
+      });
+
+      // 2. Fall back to email lookup (handles existing email/password accounts)
+      if (!user && email) {
+        user = await this.UserRepository.findOne({
+          where: { email },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            isActive: true,
+            isEmailVerified: true,
+            isOnboardingComplete: true,
+            mentorApprovalStatus: true,
+          },
+        });
+      }
+
+      if (user) {
+        if (!user.isActive) {
+          throw new AppError('Account is inactive', 401);
+        }
+
+        const updateData: any = { appleId };
+        if (!user.isEmailVerified && email) {
+          updateData.isEmailVerified = true;
+          updateData.emailVerifiedAt = new Date();
+        }
+        if (!user.firstName && firstName) updateData.firstName = firstName;
+        if (!user.lastName && lastName) updateData.lastName = lastName;
+
+        await this.UserRepository.update(user.id, updateData);
+
+        this.logger.info('Existing user signed in via Apple', {
+          userId: user.id,
+          email: user.email,
+        });
+      } else {
+        if (!email) {
+          throw new AppError(
+            'Email is required for first-time Apple Sign-In. Please try again.',
+            400
+          );
+        }
+
+        const newUser = this.UserRepository.create({
+          email: email!,
+          firstName,
+          lastName,
+          googleId: undefined,
+          isEmailVerified: true,
+          emailVerifiedAt: new Date(),
+          isActive: true,
+          password: await bcrypt.hash(`apple_${appleId}_${Date.now()}`, 10),
+        });
+        (newUser as any).appleId = appleId;
+
+        user = await this.UserRepository.save(newUser);
+        this.logger.info('New user created via Apple Sign-In', {
+          userId: user.id,
+          email: user.email,
+        });
+      }
+
+      const fullUser = await this.UserRepository.findOne({
+        where: { id: user.id },
+      });
+
+      if (!fullUser) {
+        throw new AppError('User not found after creation/update', StatusCodes.INTERNAL_SERVER_ERROR);
+      }
+
+      const tokens = this.generateTokens(fullUser);
+
+      return {
+        ...tokens,
+        isGoogleAuth: false,
+        user: {
+          id: fullUser.id,
+          email: fullUser.email,
+          firstName: fullUser.firstName || '',
+          lastName: fullUser.lastName || '',
+          role: fullUser.role || '',
+          isVerified: fullUser.isEmailVerified || false,
+          isOnboardingComplete: fullUser.isOnboardingComplete || false,
+          mentorApprovalStatus: fullUser.mentorApprovalStatus,
+        },
+        isEmailVerified: fullUser.isEmailVerified,
+        accountStatus: fullUser.accountStatus,
+      };
+    } catch (error: any) {
+      this.logger.error('Apple Sign-In error', error);
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(
+        error.message || 'Apple authentication failed',
         401
       );
     }

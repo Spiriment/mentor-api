@@ -20,6 +20,7 @@ import {
   sendLoginOtpSchema,
   verifyLoginOtpSchema,
   googleSignInSchema,
+  appleSignInSchema,
 } from '../validation/auth.validation';
 import { updateProfileSchema as updateUserProfileSchema } from '../validation/profile.validation';
 import { validate } from '@/middleware/validation';
@@ -67,6 +68,11 @@ const createAuthRoutes = (
     '/google',
     validate(googleSignInSchema),
     authController.googleSignIn
+  );
+  router.post(
+    '/apple',
+    validate(appleSignInSchema),
+    authController.appleSignIn
   );
   router.post(
     '/send-verification-email',
