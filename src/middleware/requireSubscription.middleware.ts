@@ -4,7 +4,7 @@ import { AppDataSource } from '@/config/data-source';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
 
-const TIER_RANK: Record<SubscriptionTier, number> = { none: 0, basic: 1, pro: 2, premium: 3 };
+const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 
 export const requireSubscription = (minTier: SubscriptionTier) => {
   return async (req: Request, res: Response, next: NextFunction) => {

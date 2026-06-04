@@ -71,6 +71,7 @@ export class AdminSubscriptionService {
       .getRawMany<{ tier: string; cnt: string }>();
 
     const countsByTier: Record<SubscriptionTier, number> = {
+      free: 0,
       basic: 0,
       pro: 0,
       premium: 0,

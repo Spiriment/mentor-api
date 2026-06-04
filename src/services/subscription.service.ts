@@ -8,8 +8,8 @@ import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
 import { EmailService } from '@/core/email.service';
 
-const TIER_RANK: Record<SubscriptionTier, number> = { none: 0, basic: 1, pro: 2, premium: 3 };
-const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { none: 0, basic: 0, pro: 1, premium: 4 };
+const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
+const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
 
 const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
 const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';

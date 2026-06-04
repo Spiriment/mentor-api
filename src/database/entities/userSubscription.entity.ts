@@ -2,7 +2,7 @@ import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 
-export type SubscriptionTier = 'basic' | 'pro' | 'premium' | 'none';
+export type SubscriptionTier = 'free' | 'basic' | 'pro' | 'premium' | 'none';
 export type SubscriptionStatus =
   | 'active'
   | 'trialing'

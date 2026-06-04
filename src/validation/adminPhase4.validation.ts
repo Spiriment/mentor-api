@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const subscriptionTierSchema = z.enum(['basic', 'pro', 'premium', 'none']);
+const subscriptionTierSchema = z.enum(['free', 'basic', 'pro', 'premium', 'none']);
 const subscriptionStatusSchema = z.enum([
   'active',
   'trialing',
