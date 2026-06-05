@@ -47,6 +47,11 @@ import {
   QuizQuestion,
   QuizAttempt,
   QuizStreak,
+  FamilyPlan,
+  FamilyMember,
+  AiChapterSummary,
+  Review,
+  MenteeReport,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -114,6 +119,11 @@ export const AppDataSource = new DataSource({
     QuizQuestion,
     QuizAttempt,
     QuizStreak,
+    FamilyPlan,
+    FamilyMember,
+    AiChapterSummary,
+    Review,
+    MenteeReport,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

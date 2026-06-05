@@ -1,12 +1,16 @@
 import OpenAI from 'openai';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+let _client: OpenAI | null = null;
+const getClient = () => {
+  if (!_client) _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _client;
+};
+const MODEL = () => process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
 export const aiService = {
   async generateChapterSummary(book: string, chapter: number, verseText: string): Promise<string> {
-    const response = await client.chat.completions.create({
-      model: MODEL,
+    const response = await getClient().chat.completions.create({
+      model: MODEL(),
       messages: [
         {
           role: 'system',
@@ -25,8 +29,8 @@ export const aiService = {
   },
 
   async generateReflectionPrompts(book: string, chapter: number, verse: string, verseText: string): Promise<string[]> {
-    const response = await client.chat.completions.create({
-      model: MODEL,
+    const response = await getClient().chat.completions.create({
+      model: MODEL(),
       messages: [
         {
           role: 'system',
@@ -55,8 +59,8 @@ export const aiService = {
     recentBooks: string[];
     currentStreak: number;
   }): Promise<Array<{ book: string; chapter: number; reason: string }>> {
-    const response = await client.chat.completions.create({
-      model: MODEL,
+    const response = await getClient().chat.completions.create({
+      model: MODEL(),
       messages: [
         {
           role: 'system',
