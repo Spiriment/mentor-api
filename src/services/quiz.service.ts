@@ -3,11 +3,16 @@ import { QuizBook } from '@/database/entities/quizBook.entity';
 import { QuizQuestion } from '@/database/entities/quizQuestion.entity';
 import { QuizAttempt } from '@/database/entities/quizAttempt.entity';
 import { QuizStreak } from '@/database/entities/quizStreak.entity';
+import { User } from '@/database/entities/user.entity';
+import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
+import { MentorProfile } from '@/database/entities/mentorProfile.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { AppError } from '@/common';
 import { logger } from '@/config/int-services';
 import { v4 as uuidv4 } from 'uuid';
 import {
   startOfDay,
+  startOfWeek,
   differenceInCalendarDays,
   format,
   getDay,
@@ -21,6 +26,10 @@ export class QuizService {
   private questionRepo = AppDataSource.getRepository(QuizQuestion);
   private attemptRepo = AppDataSource.getRepository(QuizAttempt);
   private streakRepo = AppDataSource.getRepository(QuizStreak);
+  private userRepo = AppDataSource.getRepository(User);
+  private menteeProfileRepo = AppDataSource.getRepository(MenteeProfile);
+  private mentorProfileRepo = AppDataSource.getRepository(MentorProfile);
+  private mentorshipRequestRepo = AppDataSource.getRepository(MentorshipRequest);
 
   // ─── Books ───────────────────────────────────────────────────────────────
 
@@ -339,6 +348,84 @@ export class QuizService {
   }
 
   // ─── Feedback ─────────────────────────────────────────────────────────────
+
+  // ─── Leaderboard ──────────────────────────────────────────────────────────
+
+  async getLeaderboard(
+    mentorId: string,
+    book: string,
+    period: 'week' | 'alltime'
+  ): Promise<{ userId: string; name: string; profileImage: string | null; score: number; total: number; isCurrentUser: boolean }[]> {
+    // Mentor + their accepted mentees form the leaderboard audience
+    const acceptedRequests = await this.mentorshipRequestRepo.find({
+      where: { mentorId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
+      relations: ['mentee'],
+    });
+    const menteeIds = acceptedRequests.map((r) => r.mentee?.id).filter((id): id is string => !!id);
+    const userIds = [mentorId, ...menteeIds];
+
+    // Best attempt per user for this book (optionally within the current week)
+    const qb = this.attemptRepo
+      .createQueryBuilder('a')
+      .select('a.userId', 'userId')
+      .addSelect('MAX(a.score)', 'score')
+      .addSelect('a.total', 'total')
+      .where('a.userId IN (:...userIds)', { userIds })
+      .andWhere('a.book = :book', { book })
+      .groupBy('a.userId')
+      .addGroupBy('a.total');
+
+    if (period === 'week') {
+      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+      qb.andWhere('a.completedAt >= :weekStart', { weekStart });
+    }
+
+    const rows = await qb.getRawMany<{ userId: string; score: string; total: string }>();
+
+    // Collapse to one best row per user (highest score, then highest total)
+    const bestByUser = new Map<string, { score: number; total: number }>();
+    for (const row of rows) {
+      const score = Number(row.score);
+      const total = Number(row.total);
+      const existing = bestByUser.get(row.userId);
+      if (!existing || score > existing.score || (score === existing.score && total > existing.total)) {
+        bestByUser.set(row.userId, { score, total });
+      }
+    }
+
+    if (bestByUser.size === 0) return [];
+
+    const rankedUserIds = [...bestByUser.keys()];
+    const users = await this.userRepo.find({ where: rankedUserIds.map((id) => ({ id })) });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const [menteeProfiles, mentorProfiles] = await Promise.all([
+      this.menteeProfileRepo.find({ where: rankedUserIds.map((id) => ({ userId: id })) }),
+      this.mentorProfileRepo.find({ where: rankedUserIds.map((id) => ({ userId: id })) }),
+    ]);
+    const imageByUser = new Map<string, string | null>();
+    for (const p of [...menteeProfiles, ...mentorProfiles]) {
+      imageByUser.set(p.userId, p.profileImage ?? null);
+    }
+
+    return rankedUserIds
+      .map((userId) => {
+        const user = userById.get(userId);
+        const best = bestByUser.get(userId)!;
+        const name = user
+          ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'User'
+          : 'User';
+        return {
+          userId,
+          name,
+          profileImage: imageByUser.get(userId) ?? null,
+          score: best.score,
+          total: best.total,
+          isCurrentUser: userId === mentorId,
+        };
+      })
+      .sort((a, b) => b.score - a.score || b.total - a.total);
+  }
 
   async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {
     // Update the most recent attempt for this user/book/version

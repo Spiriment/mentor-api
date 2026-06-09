@@ -48,6 +48,19 @@ export const getQuizStreak = async (req: Request, res: Response, next: NextFunct
   } catch (err) { next(err); }
 };
 
+export const getLeaderboard = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const mentorId = req.user!.id;
+    const { book } = req.query;
+    const period = req.query.period === 'alltime' ? 'alltime' : 'week';
+    if (!book || typeof book !== 'string') {
+      return res.status(400).json({ success: false, message: 'book is required' });
+    }
+    const leaderboard = await quizService.getLeaderboard(mentorId, book, period);
+    res.json({ success: true, data: leaderboard });
+  } catch (err) { next(err); }
+};
+
 export const submitFeedback = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { book, version, helpful } = req.body;
