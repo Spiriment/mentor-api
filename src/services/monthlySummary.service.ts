@@ -62,9 +62,11 @@ export class MonthlySummaryService {
           bookCounts[s.book] = (bookCounts[s.book] || 0) + 1;
         }
       });
-      const topBookEntry = Object.entries(bookCounts).sort((a, b) => b[1] - a[1])[0];
+      const sortedBooks = Object.entries(bookCounts).sort((a, b) => b[1] - a[1]);
+      const topBookEntry = sortedBooks[0];
       const topBook = topBookEntry ? topBookEntry[0] : undefined;
       const topBookChapters = topBookEntry ? topBookEntry[1] : 0;
+      const topBooks = sortedBooks.slice(0, 3).map(([book]) => book);
 
       // 3.2 Reading time preference
       const timeSlots = { morning: 0, afternoon: 0, evening: 0 };
@@ -140,9 +142,12 @@ export class MonthlySummaryService {
         longestConsecutiveDays,
         topBook,
         topBookChapters,
+        topBooks,
         totalDaysRead,
         readingTimePreference,
         testamentFocus,
+        otCount,
+        ntCount,
         sessionsCount: mentorshipSessionsCount,
         totalReadingMinutes
       };

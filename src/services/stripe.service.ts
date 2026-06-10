@@ -4,9 +4,12 @@ import { User } from '@/database/entities/user.entity';
 import { AppError } from '@/common';
 
 const TIER_PRICE_MAP: Record<string, string> = {
-  basic: process.env.STRIPE_PRICE_BASIC_MONTHLY ?? '',
-  pro: process.env.STRIPE_PRICE_PRO_MONTHLY ?? '',
-  premium: process.env.STRIPE_PRICE_PREMIUM_MONTHLY ?? '',
+  basic:          process.env.STRIPE_PRICE_BASIC_MONTHLY  ?? '',
+  pro:            process.env.STRIPE_PRICE_PRO_MONTHLY    ?? '',
+  premium:        process.env.STRIPE_PRICE_PREMIUM_MONTHLY ?? '',
+  basic_annual:   process.env.STRIPE_PRICE_BASIC_ANNUAL   ?? '',
+  pro_annual:     process.env.STRIPE_PRICE_PRO_ANNUAL     ?? '',
+  premium_annual: process.env.STRIPE_PRICE_PREMIUM_ANNUAL ?? '',
 };
 
 class StripeService {
@@ -41,11 +44,13 @@ class StripeService {
   async createCheckoutSession(params: {
     user: User;
     tier: 'basic' | 'pro' | 'premium';
+    interval?: 'monthly' | 'annual';
     successUrl: string;
     cancelUrl: string;
     couponId?: string;
   }): Promise<string> {
-    const priceId = TIER_PRICE_MAP[params.tier];
+    const priceKey = params.interval === 'annual' ? `${params.tier}_annual` : params.tier;
+    const priceId = TIER_PRICE_MAP[priceKey];
     if (!priceId) {
       throw new AppError(`Price ID for tier "${params.tier}" is not configured`, 500);
     }

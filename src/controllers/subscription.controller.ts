@@ -6,9 +6,12 @@ import { AppError } from '@/common';
 import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
 
 const REVENUECAT_PRODUCT_TIER_MAP: Record<string, SubscriptionTier> = {
-  'com.spiriment.mentor.basic.monthly': 'basic',
-  'com.spiriment.mentor.pro.monthly': 'pro',
+  'com.spiriment.mentor.basic.monthly':   'basic',
+  'com.spiriment.mentor.pro.monthly':     'pro',
   'com.spiriment.mentor.premium.monthly': 'premium',
+  'com.spiriment.mentor.basic.annual':    'basic',
+  'com.spiriment.mentor.pro.annual':      'pro',
+  'com.spiriment.mentor.premium.annual':  'premium',
 };
 
 const emailService = new EmailService(null);
@@ -25,11 +28,12 @@ export const getMySubscription = async (req: Request, res: Response, next: NextF
 
 export const createCheckout = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { tier } = req.body as { tier: 'basic' | 'pro' | 'premium' };
+    const { tier, interval } = req.body as { tier: 'basic' | 'pro' | 'premium'; interval?: 'monthly' | 'annual' };
     if (!['basic', 'pro', 'premium'].includes(tier)) {
       throw new AppError('Invalid tier. Must be basic, pro, or premium.', 400);
     }
-    const url = await subscriptionService.createCheckoutSession(req.user!, tier);
+    const billingInterval: 'monthly' | 'annual' = interval === 'annual' ? 'annual' : 'monthly';
+    const url = await subscriptionService.createCheckoutSession(req.user!, tier, billingInterval);
     res.json({ success: true, data: { url } });
   } catch (err) {
     next(err);

@@ -47,4 +47,13 @@ export class MonthlySummary extends BaseEntity {
 
   @Column({ name: 'totalDaysRead', type: 'int', default: 0 })
   totalDaysRead!: number;
+
+  @Column({ name: 'topBooks', type: 'json', nullable: true })
+  topBooks?: string[];
+
+  @Column({ name: 'otCount', type: 'int', default: 0 })
+  otCount!: number;
+
+  @Column({ name: 'ntCount', type: 'int', default: 0 })
+  ntCount!: number;
 }

@@ -234,7 +234,6 @@ export class MenteeProfileService {
         'spiritualGrowthAreas',
         'christianExperience',
         'bibleTopics',
-        'learningPreference',
         'mentorshipFormat',
         'mentorExpectations',
         'spiritualGoals',

@@ -39,7 +39,7 @@ export const menteeBibleTopicsSchema = z.object({
 
 export const menteeLearningPreferenceSchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
-  learningPreference: z.string().min(1, 'Learning preference is required'),
+  learningPreference: z.string().optional(),
 });
 
 export const menteeMentorshipFormatSchema = z.object({
@@ -90,7 +90,7 @@ export const completeMenteeOnboardingSchema = z.object({
   bibleTopics: z
     .array(z.string())
     .min(1, 'At least one Bible topic is required'),
-  learningPreference: z.string().min(1, 'Learning preference is required'),
+  learningPreference: z.string().optional(),
   mentorshipFormat: z
     .array(z.string())
     .min(1, 'At least one mentorship format is required'),

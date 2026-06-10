@@ -113,7 +113,7 @@ export class SubscriptionService {
     return null;
   }
 
-  async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium'): Promise<string> {
+  async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium', interval: 'monthly' | 'annual' = 'monthly'): Promise<string> {
     let couponId: string | undefined;
 
     const ageDiscount = this.getAgeDiscountPercent(user.birthday);
@@ -127,6 +127,7 @@ export class SubscriptionService {
     const url = await stripeService.createCheckoutSession({
       user,
       tier,
+      interval,
       successUrl: APP_DEEP_LINK_SUCCESS,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
