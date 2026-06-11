@@ -213,6 +213,12 @@ export class AdminMentorApplicationService {
       internalAdminNotes: profile.internalAdminNotes ?? [],
       user: this.safeUser(user),
       profile: profileRest,
+      agreement: {
+        accepted: !!profile.agreementAcceptedAt,
+        acceptedAt: profile.agreementAcceptedAt ?? null,
+        version: profile.agreementVersion ?? null,
+        eSignature: profile.eSignature ?? null,
+      },
       documents: {
         profileImage: profile.profileImage ?? null,
         videoIntroduction: profile.videoIntroduction ?? null,
