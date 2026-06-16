@@ -13,7 +13,7 @@ export class AdminDashboardController {
   };
   getAnalytics = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const analytics = await adminDashboardService.getAnalytics();
+      const analytics = await adminDashboardService.getAnalytics(req.admin!.role);
       return sendSuccessResponse(res, analytics);
     } catch (e) {
       next(e);
