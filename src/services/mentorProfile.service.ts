@@ -261,11 +261,19 @@ export class MentorProfileService {
         },
       });
 
+      // Calculate points from completed session durations (30min=50pts, 45min=75pts, 60min=100pts)
+      const completedSessions = await this.sessionRepository.find({
+        where: { mentorId: userId, status: SESSION_STATUS.COMPLETED as any || 'completed' },
+        select: ['duration'],
+      });
+      const totalPoints = completedSessions.reduce((sum, s) => sum + Math.round((s.duration / 60) * 100), 0);
+
       // Attach stats to profile (cast to any to allow dynamic properties)
       const profileWithStats = profile as any;
       profileWithStats.totalMentees = totalMentees;
       profileWithStats.sessions = totalSessions;
       profileWithStats.reviews = reviews;
+      profileWithStats.totalPoints = totalPoints;
 
       return profileWithStats;
     } catch (error) {
