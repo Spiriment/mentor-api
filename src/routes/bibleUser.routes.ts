@@ -22,6 +22,10 @@ bibleUserRoutes.post('/highlights', controller.addHighlight);
 bibleUserRoutes.get('/reflections', controller.getReflections);
 bibleUserRoutes.post('/reflections', controller.addReflection);
 
+// Explanations
+bibleUserRoutes.get('/explanations', controller.getExplanations);
+bibleUserRoutes.post('/explanations', controller.addExplanation);
+
 // Progress
 bibleUserRoutes.get('/progress/:plan', controller.getProgress);
 bibleUserRoutes.put('/progress/:plan', controller.updateProgress);

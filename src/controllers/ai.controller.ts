@@ -61,6 +61,59 @@ export const getReflectionPrompts = async (req: Request, res: Response, next: Ne
   }
 };
 
+// ─── Explanation Prompts ──────────────────────────────────────────────────────
+
+export const getExplanationPrompts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { book, chapter, verse, verseText } = req.body as {
+      book?: string;
+      chapter?: number;
+      verse?: string;
+      verseText?: string;
+    };
+
+    if (!book || !chapter || !verse || !verseText) {
+      throw new AppError('book, chapter, verse, and verseText are required', 400);
+    }
+
+    const prompts = await aiService.generateExplanationPrompts(book, chapter, verse, verseText);
+    res.json({ success: true, data: { prompts } });
+  } catch (e) {
+    next(e);
+  }
+};
+
+// ─── Verse Explanation ────────────────────────────────────────────────────────
+
+export const getVerseExplanation = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { book, chapter, verse, verseText, translation, focusPrompt } = req.body as {
+      book?: string;
+      chapter?: number;
+      verse?: string;
+      verseText?: string;
+      translation?: string;
+      focusPrompt?: string;
+    };
+
+    if (!book || !chapter || !verse || !verseText) {
+      throw new AppError('book, chapter, verse, and verseText are required', 400);
+    }
+
+    const result = await aiService.generateVerseExplanation(
+      book,
+      chapter,
+      verse,
+      verseText,
+      translation || 'KJV',
+      focusPrompt,
+    );
+    res.json({ success: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+};
+
 // ─── Reading Recommendations ──────────────────────────────────────────────────
 
 export const getReadingRecommendations = async (req: Request, res: Response, next: NextFunction) => {

@@ -54,6 +54,79 @@ export const aiService = {
       .slice(0, 3);
   },
 
+  async generateExplanationPrompts(
+    book: string,
+    chapter: number,
+    verse: string,
+    verseText: string,
+  ): Promise<string[]> {
+    const response = await getClient().chat.completions.create({
+      model: MODEL(),
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a knowledgeable Bible study assistant. Given a Bible verse, generate exactly 3 focused prompts that help explain the verse — such as historical context, theological meaning, or related passages. Each prompt should be on its own line, numbered 1. 2. 3. No introduction or closing text.',
+        },
+        {
+          role: 'user',
+          content: `${book} ${chapter}:${verse} — "${verseText}"`,
+        },
+      ],
+      max_tokens: 250,
+      temperature: 0.7,
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() ?? '';
+    return text
+      .split('\n')
+      .map((l) => l.replace(/^\d+\.\s*/, '').trim())
+      .filter((l) => l.length > 0)
+      .slice(0, 3);
+  },
+
+  async generateVerseExplanation(
+    book: string,
+    chapter: number,
+    verse: string,
+    verseText: string,
+    translation: string,
+    focusPrompt?: string,
+  ): Promise<{ explanation: string; crossReferences: string }> {
+    const focusLine = focusPrompt
+      ? `\nFocus your explanation on: ${focusPrompt}`
+      : '';
+
+    const response = await getClient().chat.completions.create({
+      model: MODEL(),
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a knowledgeable and accessible Bible commentary assistant. Given a Bible verse, provide a clear explanation and relevant cross-references. Respond ONLY with a JSON object in this exact shape: {"explanation":"2-4 sentence paragraph explaining the verse in plain language","crossReferences":"One sentence listing related passages with book/chapter/verse references"}. No markdown, no extra text.',
+        },
+        {
+          role: 'user',
+          content: `${book} ${chapter}:${verse} (${translation}) — "${verseText}"${focusLine}`,
+        },
+      ],
+      max_tokens: 500,
+      temperature: 0.5,
+      response_format: { type: 'json_object' },
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() ?? '{}';
+    try {
+      const parsed = JSON.parse(text);
+      return {
+        explanation: parsed.explanation?.trim() ?? '',
+        crossReferences: parsed.crossReferences?.trim() ?? '',
+      };
+    } catch {
+      return { explanation: text, crossReferences: '' };
+    }
+  },
+
   async generateReadingRecommendations(params: {
     growthAreas: string[];
     recentBooks: string[];

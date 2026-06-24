@@ -4,6 +4,8 @@ import { requireSubscription } from '../middleware/requireSubscription.middlewar
 import {
   getChapterSummary,
   getReflectionPrompts,
+  getExplanationPrompts,
+  getVerseExplanation,
   getReadingRecommendations,
 } from '@/controllers/ai.controller';
 
@@ -14,6 +16,8 @@ router.use(requireSubscription('pro'));
 
 router.post('/chapter-summary', getChapterSummary);
 router.post('/reflection-prompts', getReflectionPrompts);
+router.post('/explanation-prompts', getExplanationPrompts);
+router.post('/verse-explanation', getVerseExplanation);
 router.post('/reading-recommendations', getReadingRecommendations);
 
 export default router;

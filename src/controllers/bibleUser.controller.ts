@@ -4,6 +4,7 @@ import {
   BibleBookmark,
   BibleHighlight,
   BibleReflection,
+  BibleExplanation,
   BibleProgress,
 } from '@/database/entities';
 import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
@@ -150,6 +151,69 @@ export class BibleUserController {
   getReflections = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const repo = AppDataSource.getRepository(BibleReflection);
+      const { book, page, limit } = req.query;
+
+      const pageNum = page ? parseInt(page as string) : 1;
+      const limitNum = limit ? parseInt(limit as string) : 20;
+      const skip = (pageNum - 1) * limitNum;
+
+      const userId = req.user!.id as string;
+      const where: any = { userId };
+      if (book) {
+        where.book = book as string;
+      }
+
+      const total = await repo.count({ where });
+
+      const list = await repo.find({
+        where,
+        order: { createdAt: 'DESC' },
+        take: limitNum,
+        skip,
+      });
+
+      res.json({
+        success: true,
+        data: list,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  addExplanation = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const repo = AppDataSource.getRepository(BibleExplanation);
+      const userId = req.user!.id as string;
+      const { book, chapter, verse } = req.body;
+
+      const existing = await repo.findOne({
+        where: { userId, book, chapter, verse },
+      });
+
+      if (existing) {
+        Object.assign(existing, req.body);
+        const saved = await repo.save(existing);
+        return res.json({ success: true, data: saved });
+      }
+
+      const entity = repo.create({ userId, ...req.body });
+      const saved = await repo.save(entity);
+      res.json({ success: true, data: saved });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getExplanations = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const repo = AppDataSource.getRepository(BibleExplanation);
       const { book, page, limit } = req.query;
 
       const pageNum = page ? parseInt(page as string) : 1;

@@ -31,6 +31,7 @@ export * from './mentorshipRequest.entity';
 export * from './bibleBookmark.entity';
 export * from './bibleHighlight.entity';
 export * from './bibleReflection.entity';
+export * from './bibleExplanation.entity';
 export * from './bibleProgress.entity';
 
 // Study entities
