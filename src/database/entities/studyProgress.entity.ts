@@ -23,7 +23,7 @@ export class StudyProgress extends BaseEntity {
   @Column({ name: 'completedChapters', type: 'json', nullable: true })
   completedChapters?: string[];
 
-  @Column({ name: 'currentDay', type: 'int', default: 1 })
+  @Column({ name: 'currentDay', type: 'int', default: 0 })
   currentDay!: number;
 
   @Column({ name: 'totalDays', type: 'int', default: 0 })
