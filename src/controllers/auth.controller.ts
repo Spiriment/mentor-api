@@ -466,6 +466,8 @@ export class AuthController {
           longestStreak: user.longestStreak,
           lastStreakDate: user.lastStreakDate,
           weeklyStreakData: user.weeklyStreakData,
+          churchPortalId: user.churchPortalId ?? null,
+          churchDiscountPercent: user.churchDiscountPercent ?? 0,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },

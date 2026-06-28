@@ -654,7 +654,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: `⏰ Session Reminder: Your session starts in ${timeUntil} - Spiriment`,
+      subject: `⏰ Session Reminder: Your session starts ${timeUntil.toLowerCase() === 'now' ? '' : 'in '}${timeUntil} - Spiriment`,
       partialName: 'session-reminder',
       templateData: {
         title: `Session Reminder - ${timeUntil}`,
@@ -663,6 +663,7 @@ export class EmailService {
         scheduledTime,
         duration,
         timeUntil,
+        isNow: timeUntil.toLowerCase() === 'now',
         role,
         description,
         sessionType,

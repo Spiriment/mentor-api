@@ -44,6 +44,10 @@ export class ChurchPortal extends BaseEntity {
   @Column({ name: 'joinCode', type: 'varchar', length: 12, unique: true, nullable: true })
   joinCode?: string | null;
 
+  /** Discount % applied to each approved member's subscription (0–100). */
+  @Column({ name: 'discountPercent', type: 'int', default: 0 })
+  discountPercent!: number;
+
   @Column({ name: 'metadata', type: 'json', nullable: true })
   metadata?: Record<string, any> | null;
 }

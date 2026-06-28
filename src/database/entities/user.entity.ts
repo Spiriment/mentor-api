@@ -155,6 +155,10 @@ export class User extends BaseEntity {
   @Column({ name: 'churchPortalId', type: 'varchar', length: 36, nullable: true })
   churchPortalId?: string | null;
 
+  /** Discount % granted by the church plan (0 = no discount). */
+  @Column({ name: 'churchDiscountPercent', type: 'int', default: 0 })
+  churchDiscountPercent!: number;
+
   @Column({ name: 'stripeCustomerId', type: 'varchar', length: 64, nullable: true })
   stripeCustomerId?: string | null;
 }

@@ -13,6 +13,7 @@ export const createChurchPortalSchema = z.object({
   country: z.string().max(100).optional(),
   timezone: z.string().max(64).optional(),
   logoUrl: z.string().url().optional(),
+  discountPercent: z.number().int().min(0).max(100).optional().default(0),
 });
 
 export const updateChurchPortalSchema = z.object({
@@ -23,6 +24,7 @@ export const updateChurchPortalSchema = z.object({
   country: z.string().max(100).nullable().optional(),
   timezone: z.string().max(64).optional(),
   status: z.enum(['active', 'suspended']).optional(),
+  discountPercent: z.number().int().min(0).max(100).optional(),
 });
 
 export const createChurchPortalUserSchema = z.object({

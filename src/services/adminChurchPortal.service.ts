@@ -84,6 +84,7 @@ export class AdminChurchPortalService {
       country: data.country ?? null,
       timezone: data.timezone ?? 'UTC',
       logoUrl: data.logoUrl ?? null,
+      discountPercent: data.discountPercent ?? 0,
       status: 'active',
     });
 

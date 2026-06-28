@@ -124,7 +124,7 @@ export class ChurchPortalJoinRequestService {
   async clearMembershipAndRequests(appUserId: string) {
     const userRepo = AppDataSource.getRepository(User);
     const joinRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
-    await userRepo.update(appUserId, { churchPortalId: null });
+    await userRepo.update(appUserId, { churchPortalId: null, churchDiscountPercent: 0 });
     await joinRepo.delete({ userId: appUserId });
   }
 
@@ -213,6 +213,7 @@ export class ChurchPortalJoinRequestService {
   async approve(churchPortalId: string, userId: string) {
     const joinRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
     const userRepo = AppDataSource.getRepository(User);
+    const portalRepo = AppDataSource.getRepository(ChurchPortal);
 
     const row = await joinRepo.findOne({
       where: { churchPortalId, userId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING },
@@ -221,7 +222,10 @@ export class ChurchPortalJoinRequestService {
       throw new AppError('No pending request for this member.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
     }
 
-    await userRepo.update(userId, { churchPortalId });
+    const portal = await portalRepo.findOne({ where: { id: churchPortalId } });
+    const discount = portal?.discountPercent ?? 0;
+
+    await userRepo.update(userId, { churchPortalId, churchDiscountPercent: discount });
     row.status = CHURCH_JOIN_REQUEST_STATUS.APPROVED;
     row.resolvedAt = new Date();
     await joinRepo.save(row);
@@ -231,6 +235,7 @@ export class ChurchPortalJoinRequestService {
 
   async reject(churchPortalId: string, userId: string) {
     const joinRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
+    const userRepo = AppDataSource.getRepository(User);
 
     const row = await joinRepo.findOne({
       where: { churchPortalId, userId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING },
@@ -239,6 +244,8 @@ export class ChurchPortalJoinRequestService {
       throw new AppError('No pending request for this member.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
     }
 
+    // Revoke any church discount since they were not approved
+    await userRepo.update(userId, { churchDiscountPercent: 0 });
     row.status = CHURCH_JOIN_REQUEST_STATUS.REJECTED;
     row.resolvedAt = new Date();
     await joinRepo.save(row);
