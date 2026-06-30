@@ -169,12 +169,19 @@ export class AuthService {
       User.otpToken = verificationToken;
     }
 
-    await this.emailService.sendEmailVerificationEmail(
-      email,
-      firstName,
-      User.otpToken!,
-      false
-    );
+    try {
+      await this.emailService.sendEmailVerificationEmail(
+        email,
+        firstName,
+        User.otpToken!,
+        false
+      );
+    } catch (error) {
+      this.logger.error('Failed to send verification email', error as Error, {
+        email,
+      });
+      throw new AppError('Failed to send verification email. Please try again.', 502);
+    }
 
     this.logger.info('Verification email sent', { email });
   }
