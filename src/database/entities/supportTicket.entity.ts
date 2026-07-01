@@ -17,7 +17,7 @@ export class SupportTicket extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   subject!: string;
 
-  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true, createForeignKeyConstraints: false })
   @JoinColumn({ name: 'userId' })
   user?: User | null;
 
@@ -31,7 +31,7 @@ export class SupportTicket extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   userEmail!: string;
 
-  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true, createForeignKeyConstraints: false })
   @JoinColumn({ name: 'linkedMentorId' })
   linkedMentor?: User | null;
 
@@ -69,7 +69,7 @@ export class SupportTicketMessage extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   authorName!: string;
 
-  @ManyToOne(() => AdminUser, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => AdminUser, { onDelete: 'SET NULL', nullable: true, createForeignKeyConstraints: false })
   @JoinColumn({ name: 'adminUserId' })
   adminUser?: AdminUser | null;
 
