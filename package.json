@@ -15,6 +15,8 @@
     "db-migrate:generate": "cross-env NODE_ENV=development npx ts-node --project tsconfig.json -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate ./src/database/migrations/MyNewMigration -d src/config/data-source.ts",
     "db-migrate:run": "cross-env NODE_ENV=development npx ts-node --project tsconfig.json -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run --dataSource src/config/data-source.ts",
     "db-migrate:run:prod": "NODE_ENV=production npx typeorm migration:run --dataSource dist/config/data-source.js",
+    "db-migrate:build-run:prod": "npm run build:main && npm run db-migrate:run:prod",
+    "db-create-support-tickets:prod": "NODE_ENV=production node scripts/create-support-tickets.js",
     "db-migrate:generate:prod": "NODE_ENV=production npx typeorm migration:generate ./src/database/migrations/MyNewMigration --outputJs -d dist/config/data-source.js",
     "db-migrate:generate:staging": "NODE_ENV=staging npx typeorm migration:generate ./src/database/migrations/MyNewMigration --outputJs -d dist/config/data-source.js",
     "db-migrate:run:staging": "NODE_ENV=staging npx typeorm migration:run --dataSource dist/config/data-source.js",

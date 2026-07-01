@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { validate } from '@/common';
-import { authenticateToken } from '@/middleware/auth.middleware';
+import { authenticateToken } from '../middleware/auth.middleware';
 import { supportController } from '@/controllers/support.controller';
 import {
   userSupportTicketCreateSchema,
