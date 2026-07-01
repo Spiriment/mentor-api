@@ -27,6 +27,7 @@ import quizzesRoutes from './routes/quizzes.routes';
 import { blogRoutes } from '@/routes/blog.routes';
 import { faqRoutes } from '@/routes/faq.routes';
 import { contactRoutes } from '@/routes/contact.routes';
+import supportRoutes from './routes/support.routes';
 
 const adminAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -82,6 +83,7 @@ export function createAdminRouter(): Router {
   protectedAdmin.use('/blog', blogRoutes);
   protectedAdmin.use('/faq', faqRoutes);
   protectedAdmin.use('/contact', contactRoutes);
+  protectedAdmin.use('/support', supportRoutes);
 
   protectedAdmin.get(
     '/message-templates/:templateId',

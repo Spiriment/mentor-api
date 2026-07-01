@@ -53,6 +53,8 @@ import {
   AiChapterSummary,
   Review,
   MenteeReport,
+  SupportTicket,
+  SupportTicketMessage,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -126,6 +128,8 @@ export const AppDataSource = new DataSource({
     AiChapterSummary,
     Review,
     MenteeReport,
+    SupportTicket,
+    SupportTicketMessage,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'
