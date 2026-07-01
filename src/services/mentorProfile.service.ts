@@ -347,6 +347,10 @@ export class MentorProfileService {
       }
 
       if (profile.isApproved) {
+        await this.userRepository.update(userId, {
+          mentorApprovalStatus: MENTOR_APPROVAL_STATUS.APPROVED,
+          mentorApprovedAt: profile.approvedAt ?? new Date(),
+        });
         return profile;
       }
 
