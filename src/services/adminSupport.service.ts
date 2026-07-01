@@ -265,7 +265,69 @@ export class AdminSupportService {
 
     await this.messageRepo.save(initialMessage);
 
-    return this.getTicketById(savedTicket.id);
+    return this.getTicketForUser(userId, savedTicket.id);
+  }
+
+  async listUserTickets(userId: string, page = 1, limit = 20) {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const skip = (safePage - 1) * safeLimit;
+
+    const [rows, total] = await this.ticketRepo.findAndCount({
+      where: { userId },
+      order: { updatedAt: 'DESC' },
+      skip,
+      take: safeLimit,
+    });
+
+    return {
+      data: rows.map((ticket) => serializeTicket(ticket)),
+      pagination: { total, page: safePage, limit: safeLimit },
+    };
+  }
+
+  async getTicketForUser(userId: string, ticketId: string) {
+    const ticket = await this.ticketRepo.findOne({
+      where: { id: ticketId, userId },
+      relations: ['messages'],
+    });
+
+    if (!ticket) {
+      throw new AppError('Support ticket not found', 404);
+    }
+
+    ticket.messages = (ticket.messages ?? []).filter((m) => !m.isInternal);
+    return serializeTicket(ticket, true);
+  }
+
+  async addUserMessage(userId: string, ticketId: string, text: string) {
+    const ticket = await this.ticketRepo.findOne({ where: { id: ticketId, userId } });
+    if (!ticket) {
+      throw new AppError('Support ticket not found', 404);
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const authorName =
+      [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+      user?.email ||
+      'User';
+
+    const message = this.messageRepo.create({
+      ticketId,
+      authorName,
+      text,
+      isInternal: false,
+    });
+
+    await this.messageRepo.save(message);
+
+    if (ticket.status === 'resolved') {
+      ticket.status = 'open';
+    }
+    ticket.updatedAt = new Date();
+    await this.ticketRepo.save(ticket);
+
+    return this.getTicketForUser(userId, ticketId);
   }
 }
 

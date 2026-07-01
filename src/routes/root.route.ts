@@ -25,6 +25,7 @@ import pushTokenRoutes from './pushToken.routes';
 import { monthlySummaryRoutes } from './monthlySummary.routes';
 import { streamRoutes } from './stream.routes';
 import { contactRoutes } from './contact.routes';
+import { supportRoutes } from './support.routes';
 import { blogRoutes } from './blog.routes';
 import { faqRoutes } from './faq.routes';
 import { SystemConfigService } from '@/core/systemConfig.service';
@@ -175,6 +176,7 @@ const createRootRoutes = () => {
 
   // Website interaction routes
   rootRouter.use('/api/contact', contactRoutes);
+  rootRouter.use('/api/support', supportRoutes);
   rootRouter.use('/api/blog', blogRoutes);
   rootRouter.use('/api/faq', faqRoutes);
 
