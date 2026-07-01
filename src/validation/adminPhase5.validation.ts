@@ -16,6 +16,15 @@ export const adminExportMonthlyBodySchema = z.object({
   timezone: z.string().max(64).default('UTC'),
 });
 
+export const adminExportReportTypeSchema = z.enum([
+  'mentors',
+  'mentees',
+  'users',
+  'activity',
+  'subscriptions',
+  'sessions',
+]);
+
 export const adminReportListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
