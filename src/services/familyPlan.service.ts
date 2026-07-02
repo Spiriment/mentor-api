@@ -79,10 +79,14 @@ export class FamilyPlanService {
     if (!plan) throw new AppError('Family plan not found', 404);
     if (plan.parentUserId !== parentUser.id) throw new AppError('Only the plan owner can add members', 403);
 
-    const memberUser = await this.userRepo.findOne({ where: { id: memberUserId } });
-    if (!memberUser) throw new AppError('User not found', 404);
+    // Accept either a UUID or an email address
+    const isEmail = memberUserId.includes('@');
+    const memberUser = await this.userRepo.findOne({
+      where: isEmail ? { email: memberUserId } : { id: memberUserId },
+    });
+    if (!memberUser) throw new AppError('No account found with that email. Ask them to sign up first.', 404);
 
-    const alreadyMember = await this.memberRepo.findOne({ where: { userId: memberUserId } });
+    const alreadyMember = await this.memberRepo.findOne({ where: { userId: memberUser.id } });
     if (alreadyMember) throw new AppError('This user is already part of a family plan', 409);
 
     const discountPercent = calcAgeDiscount(memberUser.birthday);
@@ -102,7 +106,7 @@ export class FamilyPlanService {
     const checkoutUrl = await stripeService.createCheckoutSession({
       user: parentUser,
       tier: tier as 'basic' | 'pro' | 'premium',
-      successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUserId}`,
+      successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUser.id}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
     });
@@ -111,7 +115,7 @@ export class FamilyPlanService {
     const member = this.memberRepo.create({
       id: uuidv4(),
       familyPlanId: planId,
-      userId: memberUserId,
+      userId: memberUser.id,
       tier,
       ageDiscountPercent: discountPercent,
       isParent: false,
