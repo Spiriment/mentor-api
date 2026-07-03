@@ -66,10 +66,11 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'CANCELLATION':
       case 'EXPIRATION': {
         await subscriptionService.upsertSubscription(user.id, {
-          tier: 'basic',
-          status: 'canceled',
-          externalProvider: 'revenuecat',
-          externalRef: product_id,
+          tier: 'free',
+          status: 'active',
+          externalProvider: null,
+          externalRef: null,
+          mrrCents: 0,
           expiresAt: null,
         });
         break;

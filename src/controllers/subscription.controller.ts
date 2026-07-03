@@ -71,6 +71,16 @@ export const redeemPromoCode = async (req: Request, res: Response, next: NextFun
   }
 };
 
+export const acknowledgeTrialExpired = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await subscriptionService.acknowledgeTrialExpired(req.user!.id);
+    const subscription = await subscriptionService.getSubscriptionForUser(req.user!.id);
+    res.json({ success: true, data: subscription });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const syncAppleIAP = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { productId, expiresAt } = req.body as { productId: string; expiresAt?: number };

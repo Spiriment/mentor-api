@@ -80,10 +80,10 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         if (!userId) break;
 
         await subscriptionService.upsertSubscription(userId, {
-          tier: 'basic',
-          status: 'canceled',
-          externalRef: stripeSub.id,
-          externalProvider: 'stripe',
+          tier: 'free',
+          status: 'active',
+          externalRef: null,
+          externalProvider: null,
           mrrCents: 0,
           expiresAt: null,
         });

@@ -16,6 +16,7 @@ const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscript
 const TRIAL_DAYS = 14;
 const GRACE_PERIOD_DAYS = 3;
 const MAX_INTERNAL_TEST_CODES = 3;
+export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
 
 export class SubscriptionService {
   private emailService: EmailService;
@@ -70,6 +71,7 @@ export class SubscriptionService {
       status: sub?.status ?? 'none',
       isTrialing: sub?.status === 'trialing',
       trialEndsAt: sub?.status === 'trialing' ? sub.expiresAt : null,
+      shouldShowTrialExpiredPrompt: sub?.notes === TRIAL_EXPIRED_NOTE,
       sessionsUsed,
       sessionsAllowed,
       sessionsRemaining: Math.max(0, sessionsAllowed - sessionsUsed),
@@ -213,8 +215,8 @@ export class SubscriptionService {
     data: {
       tier: SubscriptionTier;
       status: SubscriptionStatus;
-      externalRef?: string;
-      externalProvider?: string;
+      externalRef?: string | null;
+      externalProvider?: string | null;
       mrrCents?: number | null;
       expiresAt?: Date | null;
       notes?: string;
@@ -235,7 +237,11 @@ export class SubscriptionService {
     if (data.externalProvider !== undefined) sub.externalProvider = data.externalProvider;
     if (data.mrrCents !== undefined) sub.mrrCents = data.mrrCents;
     if (data.expiresAt !== undefined) sub.expiresAt = data.expiresAt;
-    if (data.notes !== undefined) sub.notes = data.notes ?? null;
+    if (data.notes !== undefined) {
+      sub.notes = data.notes ?? null;
+    } else if (['basic', 'pro', 'premium'].includes(data.tier) && data.status === 'active') {
+      sub.notes = null;
+    }
 
     await this.subRepo.save(sub);
   }
@@ -260,12 +266,28 @@ export class SubscriptionService {
     const result = await this.subRepo
       .createQueryBuilder()
       .update(UserSubscription)
-      .set({ tier: 'basic', status: 'active', expiresAt: null })
+      .set({
+        tier: 'free',
+        status: 'active',
+        expiresAt: null,
+        mrrCents: null,
+        externalRef: null,
+        externalProvider: null,
+        notes: TRIAL_EXPIRED_NOTE,
+      })
       .where('status = :status', { status: 'trialing' })
       .andWhere('expiresAt < :now', { now })
       .execute();
 
     return result.affected ?? 0;
+  }
+
+  async acknowledgeTrialExpired(userId: string): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub || sub.notes !== TRIAL_EXPIRED_NOTE) return;
+
+    sub.notes = null;
+    await this.subRepo.save(sub);
   }
 
   async getPastDueSubscriptions(gracePeriodDays = GRACE_PERIOD_DAYS): Promise<UserSubscription[]> {
@@ -278,10 +300,18 @@ export class SubscriptionService {
       .getMany();
   }
 
-  async downgradeToBasic(userId: string): Promise<void> {
+  async downgradeToFree(userId: string): Promise<void> {
     await this.subRepo.update(
       { user: { id: userId } },
-      { tier: 'basic', status: 'active' }
+      {
+        tier: 'free',
+        status: 'active',
+        mrrCents: null,
+        externalRef: null,
+        externalProvider: null,
+        expiresAt: null,
+        notes: null,
+      }
     );
   }
 
@@ -293,8 +323,8 @@ export class SubscriptionService {
     const html = `
       <p>Hi ${user.firstName ?? 'there'},</p>
       <p>Your 2-week free trial of Spiriment Premium ends in <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong>.</p>
-      <p>After that, you'll automatically move to the <strong>Basic plan (€3/month)</strong> unless you choose a plan.</p>
-      <p>Open the app to pick the plan that works for you.</p>
+      <p>After that, you'll return to <strong>Free access</strong> unless you subscribe to a paid plan. You won't be charged automatically.</p>
+      <p>Open the app to choose Basic, Pro, or Premium if you'd like to keep premium features.</p>
       <p>— The Spiriment Team</p>
     `;
 
@@ -304,8 +334,8 @@ export class SubscriptionService {
   async sendGracePeriodDowngradeEmail(user: User): Promise<void> {
     const html = `
       <p>Hi ${user.firstName ?? 'there'},</p>
-      <p>We were unable to process your payment after ${GRACE_PERIOD_DAYS} days. Your account has been moved to the <strong>Basic plan</strong>.</p>
-      <p>Open the app and update your payment method to restore your previous plan.</p>
+      <p>We were unable to process your payment after ${GRACE_PERIOD_DAYS} days. Your account has returned to <strong>Free access</strong>.</p>
+      <p>You can still read the Bible at no cost. Open the app and update your payment method to restore your paid plan.</p>
       <p>— The Spiriment Team</p>
     `;
 

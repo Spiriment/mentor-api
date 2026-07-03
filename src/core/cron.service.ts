@@ -269,14 +269,14 @@ export class CronService {
       this.tasks.set("trial-reminder", trialReminderTask);
       logger.info("Trial reminder cron job scheduled (daily 09:00 UTC)");
 
-      // Daily at 10:00 UTC — convert expired trials to Basic
+      // Daily at 10:00 UTC — convert expired trials to Free
       const trialConvertTask = cron.schedule(
         "0 10 * * *",
         async () => {
           try {
             const converted = await subscriptionService.convertExpiredTrials();
             if (converted > 0) {
-              logger.info(`Converted ${converted} expired trials to Basic`);
+              logger.info(`Converted ${converted} expired trials to Free`);
             }
           } catch (err) {
             logger.error("Error in trial conversion cron", err instanceof Error ? err : new Error(String(err)));
@@ -295,12 +295,12 @@ export class CronService {
             const overdue = await subscriptionService.getPastDueSubscriptions(3);
             for (const sub of overdue) {
               if (sub.user) {
-                await subscriptionService.downgradeToBasic(sub.user.id);
+                await subscriptionService.downgradeToFree(sub.user.id);
                 await subscriptionService.sendGracePeriodDowngradeEmail(sub.user);
               }
             }
             if (overdue.length > 0) {
-              logger.info(`Downgraded ${overdue.length} past_due accounts to Basic after grace period`);
+              logger.info(`Downgraded ${overdue.length} past_due accounts to Free after grace period`);
             }
           } catch (err) {
             logger.error("Error in grace period downgrade cron", err instanceof Error ? err : new Error(String(err)));
