@@ -7,15 +7,15 @@ import { PromoCodeRedemption } from '@/database/entities/promoCodeRedemption.ent
 import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
 import { EmailService } from '@/core/email.service';
-import { getYouthDiscountPercent } from '@/common/constants/userAge';
+import { buildPricingPreview, getSubscriptionDiscount } from '@/common/constants/subscriptionPricing';
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
 
 const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
 const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
-const TRIAL_DAYS = 14;
-const GRACE_PERIOD_DAYS = 3;
+const TRIAL_DAYS = 7;
+const GRACE_PERIOD_DAYS = 1;
 const MAX_INTERNAL_TEST_CODES = 3;
 export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
 
@@ -67,6 +67,8 @@ export class SubscriptionService {
     const sessionsAllowed = SESSIONS_PER_MONTH[tier];
     const sessionsUsed = await this.countSessionsThisMonth(userId);
 
+    const pricingPreview = sub?.user ? buildPricingPreview(sub.user) : null;
+
     return {
       tier,
       status: sub?.status ?? 'none',
@@ -79,6 +81,7 @@ export class SubscriptionService {
       expiresAt: sub?.expiresAt ?? null,
       currency: sub?.currency ?? 'EUR',
       externalRef: sub?.externalRef ?? null,
+      pricingPreview,
     };
   }
 
@@ -105,11 +108,12 @@ export class SubscriptionService {
   async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium', interval: 'monthly' | 'annual' = 'monthly'): Promise<string> {
     let couponId: string | undefined;
 
-    const ageDiscount = getYouthDiscountPercent(user.birthday);
-    if (ageDiscount !== null) {
+    const discount = getSubscriptionDiscount(user);
+    if (discount.percent !== null) {
+      const couponPrefix = discount.type === 'mentor' ? 'mentor' : 'age';
       couponId = await stripeService.createPercentageCoupon(
-        ageDiscount,
-        `age-${user.id.slice(0, 8)}`,
+        discount.percent,
+        `${couponPrefix}-${user.id.slice(0, 8)}`,
       );
     }
 
@@ -309,7 +313,7 @@ export class SubscriptionService {
 
     const html = `
       <p>Hi ${user.firstName ?? 'there'},</p>
-      <p>Your 2-week free trial of Spiriment Premium ends in <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong>.</p>
+      <p>Your 7-day free trial of Spiriment Premium ends in <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong>.</p>
       <p>After that, you'll return to <strong>Free access</strong> unless you subscribe to a paid plan. You won't be charged automatically.</p>
       <p>Open the app to choose Basic, Pro, or Premium if you'd like to keep premium features.</p>
       <p>— The Spiriment Team</p>

@@ -242,15 +242,15 @@ export class CronService {
       const subEmailService = new EmailService(null);
       const subscriptionService = new SubscriptionService(subEmailService);
 
-      // Daily at 09:00 UTC — trial reminders (7 days out and 1 day out)
+      // Daily at 09:00 UTC — trial reminders (3 days out and 1 day out)
       const trialReminderTask = cron.schedule(
         "0 9 * * *",
         async () => {
           try {
-            const sevenDay = await subscriptionService.getExpiringTrials(7);
-            for (const sub of sevenDay) {
+            const threeDay = await subscriptionService.getExpiringTrials(3);
+            for (const sub of threeDay) {
               if (sub.user?.email) {
-                await subscriptionService.sendTrialReminderEmail(sub.user, 7);
+                await subscriptionService.sendTrialReminderEmail(sub.user, 3);
               }
             }
             const oneDay = await subscriptionService.getExpiringTrials(1);
@@ -259,7 +259,7 @@ export class CronService {
                 await subscriptionService.sendTrialReminderEmail(sub.user, 1);
               }
             }
-            logger.info(`Trial reminder emails sent: 7-day=${sevenDay.length}, 1-day=${oneDay.length}`);
+            logger.info(`Trial reminder emails sent: 3-day=${threeDay.length}, 1-day=${oneDay.length}`);
           } catch (err) {
             logger.error("Error in trial reminder cron", err instanceof Error ? err : new Error(String(err)));
           }
@@ -287,12 +287,12 @@ export class CronService {
       this.tasks.set("trial-convert", trialConvertTask);
       logger.info("Trial conversion cron job scheduled (daily 10:00 UTC)");
 
-      // Daily at 11:00 UTC — downgrade past_due accounts after 3-day grace period
+      // Daily at 11:00 UTC — downgrade past_due accounts after 1-day grace period
       const gracePeriodTask = cron.schedule(
         "0 11 * * *",
         async () => {
           try {
-            const overdue = await subscriptionService.getPastDueSubscriptions(3);
+            const overdue = await subscriptionService.getPastDueSubscriptions();
             for (const sub of overdue) {
               if (sub.user) {
                 await subscriptionService.downgradeToFree(sub.user.id);
