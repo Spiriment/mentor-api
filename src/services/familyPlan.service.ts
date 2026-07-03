@@ -310,8 +310,16 @@ export class FamilyPlanService {
     }
   }
 
-  async syncMemberSubscription(memberUserId: string, stripeSubscriptionId: string, status: string): Promise<void> {
-    const member = await this.memberRepo.findOne({ where: { userId: memberUserId } });
+  async syncMemberSubscription(
+    memberUserId: string,
+    stripeSubscriptionId: string,
+    status: string,
+    options?: { sendActivationEmail?: boolean },
+  ): Promise<void> {
+    const member = await this.memberRepo.findOne({
+      where: { userId: memberUserId },
+      relations: ['user', 'familyPlan', 'familyPlan.parent'],
+    });
     if (!member) return;
 
     member.stripeSubscriptionId = stripeSubscriptionId;
@@ -327,6 +335,34 @@ export class FamilyPlanService {
     sub.externalRef = stripeSubscriptionId;
     sub.externalProvider = 'stripe_family';
     await this.subRepo.save(sub);
+
+    if (options?.sendActivationEmail && status === 'active' && member.user) {
+      await this.notifyMemberActivated(member);
+    }
+  }
+
+  private async notifyMemberActivated(member: FamilyMember): Promise<void> {
+    const memberUser = member.user;
+    const plan = member.familyPlan;
+    const parent = plan?.parent;
+    if (!memberUser || !plan) return;
+
+    const ownerName = parent
+      ? `${parent.firstName ?? ''} ${parent.lastName ?? ''}`.trim() || parent.email
+      : 'your family plan owner';
+    const memberName = `${memberUser.firstName ?? ''} ${memberUser.lastName ?? ''}`.trim() || 'there';
+
+    try {
+      await getEmailService().sendFamilyPlanActivatedEmail({
+        to: memberUser.email,
+        memberName,
+        ownerName,
+        planName: plan.name,
+        tierLabel: TIER_LABELS[member.tier] ?? member.tier,
+      });
+    } catch {
+      // Non-blocking
+    }
   }
 }
 

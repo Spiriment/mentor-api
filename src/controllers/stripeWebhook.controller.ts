@@ -54,7 +54,12 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         else if (stripeSub.status === 'trialing') status = 'trialing';
 
         if (familyMemberUserId) {
-          await familyPlanService.syncMemberSubscription(familyMemberUserId, stripeSub.id, status);
+          await familyPlanService.syncMemberSubscription(
+            familyMemberUserId,
+            stripeSub.id,
+            status,
+            { sendActivationEmail: event.type === 'customer.subscription.created' },
+          );
         } else {
           await subscriptionService.upsertSubscription(userId, {
             tier,

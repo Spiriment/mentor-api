@@ -997,4 +997,22 @@ export class EmailService {
       },
     });
   }
+
+  public async sendFamilyPlanActivatedEmail(props: {
+    to: string;
+    memberName: string;
+    ownerName: string;
+    planName: string;
+    tierLabel: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `You're all set — your ${props.tierLabel} plan is active`,
+      partialName: 'family-plan-activated',
+      templateData: {
+        title: "You're All Set",
+        ...props,
+      },
+    });
+  }
 }
