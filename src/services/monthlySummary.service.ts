@@ -239,6 +239,55 @@ export class MonthlySummaryService {
   }
 
   /**
+   * Build email payload from a monthly summary (mirrors in-app Monthly Progress Report).
+   */
+  buildMonthlyReportEmailData(
+    summary: MonthlySummary,
+    user: Pick<User, 'firstName' | 'email'>,
+    monthName: string,
+    year: number,
+  ) {
+    const daysInMonth = new Date(summary.year, summary.month, 0).getDate();
+    const topBooks = (summary.topBooks?.length ? summary.topBooks : summary.topBook ? [summary.topBook] : [])
+      .filter(Boolean)
+      .slice(0, 3);
+    const otCount = summary.otCount ?? 0;
+    const ntCount = summary.ntCount ?? 0;
+    const ntFocus = ntCount >= otCount && ntCount > 0;
+    const otFocus = otCount > ntCount;
+
+    const pref = (summary.readingTimePreference ?? 'none').toLowerCase();
+    const readingTimePreferenceLabel =
+      pref === 'morning' ? 'Morning'
+      : pref === 'afternoon' ? 'Afternoon'
+      : pref === 'evening' ? 'Evening'
+      : 'Not enough data';
+
+    return {
+      to: user.email,
+      userName: user.firstName || user.email,
+      monthName,
+      year,
+      daysInMonth,
+      currentStreak: summary.currentStreak ?? 0,
+      totalDaysRead: summary.totalDaysRead ?? 0,
+      totalReadingMinutes: Math.round(summary.totalReadingMinutes ?? 0),
+      avgWeeklyStreak: Math.round((summary.longestConsecutiveDays ?? 0) / 4),
+      longestConsecutiveDays: summary.longestConsecutiveDays ?? 0,
+      sessionsCount: summary.sessionsCount ?? 0,
+      readingTimePreferenceLabel,
+      topBooks,
+      hasTopBooks: topBooks.length > 0,
+      otCount,
+      ntCount,
+      otFocus,
+      ntFocus,
+      otCountSingle: otCount === 1,
+      ntCountSingle: ntCount === 1,
+    };
+  }
+
+  /**
    * Process and send monthly reports for all users
    */
   async processMonthlyReportsForAllUsers(emailService: any, year: number, month: number): Promise<void> {
@@ -259,18 +308,9 @@ export class MonthlySummaryService {
         try {
           const summary = await this.getMonthlySummary(user.id, year, month);
           if (summary) {
-            await emailService.sendMonthlyReportEmail({
-              to: user.email,
-              userName: user.firstName || user.email,
-              monthName,
-              year,
-              totalDaysRead: summary.totalDaysRead ?? 0,
-              totalReadingMinutes: Math.round(summary.totalReadingMinutes),
-              longestStreak: summary.longestStreak,
-              sessionsCount: summary.sessionsCount,
-              topBook: summary.topBook || 'None',
-              topBookChapters: summary.topBookChapters ?? 0,
-            });
+            await emailService.sendMonthlyReportEmail(
+              this.buildMonthlyReportEmailData(summary, user, monthName, year),
+            );
             successCount++;
           }
         } catch (error) {

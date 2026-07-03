@@ -1,58 +1,117 @@
 <h2 style="font-size: 22px; font-weight: 700; color: #3A5A40; margin: 0 0 4px 0;">
   Monthly Progress — {{monthName}} {{year}} 📈
 </h2>
-<p style="color: #888; font-size: 14px; margin: 0 0 28px 0;">Here's a look at your spiritual activity this month.</p>
+<p style="color: #888; font-size: 14px; margin: 0 0 24px 0;">Your spiritual activity summary — same as in the Spiriment app.</p>
 
 <p>Hi <strong>{{userName}}</strong>,</p>
 <p>
-  You're making great progress! Here's your Spiriment summary for
-  <strong>{{monthName}} {{year}}</strong>. Keep it up — consistency is where growth happens.
+  Here's your full Spiriment progress report for <strong>{{monthName}} {{year}}</strong>.
+  Keep going — consistency is where growth happens.
 </p>
 
-<!-- Stats grid: use table for email client compatibility -->
-<table width="100%" cellpadding="0" cellspacing="0" style="margin: 28px 0;">
+<!-- Hero: Days Streak (matches app) -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 24px 0; background: linear-gradient(135deg, #3A5A40 0%, #588157 100%); border-radius: 16px; overflow: hidden;">
+  <tr>
+    <td style="padding: 24px 28px; color: #ffffff;">
+      <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px; letter-spacing: 0.5px;">📅 DAYS STREAK</div>
+      <div style="font-size: 36px; font-weight: 800; margin-bottom: 8px;">{{currentStreak}}/{{daysInMonth}}</div>
+      <div style="font-size: 13px; opacity: 0.85; line-height: 1.5; max-width: 280px;">
+        Let the word of Christ dwell in you richly in all wisdom — Colossians 3:16
+      </div>
+    </td>
+  </tr>
+</table>
+
+<!-- Stats grid -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 8px 0;">
   <tr>
     <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
       <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Days Read</div>
       <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{totalDaysRead}}</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px; font-style: italic;">Meditate therein day and night (Joshua 1:8)</div>
     </td>
     <td width="4%"></td>
     <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
-      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Reading Minutes</div>
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Minutes Read</div>
       <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{totalReadingMinutes}}</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px;">Every minute is God's presence.</div>
     </td>
   </tr>
   <tr><td colspan="3" style="height: 12px;"></td></tr>
   <tr>
     <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
-      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Longest Streak</div>
-      <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{longestStreak}} days 🔥</div>
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Avg. Weekly Streak</div>
+      <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{avgWeeklyStreak}} 🔥</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px;">Don't stop now!</div>
     </td>
     <td width="4%"></td>
     <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
-      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Sessions Completed</div>
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Mentorship Sessions</div>
       <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{sessionsCount}}</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px;">Connecting with mentors transforms life.</div>
     </td>
   </tr>
-  {{#if topBook}}
   <tr><td colspan="3" style="height: 12px;"></td></tr>
   <tr>
-    <td colspan="3" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px;">
-      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Top Book</div>
-      <div style="font-size: 20px; font-weight: 700; color: #3A5A40;">{{topBook}}</div>
-      {{#if topBookChapters}}
-      <div style="font-size: 13px; color: #888; margin-top: 4px;">{{topBookChapters}} chapters read</div>
+    <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Longest Run This Month</div>
+      <div style="font-size: 26px; font-weight: 700; color: #3A5A40;">{{longestConsecutiveDays}} days</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px;">Best consecutive reading streak in {{monthName}}.</div>
+    </td>
+    <td width="4%"></td>
+    <td width="48%" style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px; vertical-align: top;">
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">Best Reading Time</div>
+      <div style="font-size: 20px; font-weight: 700; color: #3A5A40;">{{readingTimePreferenceLabel}}</div>
+      <div style="font-size: 11px; color: #888; margin-top: 6px;">When you read most often this month.</div>
+    </td>
+  </tr>
+</table>
+
+<!-- Top Books -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 12px 0 24px 0;">
+  <tr>
+    <td style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;">📖 Top Books</div>
+      {{#if hasTopBooks}}
+        {{#each topBooks}}
+        <div style="font-size: 15px; color: {{#if @first}}#3A5A40{{else}}#555{{/if}}; font-weight: {{#if @first}}700{{else}}500{{/if}}; margin-bottom: 6px;">
+          {{#if @first}}★ {{/if}}{{this}}
+        </div>
+        {{/each}}
+      {{else}}
+        <div style="font-size: 15px; color: #888;">No books recorded this month yet.</div>
       {{/if}}
     </td>
   </tr>
-  {{/if}}
 </table>
 
-<p style="color: #555; font-size: 14px; font-style: italic; border-top: 1px solid #EBEEEC; padding-top: 20px;">
-  "Your word is a lamp for my feet, a light on my path." — Psalm 119:105
+<!-- Testament Focus -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 24px 0;">
+  <tr>
+    <td style="background: #f3f7f4; border-left: 4px solid #3A5A40; border-radius: 8px; padding: 16px 18px;">
+      <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;">Testament Focus</div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="48%" style="padding: 10px 12px; border-radius: 8px; background: {{#if ntFocus}}#3A5A40{{else}}#e8ece9{{/if}}; color: {{#if ntFocus}}#fff{{else}}#555{{/if}}; font-weight: 600; font-size: 14px;">
+            New Testament {{#if ntFocus}}✓{{/if}}
+            <div style="font-size: 11px; font-weight: 400; opacity: 0.85; margin-top: 2px;">{{ntCount}} reading{{#unless ntCountSingle}}s{{/unless}}</div>
+          </td>
+          <td width="4%"></td>
+          <td width="48%" style="padding: 10px 12px; border-radius: 8px; background: {{#if otFocus}}#3A5A40{{else}}#e8ece9{{/if}}; color: {{#if otFocus}}#fff{{else}}#555{{/if}}; font-weight: 600; font-size: 14px;">
+            Old Testament {{#if otFocus}}✓{{/if}}
+            <div style="font-size: 11px; font-weight: 400; opacity: 0.85; margin-top: 2px;">{{otCount}} reading{{#unless otCountSingle}}s{{/unless}}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<p style="color: #555; font-size: 14px; font-style: italic; border-top: 1px solid #EBEEEC; padding-top: 20px; margin-top: 8px;">
+  Every minute spent studying the Bible counts.
 </p>
 
-<div style="text-align: center; margin: 32px 0 8px 0;">
+<div style="text-align: center; margin: 28px 0 8px 0;">
   <a href="spiriment://reports" class="button">View Full Report in App</a>
 </div>
 

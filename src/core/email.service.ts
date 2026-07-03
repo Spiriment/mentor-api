@@ -921,12 +921,22 @@ export class EmailService {
     userName: string;
     monthName: string;
     year: number;
+    daysInMonth: number;
+    currentStreak: number;
     totalDaysRead: number;
     totalReadingMinutes: number;
-    longestStreak: number;
+    avgWeeklyStreak: number;
+    longestConsecutiveDays: number;
     sessionsCount: number;
-    topBook: string;
-    topBookChapters?: number;
+    readingTimePreferenceLabel: string;
+    topBooks: string[];
+    hasTopBooks: boolean;
+    otCount: number;
+    ntCount: number;
+    otFocus: boolean;
+    ntFocus: boolean;
+    otCountSingle: boolean;
+    ntCountSingle: boolean;
   }): Promise<void> {
     await this.sendEmailWithTemplate({
       to: props.to,
