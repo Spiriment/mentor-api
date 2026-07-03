@@ -1,0 +1,37 @@
+<h2>Welcome to {{planName}}!</h2>
+
+<p>Hello {{memberName}},</p>
+
+<p>
+  Great news — <strong>{{ownerName}}</strong> has added you to the
+  <strong>{{planName}}</strong> family plan on Spiriment.
+</p>
+
+<div class='info-box'>
+  <p style='margin: 0 0 10px 0;'><strong>Your plan tier:</strong> {{tierLabel}}</p>
+  <p style='margin: 0 0 10px 0;'><strong>Billing:</strong> Handled by {{ownerName}} — you won't be charged directly.</p>
+  {{#if ageDiscountPercent}}
+    <p style='margin: 0;'><strong>Youth discount:</strong> {{ageDiscountPercent}}% off applied to your tier.</p>
+  {{/if}}
+</div>
+
+<p>
+  You keep your own Spiriment login and get access to everything included in your
+  <strong>{{tierLabel}}</strong> plan — Bible study tools, AI features, and more based on your tier.
+</p>
+
+<p style='text-align: center;'>
+  <a href='spiriment://profile' class='button'>Open Spiriment</a>
+</p>
+
+<p style='margin-top: 20px;'>
+  <strong>What to do next:</strong><br />
+  • Open the app and go to <strong>Profile → Family Plan</strong> to see your plan details<br />
+  • Start reading — your progress can be shared with your family plan owner<br />
+  • Questions about billing? Ask {{ownerName}} — they manage the family plan
+</p>
+
+<p style='margin-top: 30px;'>
+  Blessings,<br />
+  <strong style='color: #3A5A40;'>The Spiriment Team</strong>
+</p>

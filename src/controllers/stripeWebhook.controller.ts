@@ -2,10 +2,10 @@ import { Request, Response } from 'express';
 import { stripeService } from '@/services/stripe.service';
 import { SubscriptionService } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
+import { familyPlanService } from '@/services/familyPlan.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
-import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { logger } from '@/config/int-services';
 
 const emailService = new EmailService(null);
@@ -42,6 +42,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'customer.subscription.updated': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
+        const familyMemberUserId: string | undefined = stripeSub.metadata?.familyMemberUserId;
         if (!userId) break;
 
         const priceId: string = stripeSub.items?.data?.[0]?.price?.id ?? '';
@@ -52,25 +53,21 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         else if (stripeSub.status === 'canceled') status = 'canceled';
         else if (stripeSub.status === 'trialing') status = 'trialing';
 
-        await subscriptionService.upsertSubscription(userId, {
-          tier,
-          status,
-          externalRef: stripeSub.id,
-          externalProvider: 'stripe',
-          mrrCents: stripeSub.items?.data?.[0]?.price?.unit_amount ?? 0,
-          expiresAt: stripeSub.current_period_end
-            ? new Date((stripeSub.current_period_end as number) * 1000)
-            : null,
-        });
-
-        // If this subscription belongs to a family member, sync the stripeSubscriptionId
-        const familyMember = await AppDataSource.getRepository(FamilyMember).findOne({
-          where: { userId },
-        });
-        if (familyMember && !familyMember.isParent) {
-          familyMember.stripeSubscriptionId = stripeSub.id;
-          await AppDataSource.getRepository(FamilyMember).save(familyMember);
+        if (familyMemberUserId) {
+          await familyPlanService.syncMemberSubscription(familyMemberUserId, stripeSub.id, status);
+        } else {
+          await subscriptionService.upsertSubscription(userId, {
+            tier,
+            status,
+            externalRef: stripeSub.id,
+            externalProvider: 'stripe',
+            mrrCents: stripeSub.items?.data?.[0]?.price?.unit_amount ?? 0,
+            expiresAt: stripeSub.current_period_end
+              ? new Date((stripeSub.current_period_end as number) * 1000)
+              : null,
+          });
         }
+
         break;
       }
 

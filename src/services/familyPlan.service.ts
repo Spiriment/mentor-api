@@ -6,12 +6,25 @@ import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubs
 import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
 import { getYouthDiscountPercent } from '@/common/constants/userAge';
+import { EmailService } from '@/core/email.service';
 import { v4 as uuidv4 } from 'uuid';
 
 const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
 const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
 
 const TIER_PRICE_EUR: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
+
+const TIER_LABELS: Record<string, string> = {
+  basic: 'Basic',
+  pro: 'Pro',
+  premium: 'Premium',
+};
+
+let emailServiceInstance: EmailService | null = null;
+function getEmailService(): EmailService {
+  if (!emailServiceInstance) emailServiceInstance = new EmailService(null);
+  return emailServiceInstance;
+}
 
 function calcAgeDiscount(birthday: Date | string | null | undefined): number {
   return getYouthDiscountPercent(birthday) ?? 0;
@@ -113,6 +126,7 @@ export class FamilyPlanService {
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUser.id}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
+      subscriptionMetadata: { familyMemberUserId: memberUser.id },
     });
 
     // Create member row — stripeSubscriptionId filled in by webhook on payment
@@ -126,6 +140,8 @@ export class FamilyPlanService {
       stripeSubscriptionId: null,
     });
     await this.memberRepo.save(member);
+
+    await this.notifyMemberAdded(plan, parentUser, memberUser, tier, discountPercent);
 
     return { checkoutUrl, discountPercent, effectivePriceEur: price };
   }
@@ -182,6 +198,7 @@ export class FamilyPlanService {
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUserId}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
+      subscriptionMetadata: { familyMemberUserId: memberUserId },
     });
 
     member.tier = newTier;
@@ -268,6 +285,30 @@ export class FamilyPlanService {
   }
 
   // ─── Webhook sync ─────────────────────────────────────────────────────────────
+
+  private async notifyMemberAdded(
+    plan: FamilyPlan,
+    parentUser: User,
+    memberUser: User,
+    tier: SubscriptionTier,
+    ageDiscountPercent: number,
+  ): Promise<void> {
+    const ownerName = `${parentUser.firstName ?? ''} ${parentUser.lastName ?? ''}`.trim() || parentUser.email;
+    const memberName = `${memberUser.firstName ?? ''} ${memberUser.lastName ?? ''}`.trim() || 'there';
+
+    try {
+      await getEmailService().sendFamilyPlanWelcomeEmail({
+        to: memberUser.email,
+        memberName,
+        ownerName,
+        planName: plan.name,
+        tierLabel: TIER_LABELS[tier] ?? tier,
+        ageDiscountPercent,
+      });
+    } catch {
+      // Non-blocking — member is still added if email fails
+    }
+  }
 
   async syncMemberSubscription(memberUserId: string, stripeSubscriptionId: string, status: string): Promise<void> {
     const member = await this.memberRepo.findOne({ where: { userId: memberUserId } });

@@ -48,6 +48,7 @@ class StripeService {
     successUrl: string;
     cancelUrl: string;
     couponId?: string;
+    subscriptionMetadata?: Record<string, string>;
   }): Promise<string> {
     const priceKey = params.interval === 'annual' ? `${params.tier}_annual` : params.tier;
     const priceId = TIER_PRICE_MAP[priceKey];
@@ -68,9 +69,9 @@ class StripeService {
       ...(params.couponId ? { discounts: [{ coupon: params.couponId }] } : {}),
       success_url: params.successUrl,
       cancel_url: params.cancelUrl,
-      metadata: { userId: params.user.id, tier: params.tier },
+      metadata: { userId: params.user.id, tier: params.tier, ...params.subscriptionMetadata },
       subscription_data: {
-        metadata: { userId: params.user.id, tier: params.tier },
+        metadata: { userId: params.user.id, tier: params.tier, ...params.subscriptionMetadata },
       },
     });
 

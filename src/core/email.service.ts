@@ -975,4 +975,26 @@ export class EmailService {
       },
     });
   }
+
+  public async sendFamilyPlanWelcomeEmail(props: {
+    to: string;
+    memberName: string;
+    ownerName: string;
+    planName: string;
+    tierLabel: string;
+    ageDiscountPercent?: number;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: `You've been added to ${props.planName} on Spiriment`,
+      partialName: 'family-plan-welcome',
+      templateData: {
+        title: 'Family Plan Welcome',
+        ...props,
+        ageDiscountPercent: props.ageDiscountPercent && props.ageDiscountPercent > 0
+          ? props.ageDiscountPercent
+          : undefined,
+      },
+    });
+  }
 }
