@@ -7,6 +7,7 @@ import { PromoCodeRedemption } from '@/database/entities/promoCodeRedemption.ent
 import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
 import { EmailService } from '@/core/email.service';
+import { getYouthDiscountPercent } from '@/common/constants/userAge';
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
@@ -101,24 +102,10 @@ export class SubscriptionService {
 
   // ─── Checkout ────────────────────────────────────────────────────────────────
 
-  private getAgeDiscountPercent(birthday: Date | string | null | undefined): number | null {
-    if (!birthday) return null;
-    const dob = new Date(birthday);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const monthDiff = today.getMonth() - dob.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-      age--;
-    }
-    if (age >= 10 && age <= 14) return 50;
-    if (age >= 15 && age <= 18) return 30;
-    return null;
-  }
-
   async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium', interval: 'monthly' | 'annual' = 'monthly'): Promise<string> {
     let couponId: string | undefined;
 
-    const ageDiscount = this.getAgeDiscountPercent(user.birthday);
+    const ageDiscount = getYouthDiscountPercent(user.birthday);
     if (ageDiscount !== null) {
       couponId = await stripeService.createPercentageCoupon(
         ageDiscount,

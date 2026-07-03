@@ -11,6 +11,7 @@ import {
   UserPayload,
   USER_ROLE,
 } from '@/common';
+import { calcAge, MIN_USER_AGE } from '@/common/constants/userAge';
 import bcrypt from 'bcryptjs';
 import { addMinutes } from 'date-fns';
 import {
@@ -821,6 +822,12 @@ export class AuthService {
 
     // Parse birthday string to Date
     const birthday = new Date(data.birthday);
+    if (calcAge(birthday) < MIN_USER_AGE) {
+      throw new AppError(
+        `You must be at least ${MIN_USER_AGE} years old to use Spiriment`,
+        400,
+      );
+    }
 
     await this.UserRepository.update(User.id, {
       firstName: data.firstName,

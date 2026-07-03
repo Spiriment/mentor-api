@@ -5,6 +5,7 @@ import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
+import { getYouthDiscountPercent } from '@/common/constants/userAge';
 import { v4 as uuidv4 } from 'uuid';
 
 const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
@@ -13,20 +14,23 @@ const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscript
 const TIER_PRICE_EUR: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
 
 function calcAgeDiscount(birthday: Date | string | null | undefined): number {
-  if (!birthday) return 0;
-  const dob = new Date(birthday);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-  if (age >= 10 && age <= 14) return 50;
-  if (age >= 15 && age <= 18) return 30;
-  return 0;
+  return getYouthDiscountPercent(birthday) ?? 0;
 }
 
 function effectivePrice(tier: string, discountPercent: number): number {
   const base = TIER_PRICE_EUR[tier] ?? 0;
   return Math.round(base * (1 - discountPercent / 100) * 100) / 100;
+}
+
+function daysReadThisMonth(monthlyStreakData?: { [key: string]: number[] } | null): number {
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return monthlyStreakData?.[key]?.length ?? 0;
+}
+
+function formatLastActive(lastActiveAt?: Date | null): string | null {
+  if (!lastActiveAt) return null;
+  return lastActiveAt.toISOString();
 }
 
 export class FamilyPlanService {
@@ -205,26 +209,61 @@ export class FamilyPlanService {
       relations: ['user'],
     });
 
-    const memberList = members.map((m) => ({
-      id: m.id,
-      userId: m.userId,
-      firstName: m.user?.firstName ?? '',
-      lastName: m.user?.lastName ?? '',
-      email: m.user?.email ?? '',
-      tier: m.tier,
-      ageDiscountPercent: m.ageDiscountPercent,
-      monthlyPriceEur: effectivePrice(m.tier, m.ageDiscountPercent),
-      isParent: m.isParent,
-    }));
+    const isOwner = plan.parentUserId === userId;
+    const parent = plan.parent;
+
+    const memberList = members.map((m) => {
+      const base = {
+        id: m.id,
+        userId: m.userId,
+        firstName: m.user?.firstName ?? '',
+        lastName: m.user?.lastName ?? '',
+        email: m.user?.email ?? '',
+        tier: m.tier,
+        ageDiscountPercent: m.ageDiscountPercent,
+        monthlyPriceEur: effectivePrice(m.tier, m.ageDiscountPercent),
+        isParent: m.isParent,
+        paymentStatus: m.stripeSubscriptionId ? 'active' as const : 'pending' as const,
+        ...(isOwner
+          ? {
+              activity: {
+                currentStreak: m.user?.currentStreak ?? 0,
+                longestStreak: m.user?.longestStreak ?? 0,
+                daysReadThisMonth: daysReadThisMonth(m.user?.monthlyStreakData),
+                lastActiveAt: formatLastActive(m.user?.lastActiveAt),
+              },
+            }
+          : {}),
+      };
+      return base;
+    });
 
     const totalMonthlyEur = memberList.reduce((sum, m) => sum + m.monthlyPriceEur, 0);
+
+    const familySummary = isOwner
+      ? {
+          totalMembers: memberList.length,
+          combinedStreakDays: memberList.reduce(
+            (sum, m) => sum + (m.activity?.currentStreak ?? 0),
+            0,
+          ),
+          totalDaysReadThisMonth: memberList.reduce(
+            (sum, m) => sum + (m.activity?.daysReadThisMonth ?? 0),
+            0,
+          ),
+        }
+      : undefined;
 
     return {
       planId: plan.id,
       planName: plan.name,
-      isOwner: plan.parentUserId === userId,
+      isOwner,
+      ownerName: parent
+        ? `${parent.firstName ?? ''} ${parent.lastName ?? ''}`.trim()
+        : '',
       members: memberList,
       totalMonthlyEur: Math.round(totalMonthlyEur * 100) / 100,
+      ...(familySummary ? { familySummary } : {}),
     };
   }
 

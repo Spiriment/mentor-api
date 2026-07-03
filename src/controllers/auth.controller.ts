@@ -17,6 +17,7 @@ import { DataSource } from 'typeorm';
 import { User } from '@/database/entities';
 import { sendSuccessResponse } from '@/common/helpers';
 import { churchPortalJoinRequestService } from '@/church-portal/services/churchPortalJoinRequest.service';
+import { calcAge, MIN_USER_AGE } from '@/common/constants/userAge';
 
 export class AuthController {
   private logger: Logger;
@@ -675,6 +676,16 @@ export class AuthController {
           obj[key] = updateData[key];
           return obj;
         }, {} as any);
+
+      if (filteredData.birthday) {
+        const birthday = new Date(filteredData.birthday);
+        if (calcAge(birthday) < MIN_USER_AGE) {
+          throw new AppError(
+            `You must be at least ${MIN_USER_AGE} years old to use Spiriment`,
+            StatusCodes.BAD_REQUEST,
+          );
+        }
+      }
 
       // Update user profile
       await this.userRepository.update(user.id, filteredData);

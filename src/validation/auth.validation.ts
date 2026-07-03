@@ -1,5 +1,13 @@
 import { z } from 'zod';
 import { GENDER, USER_ROLE } from '@/common/constants';
+import { calcAge, MIN_USER_AGE } from '@/common/constants/userAge';
+
+const birthdayMinAgeSchema = z
+  .string()
+  .min(1, 'Birthday is required')
+  .refine((val) => calcAge(new Date(val)) >= MIN_USER_AGE, {
+    message: `You must be at least ${MIN_USER_AGE} years old to use Spiriment`,
+  });
 
 export const registerSchema = z.object({
   email: z
@@ -150,7 +158,7 @@ export const updateProfileSchema = z.object({
   }),
   country: z.string().min(1, 'Country is required'),
   countryCode: z.string().min(2, 'Country code is required'),
-  birthday: z.string().min(1, 'Birthday is required'),
+  birthday: birthdayMinAgeSchema,
   timezone: z.string().optional(),
 });
 
