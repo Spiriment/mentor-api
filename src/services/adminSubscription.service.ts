@@ -148,29 +148,27 @@ export class AdminSubscriptionService {
   }
 
   async getRevenueHistory() {
-    // Generate mock data for the last 12 months as requested
+    const subRepo = AppDataSource.getRepository(UserSubscription);
+    const mrrRow = await subRepo
+      .createQueryBuilder('s')
+      .select('COALESCE(SUM(s.mrrCents), 0)', 'sum')
+      .where('s.status IN (:...st)', { st: ACTIVE_STATUSES })
+      .getRawOne<{ sum: string }>();
+
+    const currentMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     const now = new Date();
-    const history = [];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
-    // Starting point for our mock growth
-    const baseRevenueCents = 1200000; // $12,000.00
-    
+    const history = [];
+
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthLabel = months[d.getMonth()];
-      
-      // Artificial growth pattern: 2-5% growth each month + random noise
-      const growthFactor = Math.pow(1.04, 11 - i); 
-      const noise = 0.95 + (Math.random() * 0.1); // +/- 5%
-      const amount = Math.floor(baseRevenueCents * growthFactor * noise);
-      
       history.push({
-        month: monthLabel,
+        month: months[d.getMonth()],
         year: d.getFullYear(),
-        revenueCents: amount,
+        revenueCents: i === 0 ? currentMrrCents : 0,
       });
     }
+
     return history;
   }
 

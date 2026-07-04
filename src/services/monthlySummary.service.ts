@@ -173,12 +173,6 @@ export class MonthlySummaryService {
       
       return savedSummary as any;
     } catch (error) {
-      const fs = require('fs');
-      const errInfo = `\n[${new Date().toISOString()}] ERROR: ${error instanceof Error ? error.stack : String(error)}`;
-      try {
-        fs.appendFileSync('/Users/admin/Desktop/workspace/mentor-backend/debug_report_error.log', errInfo);
-      } catch (e) {}
-      
       logger.error('CRITICAL: Error generating monthly summary', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }

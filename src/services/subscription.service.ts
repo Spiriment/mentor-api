@@ -11,6 +11,8 @@ import { stripeService } from './stripe.service';
 import { EmailService } from '@/core/email.service';
 import { buildPricingPreview, getSubscriptionDiscount } from '@/common/constants/subscriptionPricing';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
+import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr';
+import { logger } from '@/config/int-services';
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
@@ -83,6 +85,7 @@ export class SubscriptionService {
       expiresAt: sub?.expiresAt ?? null,
       currentPeriodEnd: sub?.expiresAt ?? null,
       cancelAtPeriodEnd,
+      billingInterval: sub?.billingInterval ?? null,
       currency: sub?.currency ?? 'EUR',
       externalRef: sub?.externalRef ?? null,
       pricingPreview,
@@ -296,6 +299,7 @@ export class SubscriptionService {
       mrrCents?: number | null;
       expiresAt?: Date | null;
       notes?: string | null;
+      billingInterval?: 'monthly' | 'annual' | null;
     }
   ): Promise<void> {
     let sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
@@ -305,7 +309,23 @@ export class SubscriptionService {
         user: { id: userId } as User,
         currency: 'EUR',
       });
+    } else if (
+      data.externalProvider &&
+      sub.externalProvider &&
+      data.externalProvider !== sub.externalProvider &&
+      this.shouldIgnoreCrossProviderUpdate(sub, data)
+    ) {
+      logger.warn('Ignoring cross-provider subscription sync', {
+        userId,
+        existingProvider: sub.externalProvider,
+        incomingProvider: data.externalProvider,
+        existingTier: sub.tier,
+        incomingTier: data.tier,
+      });
+      return;
     }
+
+    const previousStatus = sub.status;
 
     sub.tier = data.tier;
     sub.status = data.status;
@@ -313,12 +333,58 @@ export class SubscriptionService {
     if (data.externalProvider !== undefined) sub.externalProvider = data.externalProvider;
     if (data.mrrCents !== undefined) sub.mrrCents = data.mrrCents;
     if (data.expiresAt !== undefined) sub.expiresAt = data.expiresAt;
+    if (data.billingInterval !== undefined) {
+      sub.billingInterval = data.billingInterval;
+    } else if (
+      data.mrrCents != null &&
+      ['basic', 'pro', 'premium'].includes(data.tier)
+    ) {
+      const inferred = inferBillingIntervalFromMrr(data.tier as 'basic' | 'pro' | 'premium', data.mrrCents);
+      if (inferred) sub.billingInterval = inferred;
+    }
     if (data.notes !== undefined) {
       sub.notes = data.notes ?? null;
     } else if (['basic', 'pro', 'premium'].includes(data.tier) && data.status === 'active') {
       sub.notes = null;
     }
 
+    if (data.status === 'past_due' && previousStatus !== 'past_due') {
+      sub.pastDueAt = new Date();
+    } else if (data.status === 'active' || data.status === 'trialing') {
+      sub.pastDueAt = null;
+    }
+
+    await this.subRepo.save(sub);
+  }
+
+  private shouldIgnoreCrossProviderUpdate(
+    existing: UserSubscription,
+    incoming: {
+      tier: SubscriptionTier;
+      status: SubscriptionStatus;
+      externalProvider?: string | null;
+    },
+  ): boolean {
+    const existingPaid =
+      ['active', 'past_due', 'trialing'].includes(existing.status) &&
+      TIER_RANK[existing.tier] >= TIER_RANK.basic;
+    if (!existingPaid) return false;
+
+    const incomingUpgrade =
+      incoming.status === 'active' &&
+      TIER_RANK[incoming.tier] > TIER_RANK[existing.tier];
+    if (incomingUpgrade) return false;
+
+    const stillValid = !existing.expiresAt || existing.expiresAt > new Date();
+    return stillValid || existing.status === 'active' || existing.status === 'past_due';
+  }
+
+  async markPastDue(userId: string): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub || sub.status === 'past_due') return;
+
+    sub.status = 'past_due';
+    sub.pastDueAt = new Date();
     await this.subRepo.save(sub);
   }
 
@@ -372,7 +438,10 @@ export class SubscriptionService {
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.user', 'u')
       .where('s.status = :status', { status: 'past_due' })
-      .andWhere('s.updatedAt < :cutoff', { cutoff })
+      .andWhere(
+        '(s.pastDueAt IS NOT NULL AND s.pastDueAt < :cutoff) OR (s.pastDueAt IS NULL AND s.updatedAt < :cutoff)',
+        { cutoff },
+      )
       .getMany();
   }
 
@@ -386,6 +455,8 @@ export class SubscriptionService {
         externalRef: null,
         externalProvider: null,
         expiresAt: null,
+        pastDueAt: null,
+        billingInterval: null,
         notes: null,
       }
     );

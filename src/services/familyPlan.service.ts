@@ -391,10 +391,16 @@ export class FamilyPlanService {
     if (!sub) {
       sub = this.subRepo.create({ user: { id: memberUserId } as User, currency: 'EUR' });
     }
+    const previousStatus = sub.status;
     sub.tier = member.tier;
     sub.status = status === 'past_due' ? 'past_due' : 'active';
     sub.externalRef = stripeSubscriptionId;
     sub.externalProvider = 'stripe_family';
+    if (status === 'past_due' && previousStatus !== 'past_due') {
+      sub.pastDueAt = new Date();
+    } else if (status === 'active') {
+      sub.pastDueAt = null;
+    }
     await this.subRepo.save(sub);
 
     if (options?.sendActivationEmail && status === 'active' && member.user) {

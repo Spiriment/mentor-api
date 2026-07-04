@@ -5,6 +5,10 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
+import {
+  inferBillingIntervalFromProductId,
+  mrrCentsFromRcProduct,
+} from '@/common/constants/subscriptionMrr';
 
 const emailService = new EmailService(null);
 const subscriptionService = new SubscriptionService(emailService);
@@ -82,6 +86,8 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           status: 'active',
           externalProvider: 'revenuecat',
           externalRef: product_id,
+          mrrCents: mrrCentsFromRcProduct(product_id),
+          billingInterval: inferBillingIntervalFromProductId(product_id),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
         });
         break;
@@ -101,6 +107,8 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           status: 'active',
           externalProvider: 'revenuecat',
           externalRef: product_id ?? current.externalRef,
+          mrrCents: product_id ? mrrCentsFromRcProduct(product_id) : undefined,
+          billingInterval: product_id ? inferBillingIntervalFromProductId(product_id) : undefined,
           expiresAt: expiration_at_ms
             ? new Date(expiration_at_ms)
             : current.expiresAt

@@ -33,6 +33,12 @@ export class UserSubscription extends BaseEntity {
   @Column({ name: 'expiresAt', type: 'datetime', nullable: true })
   expiresAt?: Date | null;
 
+  @Column({ name: 'pastDueAt', type: 'datetime', nullable: true })
+  pastDueAt?: Date | null;
+
+  @Column({ name: 'billingInterval', type: 'varchar', length: 16, nullable: true })
+  billingInterval?: 'monthly' | 'annual' | null;
+
   @Column({ name: 'externalProvider', type: 'varchar', length: 64, nullable: true })
   externalProvider?: string | null;
 

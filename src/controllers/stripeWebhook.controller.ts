@@ -7,6 +7,10 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
+import {
+  inferBillingIntervalFromStripeInterval,
+  stripePriceToMrrCents,
+} from '@/common/constants/subscriptionMrr';
 
 const emailService = new EmailService(null);
 const subscriptionService = new SubscriptionService(emailService);
@@ -74,6 +78,12 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         else if (stripeSub.status === 'trialing') status = 'trialing';
 
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
+        const stripePrice = stripeSub.items?.data?.[0]?.price;
+        const billingInterval = inferBillingIntervalFromStripeInterval(stripePrice?.recurring?.interval);
+        const mrrCents = stripePriceToMrrCents(
+          stripePrice?.unit_amount ?? 0,
+          stripePrice?.recurring?.interval,
+        );
 
         if (memberUserId) {
           if (status !== 'canceled') {
@@ -111,7 +121,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             status,
             externalRef: stripeSub.id,
             externalProvider: 'stripe',
-            mrrCents: stripeSub.items?.data?.[0]?.price?.unit_amount ?? 0,
+            mrrCents,
+            billingInterval,
             expiresAt: stripeSub.current_period_end
               ? new Date((stripeSub.current_period_end as number) * 1000)
               : null,
@@ -162,18 +173,13 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         if (subscriptionId) {
           const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
           if (familyMember) {
-            const memberSub = await subRepo.findOne({ where: { user: { id: familyMember.userId } } });
-            if (memberSub) {
-              memberSub.status = 'past_due';
-              await subRepo.save(memberSub);
-              break;
-            }
+            await subscriptionService.markPastDue(familyMember.userId);
+            break;
           }
 
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
-          if (memberSub) {
-            memberSub.status = 'past_due';
-            await subRepo.save(memberSub);
+          if (memberSub?.userId) {
+            await subscriptionService.markPastDue(memberSub.userId);
             break;
           }
         }
