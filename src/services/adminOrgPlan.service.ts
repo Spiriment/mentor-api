@@ -13,6 +13,7 @@ import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
 import { SubscriptionService } from './subscription.service';
 import { EmailService } from '@/core/email.service';
+import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
@@ -316,14 +317,11 @@ export class AdminOrgPlanService {
     const couponLabel = `church-${plan.id.slice(0, 8)}`;
     const couponId = await stripeService.createPercentageCoupon(discountPercent, couponLabel);
 
-    const successUrl = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
-    const cancelUrl = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
-
     const checkoutUrl = await stripeService.createCheckoutSession({
       user,
       tier,
-      successUrl,
-      cancelUrl,
+      successUrl: APP_DEEP_LINK_SUCCESS,
+      cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
     });
 

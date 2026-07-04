@@ -9,9 +9,7 @@ import { getYouthDiscountPercent } from '@/common/constants/userAge';
 import { EmailService } from '@/core/email.service';
 import { v4 as uuidv4 } from 'uuid';
 import { IsNull } from 'typeorm';
-
-const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
-const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
+import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 
 const TIER_PRICE_EUR: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
 
@@ -132,22 +130,12 @@ export class FamilyPlanService {
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUser.id}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
-      subscriptionMetadata: { familyMemberUserId: memberUser.id },
+      subscriptionMetadata: {
+        familyMemberUserId: memberUser.id,
+        familyPlanId: planId,
+        familyMemberAgeDiscount: String(discountPercent),
+      },
     });
-
-    // Create member row — stripeSubscriptionId filled in by webhook on payment
-    const member = this.memberRepo.create({
-      id: uuidv4(),
-      familyPlanId: planId,
-      userId: memberUser.id,
-      tier,
-      ageDiscountPercent: discountPercent,
-      isParent: false,
-      stripeSubscriptionId: null,
-    });
-    await this.memberRepo.save(member);
-
-    await this.notifyMemberAdded(plan, parentUser, memberUser, tier, discountPercent);
 
     return { checkoutUrl, discountPercent, effectivePriceEur: price };
   }
@@ -210,12 +198,12 @@ export class FamilyPlanService {
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUserId}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
-      subscriptionMetadata: { familyMemberUserId: memberUserId },
+      subscriptionMetadata: {
+        familyMemberUserId: memberUserId,
+        familyPlanId: planId,
+        familyMemberAgeDiscount: String(member.ageDiscountPercent),
+      },
     });
-
-    member.tier = newTier;
-    member.stripeSubscriptionId = null;
-    await this.memberRepo.save(member);
 
     return {
       checkoutUrl,
@@ -326,11 +314,56 @@ export class FamilyPlanService {
     return this.memberRepo.findOne({ where: { stripeSubscriptionId } });
   }
 
+  async ensureMemberFromCheckout(params: {
+    planId: string;
+    memberUserId: string;
+    tier: SubscriptionTier;
+    ageDiscountPercent: number;
+  }): Promise<FamilyMember> {
+    const existing = await this.memberRepo.findOne({
+      where: { userId: params.memberUserId },
+      relations: ['user', 'familyPlan', 'familyPlan.parent'],
+    });
+    if (existing) {
+      if (existing.removedAt) {
+        throw new AppError('This member is pending removal', 409);
+      }
+      existing.tier = params.tier;
+      existing.ageDiscountPercent = params.ageDiscountPercent;
+      await this.memberRepo.save(existing);
+      return existing;
+    }
+
+    const plan = await this.planRepo.findOne({
+      where: { id: params.planId, status: 'active' },
+      relations: ['parent'],
+    });
+    if (!plan) throw new AppError('Family plan not found', 404);
+
+    const memberUser = await this.userRepo.findOne({ where: { id: params.memberUserId } });
+    if (!memberUser) throw new AppError('Member user not found', 404);
+
+    const member = this.memberRepo.create({
+      id: uuidv4(),
+      familyPlanId: params.planId,
+      userId: params.memberUserId,
+      tier: params.tier,
+      ageDiscountPercent: params.ageDiscountPercent,
+      isParent: false,
+      stripeSubscriptionId: null,
+    });
+    await this.memberRepo.save(member);
+
+    await this.notifyMemberAdded(plan, plan.parent, memberUser, params.tier, params.ageDiscountPercent);
+
+    return member;
+  }
+
   async syncMemberSubscription(
     memberUserId: string,
     stripeSubscriptionId: string,
     status: string,
-    options?: { sendActivationEmail?: boolean },
+    options?: { sendActivationEmail?: boolean; tier?: SubscriptionTier },
   ): Promise<void> {
     const member = await this.memberRepo.findOne({
       where: { userId: memberUserId },
@@ -346,6 +379,10 @@ export class FamilyPlanService {
     }
 
     if (!member) return;
+
+    if (options?.tier) {
+      member.tier = options.tier;
+    }
 
     member.stripeSubscriptionId = stripeSubscriptionId;
     await this.memberRepo.save(member);

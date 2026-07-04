@@ -76,11 +76,34 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
 
         if (memberUserId) {
+          if (status !== 'canceled') {
+            const planId = stripeSub.metadata?.familyPlanId;
+            if (planId) {
+              try {
+                await familyPlanService.ensureMemberFromCheckout({
+                  planId,
+                  memberUserId,
+                  tier,
+                  ageDiscountPercent:
+                    parseInt(stripeSub.metadata?.familyMemberAgeDiscount ?? '0', 10) || 0,
+                });
+              } catch (err: any) {
+                logger.error(
+                  `Family member checkout activation failed: memberUserId=${memberUserId} planId=${planId}`,
+                  err instanceof Error ? err : new Error(String(err)),
+                );
+              }
+            }
+          }
+
           await familyPlanService.syncMemberSubscription(
             memberUserId,
             stripeSub.id,
             status,
-            { sendActivationEmail: event.type === 'customer.subscription.created' },
+            {
+              sendActivationEmail: event.type === 'customer.subscription.created',
+              tier,
+            },
           );
         } else {
           await subscriptionService.upsertSubscription(userId, {
