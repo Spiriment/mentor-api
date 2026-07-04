@@ -12,6 +12,7 @@ import { PromoCodeRedemption } from '@/database/entities/promoCodeRedemption.ent
 import { AppError } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminAuditService } from './adminAudit.service';
+import { mrrSnapshotService } from './mrrSnapshot.service';
 
 const MAX_INTERNAL_TEST_CODES = 3;
 
@@ -148,28 +149,7 @@ export class AdminSubscriptionService {
   }
 
   async getRevenueHistory() {
-    const subRepo = AppDataSource.getRepository(UserSubscription);
-    const mrrRow = await subRepo
-      .createQueryBuilder('s')
-      .select('COALESCE(SUM(s.mrrCents), 0)', 'sum')
-      .where('s.status IN (:...st)', { st: ACTIVE_STATUSES })
-      .getRawOne<{ sum: string }>();
-
-    const currentMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
-    const now = new Date();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const history = [];
-
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      history.push({
-        month: months[d.getMonth()],
-        year: d.getFullYear(),
-        revenueCents: i === 0 ? currentMrrCents : 0,
-      });
-    }
-
-    return history;
+    return mrrSnapshotService.getRevenueHistory(12);
   }
 
   async upsertForUser(

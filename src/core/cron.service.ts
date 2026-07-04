@@ -12,6 +12,7 @@ import { AssignmentReminderService } from "@/services/assignmentReminder.service
 import { EmailService } from "./email.service";
 import { subMonths } from "date-fns";
 import { SubscriptionService } from "@/services/subscription.service";
+import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
 
 export class CronService {
   private dataSource: DataSource;
@@ -310,6 +311,24 @@ export class CronService {
       );
       this.tasks.set("grace-period-downgrade", gracePeriodTask);
       logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
+
+      // Daily at 00:15 UTC — persist MRR snapshot for admin revenue history
+      const mrrSnapshotTask = cron.schedule(
+        "15 0 * * *",
+        async () => {
+          try {
+            await mrrSnapshotService.captureCurrentMonthSnapshot();
+          } catch (err) {
+            logger.error(
+              "Error in MRR snapshot cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("mrr-snapshot", mrrSnapshotTask);
+      logger.info("MRR snapshot cron job scheduled (daily 00:15 UTC)");
 
     } catch (error) {
       logger.error(

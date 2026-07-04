@@ -438,10 +438,7 @@ export class SubscriptionService {
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.user', 'u')
       .where('s.status = :status', { status: 'past_due' })
-      .andWhere(
-        '(s.pastDueAt IS NOT NULL AND s.pastDueAt < :cutoff) OR (s.pastDueAt IS NULL AND s.updatedAt < :cutoff)',
-        { cutoff },
-      )
+      .andWhere('COALESCE(s.pastDueAt, s.updatedAt) < :cutoff', { cutoff })
       .getMany();
   }
 
