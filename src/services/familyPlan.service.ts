@@ -179,9 +179,9 @@ export class FamilyPlanService {
     const member = await this.memberRepo.findOne({ where: { familyPlanId: planId, userId: memberUserId } });
     if (!member) throw new AppError('Member not found in this plan', 404);
 
-    // Cancel existing subscription and create a new one at the new tier
+    // Schedule existing subscription to end at period end, then checkout at the new tier
     if (member.stripeSubscriptionId) {
-      await stripeService.cancelSubscription(member.stripeSubscriptionId);
+      await stripeService.cancelSubscriptionAtPeriodEnd(member.stripeSubscriptionId);
     }
 
     let couponId: string | undefined;
@@ -363,7 +363,13 @@ export class FamilyPlanService {
     memberUserId: string,
     stripeSubscriptionId: string,
     status: string,
-    options?: { sendActivationEmail?: boolean; tier?: SubscriptionTier },
+    options?: {
+      sendActivationEmail?: boolean;
+      tier?: SubscriptionTier;
+      mrrCents?: number;
+      billingInterval?: 'monthly' | 'annual';
+      expiresAt?: Date | null;
+    },
   ): Promise<void> {
     const member = await this.memberRepo.findOne({
       where: { userId: memberUserId },
@@ -396,6 +402,9 @@ export class FamilyPlanService {
     sub.status = status === 'past_due' ? 'past_due' : 'active';
     sub.externalRef = stripeSubscriptionId;
     sub.externalProvider = 'stripe_family';
+    if (options?.mrrCents !== undefined) sub.mrrCents = options.mrrCents;
+    if (options?.billingInterval !== undefined) sub.billingInterval = options.billingInterval;
+    if (options?.expiresAt !== undefined) sub.expiresAt = options.expiresAt;
     if (status === 'past_due' && previousStatus !== 'past_due') {
       sub.pastDueAt = new Date();
     } else if (status === 'active') {
@@ -424,6 +433,8 @@ export class FamilyPlanService {
     sub.externalProvider = null;
     sub.mrrCents = 0;
     sub.expiresAt = null;
+    sub.pastDueAt = null;
+    sub.billingInterval = null;
     await this.subRepo.save(sub);
   }
 

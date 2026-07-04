@@ -173,7 +173,42 @@ export class SubscriptionService {
 
   // ─── Checkout ────────────────────────────────────────────────────────────────
 
+  async assertCheckoutAllowed(userId: string): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub) return;
+
+    const hasPaidTier = TIER_RANK[sub.tier] >= TIER_RANK.basic;
+    const isBlockingStatus = ['active', 'past_due'].includes(sub.status);
+    if (!hasPaidTier || !isBlockingStatus) return;
+
+    const provider = sub.externalProvider ?? '';
+
+    if (provider === 'revenuecat') {
+      throw new AppError(
+        'You already have an active App Store subscription. Manage it in the App Store before subscribing elsewhere.',
+        StatusCodes.CONFLICT,
+      );
+    }
+    if (provider === 'stripe_family') {
+      throw new AppError(
+        'Your subscription is managed through a family plan.',
+        StatusCodes.CONFLICT,
+      );
+    }
+    if (provider === 'internal_test') {
+      throw new AppError('You already have an active subscription.', StatusCodes.CONFLICT);
+    }
+    if (provider === 'stripe') {
+      throw new AppError(
+        'You already have an active subscription. Use Manage Subscription to change your plan.',
+        StatusCodes.CONFLICT,
+      );
+    }
+  }
+
   async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium', interval: 'monthly' | 'annual' = 'monthly'): Promise<string> {
+    await this.assertCheckoutAllowed(user.id);
+
     let couponId: string | undefined;
 
     const discount = getSubscriptionDiscount(user);
@@ -264,6 +299,8 @@ export class SubscriptionService {
     }
 
     // Ambassador — create Stripe coupon and return checkout URL
+    await this.assertCheckoutAllowed(user.id);
+
     const couponId = await stripeService.createPercentageCoupon(promoCode.discountPercent, code);
     const checkoutUrl = await stripeService.createCheckoutSession({
       user,
@@ -312,7 +349,7 @@ export class SubscriptionService {
     } else if (
       data.externalProvider &&
       sub.externalProvider &&
-      data.externalProvider !== sub.externalProvider &&
+      !this.isSameProviderFamily(sub.externalProvider, data.externalProvider) &&
       this.shouldIgnoreCrossProviderUpdate(sub, data)
     ) {
       logger.warn('Ignoring cross-provider subscription sync', {
@@ -357,6 +394,11 @@ export class SubscriptionService {
     await this.subRepo.save(sub);
   }
 
+  private isSameProviderFamily(a: string, b: string): boolean {
+    const normalize = (p: string) => (p === 'stripe' || p === 'stripe_family' ? 'stripe' : p);
+    return normalize(a) === normalize(b);
+  }
+
   private shouldIgnoreCrossProviderUpdate(
     existing: UserSubscription,
     incoming: {
@@ -365,6 +407,14 @@ export class SubscriptionService {
       externalProvider?: string | null;
     },
   ): boolean {
+    // Successful Stripe payment always syncs — user completed web checkout
+    if (
+      incoming.externalProvider === 'stripe' &&
+      ['active', 'trialing'].includes(incoming.status)
+    ) {
+      return false;
+    }
+
     const existingPaid =
       ['active', 'past_due', 'trialing'].includes(existing.status) &&
       TIER_RANK[existing.tier] >= TIER_RANK.basic;
@@ -443,6 +493,22 @@ export class SubscriptionService {
   }
 
   async downgradeToFree(userId: string): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub) return;
+
+    if (
+      sub.externalRef &&
+      (sub.externalProvider === 'stripe' || sub.externalProvider === 'stripe_family')
+    ) {
+      try {
+        await stripeService.cancelSubscription(sub.externalRef);
+      } catch (err) {
+        logger.warn(
+          `Failed to cancel Stripe subscription during grace downgrade: userId=${userId} ref=${sub.externalRef}`,
+        );
+      }
+    }
+
     await this.subRepo.update(
       { user: { id: userId } },
       {
@@ -455,7 +521,7 @@ export class SubscriptionService {
         pastDueAt: null,
         billingInterval: null,
         notes: null,
-      }
+      },
     );
   }
 

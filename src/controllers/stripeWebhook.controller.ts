@@ -5,7 +5,7 @@ import { EmailService } from '@/core/email.service';
 import { familyPlanService } from '@/services/familyPlan.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
-import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
+import { UserSubscription, SubscriptionTier, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
 import {
   inferBillingIntervalFromStripeInterval,
@@ -32,6 +32,27 @@ function tierFromPriceId(priceId: string): SubscriptionTier | null {
     return null;
   }
   return tier;
+}
+
+function mapStripeSubscriptionStatus(stripeStatus: string): SubscriptionStatus | null {
+  switch (stripeStatus) {
+    case 'active':
+      return 'active';
+    case 'trialing':
+      return 'trialing';
+    case 'past_due':
+      return 'past_due';
+    case 'canceled':
+      return 'canceled';
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'unpaid':
+    case 'paused':
+      return null;
+    default:
+      logger.warn('Stripe webhook: unhandled subscription status', { stripeStatus });
+      return null;
+  }
 }
 
 async function resolveFamilyMemberUserId(
@@ -72,10 +93,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const tier = tierFromPriceId(priceId);
         if (!tier) break;
 
-        let status: 'active' | 'past_due' | 'canceled' | 'trialing' = 'active';
-        if (stripeSub.status === 'past_due') status = 'past_due';
-        else if (stripeSub.status === 'canceled') status = 'canceled';
-        else if (stripeSub.status === 'trialing') status = 'trialing';
+        const status = mapStripeSubscriptionStatus(stripeSub.status);
+        if (!status) break;
 
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
         const stripePrice = stripeSub.items?.data?.[0]?.price;
@@ -84,6 +103,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           stripePrice?.unit_amount ?? 0,
           stripePrice?.recurring?.interval,
         );
+        const expiresAt = stripeSub.current_period_end
+          ? new Date((stripeSub.current_period_end as number) * 1000)
+          : null;
 
         if (memberUserId) {
           if (status !== 'canceled') {
@@ -113,6 +135,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             {
               sendActivationEmail: event.type === 'customer.subscription.created',
               tier,
+              mrrCents,
+              billingInterval,
+              expiresAt,
             },
           );
         } else {
@@ -123,9 +148,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             externalProvider: 'stripe',
             mrrCents,
             billingInterval,
-            expiresAt: stripeSub.current_period_end
-              ? new Date((stripeSub.current_period_end as number) * 1000)
-              : null,
+            expiresAt,
             notes: cancelAtPeriodEnd ? CANCEL_AT_PERIOD_END_NOTE : undefined,
           });
 
