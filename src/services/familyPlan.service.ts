@@ -8,6 +8,7 @@ import { stripeService } from './stripe.service';
 import { getYouthDiscountPercent } from '@/common/constants/userAge';
 import { EmailService } from '@/core/email.service';
 import { v4 as uuidv4 } from 'uuid';
+import { IsNull } from 'typeorm';
 
 const APP_DEEP_LINK_SUCCESS = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/success';
 const APP_DEEP_LINK_CANCEL = process.env.APP_DEEP_LINK ?? 'spiriment://subscription/cancel';
@@ -104,7 +105,12 @@ export class FamilyPlanService {
     if (!memberUser) throw new AppError('No account found with that email. Ask them to sign up first.', 404);
 
     const alreadyMember = await this.memberRepo.findOne({ where: { userId: memberUser.id } });
-    if (alreadyMember) throw new AppError('This user is already part of a family plan', 409);
+    if (alreadyMember) {
+      if (alreadyMember.removedAt) {
+        throw new AppError('This member is pending removal. Wait until their billing period ends.', 409);
+      }
+      throw new AppError('This user is already part of a family plan', 409);
+    }
 
     const discountPercent = calcAgeDiscount(memberUser.birthday);
     const price = effectivePrice(tier, discountPercent);
@@ -154,13 +160,19 @@ export class FamilyPlanService {
     if (plan.parentUserId !== parentUser.id) throw new AppError('Only the plan owner can remove members', 403);
     if (memberUserId === parentUser.id) throw new AppError('Cannot remove the plan owner', 400);
 
-    const member = await this.memberRepo.findOne({ where: { familyPlanId: planId, userId: memberUserId } });
+    const member = await this.memberRepo.findOne({
+      where: { familyPlanId: planId, userId: memberUserId, removedAt: IsNull() },
+    });
     if (!member) throw new AppError('Member not found in this plan', 404);
 
     if (member.stripeSubscriptionId) {
+      member.removedAt = new Date();
+      await this.memberRepo.save(member);
       await stripeService.cancelSubscriptionAtPeriodEnd(member.stripeSubscriptionId);
+      return;
     }
 
+    await this.downgradeMemberSubscription(memberUserId);
     await this.memberRepo.remove(member);
   }
 
@@ -222,7 +234,7 @@ export class FamilyPlanService {
 
     const plan = membership.familyPlan;
     const members = await this.memberRepo.find({
-      where: { familyPlanId: plan.id },
+      where: { familyPlanId: plan.id, removedAt: IsNull() },
       relations: ['user'],
     });
 
@@ -324,18 +336,26 @@ export class FamilyPlanService {
       where: { userId: memberUserId },
       relations: ['user', 'familyPlan', 'familyPlan.parent'],
     });
+
+    if (status === 'canceled') {
+      await this.downgradeMemberSubscription(memberUserId, stripeSubscriptionId);
+      if (member?.removedAt) {
+        await this.memberRepo.remove(member);
+      }
+      return;
+    }
+
     if (!member) return;
 
     member.stripeSubscriptionId = stripeSubscriptionId;
     await this.memberRepo.save(member);
 
-    // Also upsert the UserSubscription row for the member
     let sub = await this.subRepo.findOne({ where: { user: { id: memberUserId } } });
     if (!sub) {
       sub = this.subRepo.create({ user: { id: memberUserId } as User, currency: 'EUR' });
     }
     sub.tier = member.tier;
-    sub.status = status === 'canceled' ? 'canceled' : 'active';
+    sub.status = status === 'past_due' ? 'past_due' : 'active';
     sub.externalRef = stripeSubscriptionId;
     sub.externalProvider = 'stripe_family';
     await this.subRepo.save(sub);
@@ -343,6 +363,25 @@ export class FamilyPlanService {
     if (options?.sendActivationEmail && status === 'active' && member.user) {
       await this.notifyMemberActivated(member);
     }
+  }
+
+  private async downgradeMemberSubscription(
+    memberUserId: string,
+    stripeSubscriptionId?: string | null,
+  ): Promise<void> {
+    let sub = await this.subRepo.findOne({ where: { user: { id: memberUserId } } });
+    if (!sub && stripeSubscriptionId) {
+      sub = await this.subRepo.findOne({ where: { externalRef: stripeSubscriptionId } });
+    }
+    if (!sub) return;
+
+    sub.tier = 'free';
+    sub.status = 'active';
+    sub.externalRef = null;
+    sub.externalProvider = null;
+    sub.mrrCents = 0;
+    sub.expiresAt = null;
+    await this.subRepo.save(sub);
   }
 
   private async notifyMemberActivated(member: FamilyMember): Promise<void> {

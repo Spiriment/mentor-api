@@ -73,7 +73,28 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
         break;
       }
 
-      case 'CANCELLATION':
+      case 'CANCELLATION': {
+        const current = await subscriptionService.getSubscriptionForUser(user.id);
+        const tier =
+          current.tier !== 'none' && current.tier !== 'free'
+            ? (current.tier as SubscriptionTier)
+            : tierFromProductId(product_id);
+
+        await subscriptionService.upsertSubscription(user.id, {
+          tier,
+          status: 'active',
+          externalProvider: 'revenuecat',
+          externalRef: product_id ?? current.externalRef,
+          expiresAt: expiration_at_ms
+            ? new Date(expiration_at_ms)
+            : current.expiresAt
+              ? new Date(current.expiresAt as string | Date)
+              : null,
+          notes: 'cancel_at_period_end',
+        });
+        break;
+      }
+
       case 'EXPIRATION': {
         await subscriptionService.upsertSubscription(user.id, {
           tier: 'free',
@@ -82,6 +103,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           externalRef: null,
           mrrCents: 0,
           expiresAt: null,
+          notes: null,
         });
         break;
       }

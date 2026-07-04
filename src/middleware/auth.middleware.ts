@@ -65,6 +65,8 @@ export const authenticateToken = async (
         'longestStreak',
         'lastStreakDate',
         'weeklyStreakData',
+        'stripeCustomerId',
+        'churchDiscountPercent',
         'createdAt',
         'updatedAt',
       ],

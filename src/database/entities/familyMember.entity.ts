@@ -31,4 +31,7 @@ export class FamilyMember extends BaseEntity {
 
   @Column({ name: 'isParent', type: 'boolean', default: false })
   isParent!: boolean;
+
+  @Column({ name: 'removedAt', type: 'datetime', nullable: true })
+  removedAt?: Date | null;
 }

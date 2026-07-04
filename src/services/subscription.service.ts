@@ -288,7 +288,7 @@ export class SubscriptionService {
       externalProvider?: string | null;
       mrrCents?: number | null;
       expiresAt?: Date | null;
-      notes?: string;
+      notes?: string | null;
     }
   ): Promise<void> {
     let sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
