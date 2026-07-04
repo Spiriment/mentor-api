@@ -91,6 +91,12 @@ class StripeService {
     await this.client.subscriptions.cancel(stripeSubscriptionId);
   }
 
+  async cancelSubscriptionAtPeriodEnd(stripeSubscriptionId: string): Promise<void> {
+    await this.client.subscriptions.update(stripeSubscriptionId, {
+      cancel_at_period_end: true,
+    });
+  }
+
   async createPercentageCoupon(discountPercent: number, promoCode: string): Promise<string> {
     const coupon = await this.client.coupons.create({
       percent_off: discountPercent,

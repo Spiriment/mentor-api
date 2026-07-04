@@ -1,4 +1,5 @@
 import { addDays } from 'date-fns';
+import { StatusCodes } from 'http-status-codes';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
@@ -103,6 +104,45 @@ export class SubscriptionService {
     return TIER_RANK[userTier] >= TIER_RANK[required];
   }
 
+  async assertSessionQuotaAvailable(userId: string): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    const tier: SubscriptionTier =
+      sub && ['active', 'trialing', 'past_due'].includes(sub.status) ? sub.tier : 'none';
+    const allowed = SESSIONS_PER_MONTH[tier];
+
+    if (allowed === 0) {
+      throw new AppError('Your plan does not include mentorship sessions', StatusCodes.FORBIDDEN);
+    }
+
+    const used = await this.countSessionsThisMonth(userId);
+    if (used >= allowed) {
+      throw new AppError(
+        `Monthly session limit reached (${allowed} per month)`,
+        StatusCodes.FORBIDDEN,
+        'SESSION_QUOTA_EXCEEDED',
+      );
+    }
+  }
+
+  async completePromoRedemption(userId: string, promoCodeId: string): Promise<void> {
+    const promoCode = await this.promoRepo.findOne({ where: { id: promoCodeId, isActive: true } });
+    if (!promoCode) return;
+
+    const existing = await this.redemptionRepo.findOne({
+      where: { user: { id: userId }, promoCode: { id: promoCodeId } },
+    });
+    if (existing) return;
+
+    if (promoCode.usageLimit !== null && promoCode.usedCount >= promoCode.usageLimit!) {
+      return;
+    }
+
+    await this.redemptionRepo.save(
+      this.redemptionRepo.create({ promoCode, user: { id: userId } as User, redeemedAt: new Date() }),
+    );
+    await this.promoRepo.increment({ id: promoCode.id }, 'usedCount', 1);
+  }
+
   // ─── Checkout ────────────────────────────────────────────────────────────────
 
   async createCheckoutSession(user: User, tier: 'basic' | 'pro' | 'premium', interval: 'monthly' | 'annual' = 'monthly'): Promise<string> {
@@ -139,11 +179,11 @@ export class SubscriptionService {
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub) throw new AppError('No active subscription found', 404);
     if (!sub.externalRef) throw new AppError('No Stripe subscription found', 400);
+    if (sub.externalProvider !== 'stripe') {
+      throw new AppError('Cancel via the App Store for Apple subscriptions', 400);
+    }
 
-    await stripeService.cancelSubscription(sub.externalRef);
-    // Webhook will handle the status update; mark locally immediately
-    sub.status = 'canceled';
-    await this.subRepo.save(sub);
+    await stripeService.cancelSubscriptionAtPeriodEnd(sub.externalRef);
   }
 
   // ─── Promo codes ─────────────────────────────────────────────────────────────
@@ -190,12 +230,8 @@ export class SubscriptionService {
       successUrl: APP_DEEP_LINK_SUCCESS,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
+      subscriptionMetadata: { promoCodeId: promoCode.id },
     });
-
-    await this.redemptionRepo.save(
-      this.redemptionRepo.create({ promoCode, user, redeemedAt: new Date(), stripeCouponId: couponId })
-    );
-    await this.promoRepo.increment({ id: promoCode.id }, 'usedCount', 1);
 
     return { checkoutUrl, bypassStripe: false, tier: promoCode.tier };
   }

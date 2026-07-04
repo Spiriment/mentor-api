@@ -24,6 +24,16 @@ function tierFromPriceId(priceId: string): SubscriptionTier {
   return PRICE_TIER_MAP[priceId] ?? 'basic';
 }
 
+async function resolveFamilyMemberUserId(
+  stripeSub: { id: string; metadata?: { familyMemberUserId?: string } },
+): Promise<string | undefined> {
+  if (stripeSub.metadata?.familyMemberUserId) {
+    return stripeSub.metadata.familyMemberUserId;
+  }
+  const member = await familyPlanService.findMemberByStripeSubscriptionId(stripeSub.id);
+  return member?.userId;
+}
+
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const sig = req.headers['stripe-signature'] as string;
 
@@ -45,9 +55,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'customer.subscription.updated': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
-        const familyMemberUserId: string | undefined = stripeSub.metadata?.familyMemberUserId;
         if (!userId) break;
 
+        const memberUserId = await resolveFamilyMemberUserId(stripeSub);
         const priceId: string = stripeSub.items?.data?.[0]?.price?.id ?? '';
         const tier = tierFromPriceId(priceId);
 
@@ -56,9 +66,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         else if (stripeSub.status === 'canceled') status = 'canceled';
         else if (stripeSub.status === 'trialing') status = 'trialing';
 
-        if (familyMemberUserId) {
+        if (memberUserId) {
           await familyPlanService.syncMemberSubscription(
-            familyMemberUserId,
+            memberUserId,
             stripeSub.id,
             status,
             { sendActivationEmail: event.type === 'customer.subscription.created' },
@@ -74,6 +84,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               ? new Date((stripeSub.current_period_end as number) * 1000)
               : null,
           });
+
+          const promoCodeId = stripeSub.metadata?.promoCodeId;
+          if (promoCodeId && event.type === 'customer.subscription.created') {
+            await subscriptionService.completePromoRedemption(userId, promoCodeId);
+          }
         }
 
         break;
@@ -82,12 +97,12 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'customer.subscription.deleted': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
-        const familyMemberUserId: string | undefined = stripeSub.metadata?.familyMemberUserId;
         if (!userId) break;
 
-        if (familyMemberUserId) {
+        const memberUserId = await resolveFamilyMemberUserId(stripeSub);
+        if (memberUserId) {
           await familyPlanService.syncMemberSubscription(
-            familyMemberUserId,
+            memberUserId,
             stripeSub.id,
             'canceled',
           );
@@ -112,6 +127,16 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             : invoice.subscription?.id;
 
         if (subscriptionId) {
+          const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
+          if (familyMember) {
+            const memberSub = await subRepo.findOne({ where: { user: { id: familyMember.userId } } });
+            if (memberSub) {
+              memberSub.status = 'past_due';
+              await subRepo.save(memberSub);
+              break;
+            }
+          }
+
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
           if (memberSub) {
             memberSub.status = 'past_due';
@@ -143,6 +168,16 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             : invoice.subscription?.id;
 
         if (subscriptionId) {
+          const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
+          if (familyMember) {
+            const memberSub = await subRepo.findOne({ where: { user: { id: familyMember.userId } } });
+            if (memberSub && memberSub.status === 'past_due') {
+              memberSub.status = 'active';
+              await subRepo.save(memberSub);
+              break;
+            }
+          }
+
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
           if (memberSub && memberSub.status === 'past_due') {
             memberSub.status = 'active';

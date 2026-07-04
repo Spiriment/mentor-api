@@ -34,6 +34,8 @@ import {
   MENTORSHIP_REQUEST_STATUS,
 } from '@/database/entities/mentorshipRequest.entity';
 import { GroupSession } from '@/database/entities/groupSession.entity';
+import { EmailService } from '@/core/email.service';
+import { SubscriptionService } from './subscription.service';
 
 export interface CreateSessionDTO {
   mentorId: string;
@@ -132,6 +134,8 @@ export class SessionService {
           StatusCodes.FORBIDDEN
         );
       }
+
+      await new SubscriptionService(new EmailService(null)).assertSessionQuotaAvailable(data.menteeId);
 
       // Use a transaction to prevent race conditions
       const savedSession = await AppDataSource.transaction(

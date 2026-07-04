@@ -310,6 +310,10 @@ export class FamilyPlanService {
     }
   }
 
+  async findMemberByStripeSubscriptionId(stripeSubscriptionId: string): Promise<FamilyMember | null> {
+    return this.memberRepo.findOne({ where: { stripeSubscriptionId } });
+  }
+
   async syncMemberSubscription(
     memberUserId: string,
     stripeSubscriptionId: string,

@@ -24,7 +24,14 @@ function tierFromProductId(productId: string): SubscriptionTier {
 
 export const handleRevenueCatWebhook = async (req: Request, res: Response): Promise<void> => {
   const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
-  if (secret) {
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('REVENUECAT_WEBHOOK_SECRET is not configured');
+      res.status(503).json({ error: 'Webhook not configured' });
+      return;
+    }
+    logger.warn('REVENUECAT_WEBHOOK_SECRET not set — accepting webhooks without auth (development only)');
+  } else {
     const authHeader = req.headers['authorization'];
     if (authHeader !== secret) {
       res.status(401).json({ error: 'Unauthorized' });
