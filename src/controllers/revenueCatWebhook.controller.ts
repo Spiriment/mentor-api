@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { SubscriptionService } from '@/services/subscription.service';
+import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
@@ -18,8 +18,21 @@ const PRODUCT_TIER_MAP: Record<string, SubscriptionTier> = {
   'com.spiriment.mentor.premium.annual': 'premium',
 };
 
-function tierFromProductId(productId: string): SubscriptionTier {
-  return PRODUCT_TIER_MAP[productId] ?? 'basic';
+function tierFromProductId(productId: string): SubscriptionTier | null {
+  if (!productId) return null;
+  const tier = PRODUCT_TIER_MAP[productId];
+  if (!tier) {
+    logger.warn('RevenueCat webhook: unknown product ID', { productId });
+    return null;
+  }
+  return tier;
+}
+
+function isWebhookAuthorized(authHeader: string | undefined, secret: string): boolean {
+  if (!authHeader) return false;
+  if (authHeader === secret) return true;
+  if (authHeader === `Bearer ${secret}`) return true;
+  return false;
 }
 
 export const handleRevenueCatWebhook = async (req: Request, res: Response): Promise<void> => {
@@ -33,7 +46,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     logger.warn('REVENUECAT_WEBHOOK_SECRET not set — accepting webhooks without auth (development only)');
   } else {
     const authHeader = req.headers['authorization'];
-    if (authHeader !== secret) {
+    if (!isWebhookAuthorized(authHeader, secret)) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
@@ -63,6 +76,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'RENEWAL':
       case 'PRODUCT_CHANGE': {
         const tier = tierFromProductId(product_id);
+        if (!tier) break;
         await subscriptionService.upsertSubscription(user.id, {
           tier,
           status: 'active',
@@ -80,6 +94,8 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
             ? (current.tier as SubscriptionTier)
             : tierFromProductId(product_id);
 
+        if (!tier) break;
+
         await subscriptionService.upsertSubscription(user.id, {
           tier,
           status: 'active',
@@ -90,7 +106,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
             : current.expiresAt
               ? new Date(current.expiresAt as string | Date)
               : null,
-          notes: 'cancel_at_period_end',
+          notes: CANCEL_AT_PERIOD_END_NOTE,
         });
         break;
       }

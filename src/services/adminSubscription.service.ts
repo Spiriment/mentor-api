@@ -15,7 +15,7 @@ import { adminAuditService } from './adminAudit.service';
 
 const MAX_INTERNAL_TEST_CODES = 3;
 
-const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing'];
+const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing', 'past_due'];
 
 export class AdminSubscriptionService {
   serialize(row: UserSubscription): Record<string, unknown> {

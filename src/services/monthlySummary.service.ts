@@ -1,6 +1,7 @@
 import { AppDataSource } from '@/config/data-source';
 import { MonthlySummary } from '@/database/entities/monthlySummary.entity';
 import { User } from '@/database/entities/user.entity';
+import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { StudySession } from '@/database/entities/studySession.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { logger } from '@/config/int-services';
@@ -13,8 +14,16 @@ import { Between } from 'typeorm';
 export class MonthlySummaryService {
   private summaryRepo = AppDataSource.getRepository(MonthlySummary);
   private userRepo = AppDataSource.getRepository(User);
+  private subRepo = AppDataSource.getRepository(UserSubscription);
   private studySessionRepo = AppDataSource.getRepository(StudySession);
   private sessionRepo = AppDataSource.getRepository(Session);
+
+  private async userHasReportAccess(userId: string): Promise<boolean> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub || !['active', 'trialing', 'past_due'].includes(sub.status)) return false;
+    if (sub.status === 'trialing') return true;
+    return ['basic', 'pro', 'premium'].includes(sub.tier);
+  }
 
   /**
    * Generate monthly summary for a user
@@ -306,6 +315,8 @@ export class MonthlySummaryService {
         if (!user.email) continue;
 
         try {
+          if (!(await this.userHasReportAccess(user.id))) continue;
+
           const summary = await this.getMonthlySummary(user.id, year, month);
           if (summary) {
             await emailService.sendMonthlyReportEmail(

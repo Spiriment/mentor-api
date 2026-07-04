@@ -31,11 +31,12 @@ router.post(
 
 router.get(
   '/',
+  requireSubscription('pro'),
   validate(sessionQuerySchema, 'query'),
   sessionController.getUserSessions
 );
 
-router.get('/:sessionId', sessionController.getSessionById);
+router.get('/:sessionId', requireSubscription('pro'), sessionController.getSessionById);
 
 router.put(
   '/:sessionId',

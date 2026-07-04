@@ -20,6 +20,7 @@ const TRIAL_DAYS = 7;
 const GRACE_PERIOD_DAYS = 1;
 const MAX_INTERNAL_TEST_CODES = 3;
 export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
+export const CANCEL_AT_PERIOD_END_NOTE = 'cancel_at_period_end';
 
 export class SubscriptionService {
   private emailService: EmailService;
@@ -70,6 +71,7 @@ export class SubscriptionService {
     const sessionsUsed = await this.countSessionsThisMonth(userId);
 
     const pricingPreview = sub?.user ? buildPricingPreview(sub.user) : null;
+    const cancelAtPeriodEnd = sub?.notes === CANCEL_AT_PERIOD_END_NOTE;
 
     return {
       tier,
@@ -81,6 +83,8 @@ export class SubscriptionService {
       sessionsAllowed,
       sessionsRemaining: Math.max(0, sessionsAllowed - sessionsUsed),
       expiresAt: sub?.expiresAt ?? null,
+      currentPeriodEnd: sub?.expiresAt ?? null,
+      cancelAtPeriodEnd,
       currency: sub?.currency ?? 'EUR',
       externalRef: sub?.externalRef ?? null,
       pricingPreview,
@@ -229,10 +233,15 @@ export class SubscriptionService {
       throw new AppError('You have already used a promo code', 400);
     }
     if (existingRedemption && !existingRedemption.completedAt) {
-      throw new AppError(
-        'You already have a pending promo checkout. Complete payment before trying again.',
-        400,
-      );
+      const pendingHours =
+        (Date.now() - new Date(existingRedemption.redeemedAt).getTime()) / (1000 * 60 * 60);
+      if (pendingHours < 24) {
+        throw new AppError(
+          'You already have a pending promo checkout. Complete payment before trying again.',
+          400,
+        );
+      }
+      await this.redemptionRepo.remove(existingRedemption);
     }
 
     if (promoCode.type === 'internal_test') {

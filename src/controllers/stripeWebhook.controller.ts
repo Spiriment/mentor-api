@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { stripeService } from '@/services/stripe.service';
-import { SubscriptionService } from '@/services/subscription.service';
+import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { familyPlanService } from '@/services/familyPlan.service';
 import { AppDataSource } from '@/config/data-source';
@@ -20,8 +20,14 @@ const PRICE_TIER_MAP: Record<string, SubscriptionTier> = {
   [process.env.STRIPE_PRICE_PREMIUM_ANNUAL ?? '']: 'premium',
 };
 
-function tierFromPriceId(priceId: string): SubscriptionTier {
-  return PRICE_TIER_MAP[priceId] ?? 'basic';
+function tierFromPriceId(priceId: string): SubscriptionTier | null {
+  if (!priceId) return null;
+  const tier = PRICE_TIER_MAP[priceId];
+  if (!tier) {
+    logger.warn('Stripe webhook: unknown price ID', { priceId });
+    return null;
+  }
+  return tier;
 }
 
 async function resolveFamilyMemberUserId(
@@ -60,11 +66,14 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const memberUserId = await resolveFamilyMemberUserId(stripeSub);
         const priceId: string = stripeSub.items?.data?.[0]?.price?.id ?? '';
         const tier = tierFromPriceId(priceId);
+        if (!tier) break;
 
         let status: 'active' | 'past_due' | 'canceled' | 'trialing' = 'active';
         if (stripeSub.status === 'past_due') status = 'past_due';
         else if (stripeSub.status === 'canceled') status = 'canceled';
         else if (stripeSub.status === 'trialing') status = 'trialing';
+
+        const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
 
         if (memberUserId) {
           await familyPlanService.syncMemberSubscription(
@@ -83,6 +92,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             expiresAt: stripeSub.current_period_end
               ? new Date((stripeSub.current_period_end as number) * 1000)
               : null,
+            notes: cancelAtPeriodEnd ? CANCEL_AT_PERIOD_END_NOTE : undefined,
           });
 
           const promoCodeId = stripeSub.metadata?.promoCodeId;
