@@ -7,7 +7,7 @@ export const TIER_ANNUAL_PRICE_EUR = { basic: 30, pro: 50, premium: 75 } as cons
 export const MENTOR_DISCOUNT_PERCENT = 30;
 
 export type PaidTier = keyof typeof TIER_PRICE_EUR;
-export type DiscountType = 'mentor' | 'youth';
+export type DiscountType = 'mentor' | 'youth' | 'church';
 
 export function getMentorDiscountPercent(
   user: Pick<User, 'role' | 'mentorApprovalStatus'>,
@@ -22,7 +22,7 @@ export function getMentorDiscountPercent(
 }
 
 export function getSubscriptionDiscount(
-  user: Pick<User, 'birthday' | 'role' | 'mentorApprovalStatus'>,
+  user: Pick<User, 'birthday' | 'role' | 'mentorApprovalStatus' | 'churchDiscountPercent'>,
 ) {
   const mentorDiscount = getMentorDiscountPercent(user);
   if (mentorDiscount !== null) {
@@ -30,6 +30,14 @@ export function getSubscriptionDiscount(
       percent: mentorDiscount,
       type: 'mentor' as DiscountType,
       label: `${MENTOR_DISCOUNT_PERCENT}% mentor discount`,
+    };
+  }
+
+  if (user.churchDiscountPercent && user.churchDiscountPercent > 0) {
+    return {
+      percent: user.churchDiscountPercent,
+      type: 'church' as DiscountType,
+      label: `${user.churchDiscountPercent}% church discount`,
     };
   }
 
@@ -49,7 +57,7 @@ export function applyDiscount(amount: number, percent: number): number {
   return Math.round(amount * (1 - percent / 100) * 100) / 100;
 }
 
-export function buildPricingPreview(user: Pick<User, 'birthday' | 'role' | 'mentorApprovalStatus'>) {
+export function buildPricingPreview(user: Pick<User, 'birthday' | 'role' | 'mentorApprovalStatus' | 'churchDiscountPercent'>) {
   const discount = getSubscriptionDiscount(user);
   const tiers = (['basic', 'pro', 'premium'] as PaidTier[]).reduce(
     (acc, tier) => {

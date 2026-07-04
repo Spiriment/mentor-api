@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { AppDataSource } from './config/data-source';
 import { logger } from './config/int-services';
 import { createRootRoutes } from './routes/root.route';
+import stripeWebhookRoutes from './routes/stripeWebhook.routes';
 import { errorHandler } from './common/middleware/errorHandler';
 import { Config } from './common';
 import { CronService } from './core/cron.service';
@@ -86,6 +87,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Stripe webhook must receive raw body — register before express.json()
+app.use('/api/stripe/webhook', stripeWebhookRoutes);
 
 app.use(express.json({ limit: '52mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));

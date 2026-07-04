@@ -13,6 +13,9 @@ const PRODUCT_TIER_MAP: Record<string, SubscriptionTier> = {
   'com.spiriment.mentor.basic.monthly': 'basic',
   'com.spiriment.mentor.pro.monthly': 'pro',
   'com.spiriment.mentor.premium.monthly': 'premium',
+  'com.spiriment.mentor.basic.annual': 'basic',
+  'com.spiriment.mentor.pro.annual': 'pro',
+  'com.spiriment.mentor.premium.annual': 'premium',
 };
 
 function tierFromProductId(productId: string): SubscriptionTier {

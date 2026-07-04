@@ -110,7 +110,8 @@ export class SubscriptionService {
 
     const discount = getSubscriptionDiscount(user);
     if (discount.percent !== null) {
-      const couponPrefix = discount.type === 'mentor' ? 'mentor' : 'age';
+      const couponPrefix =
+        discount.type === 'mentor' ? 'mentor' : discount.type === 'church' ? 'church' : 'age';
       couponId = await stripeService.createPercentageCoupon(
         discount.percent,
         `${couponPrefix}-${user.id.slice(0, 8)}`,

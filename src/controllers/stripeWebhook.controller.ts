@@ -15,6 +15,9 @@ const PRICE_TIER_MAP: Record<string, SubscriptionTier> = {
   [process.env.STRIPE_PRICE_BASIC_MONTHLY ?? '']: 'basic',
   [process.env.STRIPE_PRICE_PRO_MONTHLY ?? '']: 'pro',
   [process.env.STRIPE_PRICE_PREMIUM_MONTHLY ?? '']: 'premium',
+  [process.env.STRIPE_PRICE_BASIC_ANNUAL ?? '']: 'basic',
+  [process.env.STRIPE_PRICE_PRO_ANNUAL ?? '']: 'pro',
+  [process.env.STRIPE_PRICE_PREMIUM_ANNUAL ?? '']: 'premium',
 };
 
 function tierFromPriceId(priceId: string): SubscriptionTier {
@@ -79,21 +82,44 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'customer.subscription.deleted': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
+        const familyMemberUserId: string | undefined = stripeSub.metadata?.familyMemberUserId;
         if (!userId) break;
 
-        await subscriptionService.upsertSubscription(userId, {
-          tier: 'free',
-          status: 'active',
-          externalRef: null,
-          externalProvider: null,
-          mrrCents: 0,
-          expiresAt: null,
-        });
+        if (familyMemberUserId) {
+          await familyPlanService.syncMemberSubscription(
+            familyMemberUserId,
+            stripeSub.id,
+            'canceled',
+          );
+        } else {
+          await subscriptionService.upsertSubscription(userId, {
+            tier: 'free',
+            status: 'active',
+            externalRef: null,
+            externalProvider: null,
+            mrrCents: 0,
+            expiresAt: null,
+          });
+        }
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as any;
+        const subscriptionId: string | undefined =
+          typeof invoice.subscription === 'string'
+            ? invoice.subscription
+            : invoice.subscription?.id;
+
+        if (subscriptionId) {
+          const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
+          if (memberSub) {
+            memberSub.status = 'past_due';
+            await subRepo.save(memberSub);
+            break;
+          }
+        }
+
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (!customerId) break;
@@ -111,6 +137,20 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as any;
+        const subscriptionId: string | undefined =
+          typeof invoice.subscription === 'string'
+            ? invoice.subscription
+            : invoice.subscription?.id;
+
+        if (subscriptionId) {
+          const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
+          if (memberSub && memberSub.status === 'past_due') {
+            memberSub.status = 'active';
+            await subRepo.save(memberSub);
+            break;
+          }
+        }
+
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (!customerId) break;

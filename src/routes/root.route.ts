@@ -33,7 +33,6 @@ import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
 import { createChurchPortalRouter } from '@/church-portal/router';
 import subscriptionRoutes from './subscription.routes';
-import stripeWebhookRoutes from './stripeWebhook.routes';
 import revenueCatWebhookRoutes from './revenueCatWebhook.routes';
 import familyPlanRoutes from './familyPlan.routes';
 import aiRoutes from './ai.routes';
@@ -189,9 +188,6 @@ const createRootRoutes = () => {
   // AI routes (Pro+ gated)
   rootRouter.use('/api/ai', aiRoutes);
   rootRouter.use('/api/quiz', quizRoutes);
-
-  // Stripe webhook — must use raw body, registered BEFORE express.json() would touch it
-  rootRouter.use('/api/stripe/webhook', stripeWebhookRoutes);
 
   // RevenueCat webhook (Apple IAP events)
   rootRouter.use('/api/revenuecat/webhook', revenueCatWebhookRoutes);

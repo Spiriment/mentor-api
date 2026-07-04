@@ -4,6 +4,8 @@ import { MenteeProfile } from '../database/entities/menteeProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger, USER_ROLE } from '../common';
 import { Session, SESSION_STATUS } from '../database/entities/session.entity';
+import { EmailService } from '../core/email.service';
+import { SubscriptionService } from './subscription.service';
 
 export class MenteeProfileService {
   private menteeProfileRepository: Repository<MenteeProfile>;
@@ -170,7 +172,11 @@ export class MenteeProfileService {
       }
 
       await this.userRepository.update(userId, userUpdateData);
-      
+
+      new SubscriptionService(new EmailService(null))
+        .createTrialForUser(userId)
+        .catch(() => {});
+
       this.logger.info(`Completed mentee onboarding for user ${userId}`);
 
       return completedProfile;
