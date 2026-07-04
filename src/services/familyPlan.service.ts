@@ -158,7 +158,7 @@ export class FamilyPlanService {
     if (!member) throw new AppError('Member not found in this plan', 404);
 
     if (member.stripeSubscriptionId) {
-      await stripeService.cancelSubscription(member.stripeSubscriptionId);
+      await stripeService.cancelSubscriptionAtPeriodEnd(member.stripeSubscriptionId);
     }
 
     await this.memberRepo.remove(member);

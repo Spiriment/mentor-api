@@ -1,5 +1,6 @@
 import { addDays } from 'date-fns';
 import { StatusCodes } from 'http-status-codes';
+import { EntityManager } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
@@ -86,16 +87,20 @@ export class SubscriptionService {
     };
   }
 
-  private async countSessionsThisMonth(userId: string): Promise<number> {
+  private async countSessionsThisMonth(userId: string, manager?: EntityManager): Promise<number> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const result = await AppDataSource.query(
+    const runQuery = manager
+      ? manager.query.bind(manager)
+      : AppDataSource.query.bind(AppDataSource);
+
+    const result = await runQuery(
       `SELECT COUNT(*) as cnt FROM sessions
        WHERE (menteeId = ? OR mentorId = ?)
          AND status IN ('completed','in_progress','scheduled','confirmed')
          AND scheduledAt >= ?`,
-      [userId, userId, startOfMonth]
+      [userId, userId, startOfMonth],
     );
     return parseInt(result[0]?.cnt ?? '0', 10);
   }
@@ -104,8 +109,14 @@ export class SubscriptionService {
     return TIER_RANK[userTier] >= TIER_RANK[required];
   }
 
-  async assertSessionQuotaAvailable(userId: string): Promise<void> {
-    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+  async assertSessionQuotaAvailable(userId: string, manager?: EntityManager): Promise<void> {
+    const subRepo = manager ? manager.getRepository(UserSubscription) : this.subRepo;
+    const sub = manager
+      ? await subRepo.findOne({
+          where: { user: { id: userId } },
+          lock: { mode: 'pessimistic_write' },
+        })
+      : await subRepo.findOne({ where: { user: { id: userId } } });
     const tier: SubscriptionTier =
       sub && ['active', 'trialing', 'past_due'].includes(sub.status) ? sub.tier : 'none';
     const allowed = SESSIONS_PER_MONTH[tier];
@@ -114,7 +125,7 @@ export class SubscriptionService {
       throw new AppError('Your plan does not include mentorship sessions', StatusCodes.FORBIDDEN);
     }
 
-    const used = await this.countSessionsThisMonth(userId);
+    const used = await this.countSessionsThisMonth(userId, manager);
     if (used >= allowed) {
       throw new AppError(
         `Monthly session limit reached (${allowed} per month)`,
@@ -128,18 +139,30 @@ export class SubscriptionService {
     const promoCode = await this.promoRepo.findOne({ where: { id: promoCodeId, isActive: true } });
     if (!promoCode) return;
 
-    const existing = await this.redemptionRepo.findOne({
+    const redemption = await this.redemptionRepo.findOne({
       where: { user: { id: userId }, promoCode: { id: promoCodeId } },
     });
-    if (existing) return;
+
+    if (redemption?.completedAt) return;
 
     if (promoCode.usageLimit !== null && promoCode.usedCount >= promoCode.usageLimit!) {
       return;
     }
 
-    await this.redemptionRepo.save(
-      this.redemptionRepo.create({ promoCode, user: { id: userId } as User, redeemedAt: new Date() }),
-    );
+    if (redemption) {
+      redemption.completedAt = new Date();
+      await this.redemptionRepo.save(redemption);
+    } else {
+      await this.redemptionRepo.save(
+        this.redemptionRepo.create({
+          promoCode,
+          user: { id: userId } as User,
+          redeemedAt: new Date(),
+          completedAt: new Date(),
+        }),
+      );
+    }
+
     await this.promoRepo.increment({ id: promoCode.id }, 'usedCount', 1);
   }
 
@@ -199,10 +222,18 @@ export class SubscriptionService {
       throw new AppError('This promo code has reached its usage limit', 400);
     }
 
-    const alreadyRedeemed = await this.redemptionRepo.findOne({
+    const existingRedemption = await this.redemptionRepo.findOne({
       where: { user: { id: user.id } },
     });
-    if (alreadyRedeemed) throw new AppError('You have already used a promo code', 400);
+    if (existingRedemption?.completedAt) {
+      throw new AppError('You have already used a promo code', 400);
+    }
+    if (existingRedemption && !existingRedemption.completedAt) {
+      throw new AppError(
+        'You already have a pending promo checkout. Complete payment before trying again.',
+        400,
+      );
+    }
 
     if (promoCode.type === 'internal_test') {
       // Bypass Stripe — grant Premium directly
@@ -215,7 +246,7 @@ export class SubscriptionService {
       });
 
       await this.redemptionRepo.save(
-        this.redemptionRepo.create({ promoCode, user, redeemedAt: new Date() })
+        this.redemptionRepo.create({ promoCode, user, redeemedAt: new Date(), completedAt: new Date() })
       );
       await this.promoRepo.increment({ id: promoCode.id }, 'usedCount', 1);
 
@@ -232,6 +263,16 @@ export class SubscriptionService {
       couponId,
       subscriptionMetadata: { promoCodeId: promoCode.id },
     });
+
+    await this.redemptionRepo.save(
+      this.redemptionRepo.create({
+        promoCode,
+        user,
+        redeemedAt: new Date(),
+        completedAt: null,
+        stripeCouponId: couponId,
+      }),
+    );
 
     return { checkoutUrl, bypassStripe: false, tier: promoCode.tier };
   }

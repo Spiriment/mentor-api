@@ -137,11 +137,18 @@ export class SessionService {
 
       await new SubscriptionService(new EmailService(null)).assertSessionQuotaAvailable(data.menteeId);
 
+      const subscriptionService = new SubscriptionService(new EmailService(null));
+
       // Use a transaction to prevent race conditions
       const savedSession = await AppDataSource.transaction(
         async (transactionalEntityManager) => {
           const sessionRepository =
             transactionalEntityManager.getRepository(Session);
+
+          await subscriptionService.assertSessionQuotaAvailable(
+            data.menteeId,
+            transactionalEntityManager,
+          );
 
           // CRITICAL: Ensure the scheduled time is in the future
           const now = new Date();

@@ -16,6 +16,9 @@ export class PromoCodeRedemption extends BaseEntity {
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   redeemedAt!: Date;
 
+  @Column({ type: 'datetime', nullable: true })
+  completedAt?: Date | null;
+
   @Column({ type: 'varchar', length: 128, nullable: true })
   stripeCouponId?: string | null;
 }
