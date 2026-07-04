@@ -8,6 +8,7 @@ import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { USER_ROLE, MENTOR_APPROVAL_STATUS } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminSubscriptionService } from './adminSubscription.service';
+import { mrrSnapshotService } from './mrrSnapshot.service';
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -282,7 +283,25 @@ export class AdminDashboardService {
       totalUsers,
     };
 
-    return { kpis, userGrowth, subDistribution, sessionData, dauData, mauData };
+    let subscriptionGrowth: Array<{ month: string; revenue: number }> = [];
+    if (adminRole === ADMIN_ROLE.SUPER_ADMIN) {
+      const history = await mrrSnapshotService.getRevenueHistory(12);
+      subscriptionGrowth = history.map((h) => ({
+        month: `${h.month} '${String(h.year).slice(2)}`,
+        revenue: h.revenueCents / 100,
+      }));
+    }
+
+    return {
+      kpis,
+      userGrowth,
+      subDistribution,
+      sessionData,
+      dauData,
+      mauData,
+      subscriptionGrowth,
+      subscriptionGrowthCurrency: 'EUR' as const,
+    };
   }
 }
 

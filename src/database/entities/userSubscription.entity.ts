@@ -27,7 +27,7 @@ export class UserSubscription extends BaseEntity {
   @Column({ name: 'mrrCents', type: 'int', nullable: true })
   mrrCents?: number | null;
 
-  @Column({ type: 'varchar', length: 8, default: 'USD' })
+  @Column({ type: 'varchar', length: 8, default: 'EUR' })
   currency!: string;
 
   @Column({ name: 'expiresAt', type: 'datetime', nullable: true })

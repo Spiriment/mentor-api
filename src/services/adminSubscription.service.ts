@@ -129,7 +129,7 @@ export class AdminSubscriptionService {
 
     return {
       ...base,
-      revenue: { totalMrrCents, currency: 'USD', history: revenueHistory },
+      revenue: { totalMrrCents, currency: 'EUR', history: revenueHistory },
       revenueNote: null,
     };
   }
