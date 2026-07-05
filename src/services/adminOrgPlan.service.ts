@@ -11,9 +11,9 @@ import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubs
 import { AppError } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
-import { SubscriptionService } from './subscription.service';
-import { EmailService } from '@/core/email.service';
+import { familyPlanService } from './familyPlan.service';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
+import { logger } from '@/config/int-services';
 
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
@@ -325,6 +325,9 @@ export class AdminOrgPlanService {
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new AppError('User not found', 404);
     if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
+    if (plan.usedSeats >= plan.totalSeats) {
+      throw new AppError('Plan has no available seats', 409);
+    }
 
     // Determine discount: 25% for 50+ member churches, 20% otherwise
     const discountPercent = plan.usedSeats >= 50 ? CHURCH_BULK_DISCOUNT_PERCENT : CHURCH_DISCOUNT_PERCENT;
@@ -339,15 +342,8 @@ export class AdminOrgPlanService {
       successUrl: APP_DEEP_LINK_SUCCESS,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
+      subscriptionMetadata: { orgPlanId: planId },
     });
-
-    // Assign user to plan immediately — subscription row updates via webhook on payment
-    user.orgPlanId = planId;
-    await userRepo.save(user);
-
-    // Increment used seats
-    plan.usedSeats = plan.usedSeats + 1;
-    await planRepo.save(plan);
 
     await adminAuditService.log({
       adminUserId,
@@ -359,6 +355,42 @@ export class AdminOrgPlanService {
     });
 
     return { checkoutUrl, discountPercent, tier };
+  }
+
+  async completeChurchMemberAssignment(userId: string, orgPlanId: string): Promise<void> {
+    if (!isUuid(userId) || !isUuid(orgPlanId)) return;
+
+    const userRepo = AppDataSource.getRepository(User);
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) return;
+
+    if (user.orgPlanId === orgPlanId) return;
+
+    if (user.orgPlanId) {
+      logger.warn('Church seat assignment skipped: user already on another org plan', {
+        userId,
+        orgPlanId,
+        existingOrgPlanId: user.orgPlanId,
+      });
+      return;
+    }
+
+    const plan = await planRepo.findOne({
+      where: { id: orgPlanId, planType: 'church', status: 'active' },
+    });
+    if (!plan) return;
+
+    if (plan.usedSeats >= plan.totalSeats) {
+      logger.warn('Church seat assignment skipped: plan is full', { userId, orgPlanId });
+      return;
+    }
+
+    user.orgPlanId = orgPlanId;
+    plan.usedSeats += 1;
+    await userRepo.save(user);
+    await planRepo.save(plan);
   }
 
   async removeMember(
@@ -505,11 +537,7 @@ export class AdminOrgPlanService {
     if (!member) throw new AppError('Member not found in this plan', 404);
     if (member.isParent) throw new AppError('Cannot remove the plan owner via admin — deactivate the plan instead', 400);
 
-    if (member.stripeSubscriptionId) {
-      await stripeService.cancelSubscription(member.stripeSubscriptionId);
-    }
-
-    await this.familyMemberRepo.remove(member);
+    await familyPlanService.adminRemoveMember(planId, memberUserId);
 
     await adminAuditService.log({
       adminUserId,
@@ -536,28 +564,23 @@ export class AdminOrgPlanService {
     });
     if (!member) throw new AppError('Member not found in this plan', 404);
 
-    const oldTier = member.tier;
-    member.tier = newTier;
-    await this.familyMemberRepo.save(member);
-
-    // Also update the UserSubscription row
-    const subRepo = AppDataSource.getRepository(UserSubscription);
-    const sub = await subRepo.findOne({ where: { user: { id: memberUserId } } });
-    if (sub) {
-      sub.tier = newTier;
-      await subRepo.save(sub);
-    }
+    const result = await familyPlanService.adminChangeMemberTier(planId, memberUserId, newTier);
 
     await adminAuditService.log({
       adminUserId,
       action: 'admin.family_plan.change_tier',
       targetType: 'user',
       targetId: memberUserId,
-      metadata: { planId, oldTier, newTier },
+      metadata: { planId, oldTier: member.tier, newTier, checkoutUrl: result.checkoutUrl },
       ip: ip ?? null,
     });
 
-    return this.serializeFamilyMember({ ...member, user: await AppDataSource.getRepository(User).findOne({ where: { id: memberUserId } }) as User });
+    return {
+      ...this.serializeFamilyMember({ ...member, tier: newTier, user: await AppDataSource.getRepository(User).findOne({ where: { id: memberUserId } }) as User }),
+      checkoutUrl: result.checkoutUrl,
+      effectivePriceEur: result.effectivePriceEur,
+      billingInterval: result.billingInterval,
+    };
   }
 
   async adminDeactivateFamilyPlan(
@@ -570,16 +593,8 @@ export class AdminOrgPlanService {
     const plan = await this.familyPlanRepo.findOne({ where: { id: planId } });
     if (!plan) throw new AppError('Family plan not found', 404);
 
-    // Cancel all member Stripe subscriptions
     const members = await this.familyMemberRepo.find({ where: { familyPlanId: planId } });
-    for (const m of members) {
-      if (m.stripeSubscriptionId) {
-        await stripeService.cancelSubscription(m.stripeSubscriptionId).catch(() => {});
-      }
-    }
-
-    plan.status = 'inactive';
-    await this.familyPlanRepo.save(plan);
+    await familyPlanService.adminDeactivatePlan(planId);
 
     await adminAuditService.log({
       adminUserId,

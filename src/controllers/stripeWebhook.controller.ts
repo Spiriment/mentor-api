@@ -3,6 +3,7 @@ import { stripeService } from '@/services/stripe.service';
 import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { familyPlanService } from '@/services/familyPlan.service';
+import { adminOrgPlanService } from '@/services/adminOrgPlan.service';
 import { webhookIdempotencyService } from '@/services/webhookIdempotency.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
@@ -159,6 +160,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           const promoCodeId = stripeSub.metadata?.promoCodeId;
           if (promoCodeId && event.type === 'customer.subscription.created') {
             await subscriptionService.completePromoRedemption(userId, promoCodeId);
+          }
+
+          const orgPlanId = stripeSub.metadata?.orgPlanId;
+          if (orgPlanId && event.type === 'customer.subscription.created') {
+            await adminOrgPlanService.completeChurchMemberAssignment(userId, orgPlanId);
           }
         }
 

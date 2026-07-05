@@ -438,7 +438,7 @@ export class FamilyPlanService {
     sub.tier = member.tier;
     sub.status = status === 'past_due' ? 'past_due' : 'active';
     sub.externalRef = stripeSubscriptionId;
-    sub.externalProvider = 'stripe_family';
+    sub.externalProvider = member.isParent ? 'stripe' : 'stripe_family';
     if (options?.mrrCents !== undefined) sub.mrrCents = options.mrrCents;
     if (options?.billingInterval !== undefined) sub.billingInterval = options.billingInterval;
     if (options?.expiresAt !== undefined) sub.expiresAt = options.expiresAt;
@@ -473,6 +473,58 @@ export class FamilyPlanService {
     sub.pastDueAt = null;
     sub.billingInterval = null;
     await this.subRepo.save(sub);
+  }
+
+  // ─── Admin operations ─────────────────────────────────────────────────────────
+
+  async adminRemoveMember(planId: string, memberUserId: string): Promise<void> {
+    const member = await this.memberRepo.findOne({
+      where: { familyPlanId: planId, userId: memberUserId },
+    });
+    if (!member) throw new AppError('Member not found in this plan', 404);
+    if (member.isParent) {
+      throw new AppError('Cannot remove the plan owner via admin — deactivate the plan instead', 400);
+    }
+
+    if (member.stripeSubscriptionId) {
+      await stripeService.cancelSubscription(member.stripeSubscriptionId);
+    }
+    await this.downgradeMemberSubscription(memberUserId, member.stripeSubscriptionId);
+    await this.memberRepo.remove(member);
+  }
+
+  async adminChangeMemberTier(
+    planId: string,
+    memberUserId: string,
+    newTier: SubscriptionTier,
+    interval: 'monthly' | 'annual' = 'monthly',
+  ): Promise<{ checkoutUrl: string; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
+    const plan = await this.planRepo.findOne({
+      where: { id: planId },
+      relations: ['parent'],
+    });
+    if (!plan) throw new AppError('Family plan not found', 404);
+    if (!plan.parent) throw new AppError('Family plan parent not found', 500);
+
+    return this.changeMemberTier(planId, plan.parent, memberUserId, newTier, interval);
+  }
+
+  async adminDeactivatePlan(planId: string): Promise<void> {
+    const plan = await this.planRepo.findOne({ where: { id: planId } });
+    if (!plan) throw new AppError('Family plan not found', 404);
+
+    const members = await this.memberRepo.find({ where: { familyPlanId: planId } });
+    for (const member of members) {
+      if (member.stripeSubscriptionId) {
+        await stripeService.cancelSubscription(member.stripeSubscriptionId).catch(() => {});
+      }
+      if (!member.isParent) {
+        await this.downgradeMemberSubscription(member.userId, member.stripeSubscriptionId);
+      }
+    }
+
+    plan.status = 'inactive';
+    await this.planRepo.save(plan);
   }
 
   private async notifyMemberActivated(member: FamilyMember): Promise<void> {

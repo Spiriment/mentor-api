@@ -241,7 +241,7 @@ export class SubscriptionService {
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub) throw new AppError('No active subscription found', 404);
     if (!sub.externalRef) throw new AppError('No Stripe subscription found', 400);
-    if (sub.externalProvider !== 'stripe') {
+    if (sub.externalProvider !== 'stripe' && sub.externalProvider !== 'stripe_family') {
       throw new AppError('Cancel via the App Store for Apple subscriptions', 400);
     }
 
