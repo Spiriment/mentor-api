@@ -332,6 +332,26 @@ export class CronService {
       this.tasks.set("mrr-snapshot", mrrSnapshotTask);
       logger.info("MRR snapshot cron job scheduled (daily 00:15 UTC)");
 
+      const churchPendingPruneTask = cron.schedule(
+        "30 0 * * *",
+        async () => {
+          try {
+            const pruned = await adminOrgPlanService.pruneExpiredPendingChurchCheckouts();
+            if (pruned > 0) {
+              logger.info(`Pruned ${pruned} expired pending church checkout reservations`);
+            }
+          } catch (err) {
+            logger.error(
+              "Error in church pending checkout prune cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("church-pending-prune", churchPendingPruneTask);
+      logger.info("Church pending checkout prune cron scheduled (daily 00:30 UTC)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",

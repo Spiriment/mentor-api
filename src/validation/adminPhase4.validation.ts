@@ -17,6 +17,8 @@ export const adminUserSubscriptionPutSchema = z.object({
   externalProvider: z.string().max(64).nullable().optional(),
   externalRef: z.string().max(255).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
+  billingInterval: z.enum(['monthly', 'annual']).nullable().optional(),
+  pastDueAt: z.string().max(40).nullable().optional(),
 });
 
 export const adminOrgPlanCreateBodySchema = z.object({

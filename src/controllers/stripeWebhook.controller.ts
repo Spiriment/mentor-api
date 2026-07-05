@@ -13,6 +13,7 @@ import {
   inferBillingIntervalFromStripeInterval,
   mrrCentsFromStripeInvoice,
   mrrCentsFromStripeSubscription,
+  mrrCentsFromCatalogTier,
 } from '@/common/constants/subscriptionMrr';
 
 const emailService = new EmailService(null);
@@ -81,6 +82,19 @@ async function resolveFamilyMemberUserId(
 
 function optionalMrr(mrrCents: number | null): { mrrCents?: number } {
   return mrrCents != null ? { mrrCents } : {};
+}
+
+function resolveStripeMrrCents(
+  stripeSub: Parameters<typeof mrrCentsFromStripeSubscription>[0],
+  tier: SubscriptionTier,
+  billingInterval: 'monthly' | 'annual',
+): number {
+  const fromStripe = mrrCentsFromStripeSubscription(stripeSub);
+  if (fromStripe != null) return fromStripe;
+  if (tier === 'basic' || tier === 'pro' || tier === 'premium') {
+    return mrrCentsFromCatalogTier(tier, billingInterval);
+  }
+  return 0;
 }
 
 async function releaseChurchMembershipIfNeeded(userId: string): Promise<void> {
@@ -183,7 +197,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
         const stripePrice = stripeSub.items?.data?.[0]?.price;
         const billingInterval = inferBillingIntervalFromStripeInterval(stripePrice?.recurring?.interval);
-        const mrrCents = mrrCentsFromStripeSubscription(stripeSub);
+        const mrrCents = resolveStripeMrrCents(stripeSub, tier, billingInterval);
         const expiresAt = stripeSub.current_period_end
           ? new Date((stripeSub.current_period_end as number) * 1000)
           : null;

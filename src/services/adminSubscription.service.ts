@@ -20,6 +20,7 @@ import {
   ENTITLED_STATUSES,
   PAYING_TIERS,
 } from '@/common/constants/subscriptionMetrics';
+import { CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 
 const MAX_INTERNAL_TEST_CODES = 3;
 
@@ -36,6 +37,9 @@ export class AdminSubscriptionService {
       expiresAt: row.expiresAt ?? null,
       externalProvider: row.externalProvider ?? null,
       externalRef: row.externalRef ?? null,
+      billingInterval: row.billingInterval ?? null,
+      pastDueAt: row.pastDueAt ?? null,
+      cancelAtPeriodEnd: row.notes === CANCEL_AT_PERIOD_END_NOTE,
       notes: row.notes ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -176,6 +180,8 @@ export class AdminSubscriptionService {
       externalProvider?: string | null;
       externalRef?: string | null;
       notes?: string | null;
+      billingInterval?: 'monthly' | 'annual' | null;
+      pastDueAt?: string | null;
     },
     adminUserId: string,
     ip?: string
@@ -217,6 +223,11 @@ export class AdminSubscriptionService {
         externalProvider: input.externalProvider ?? null,
         externalRef: input.externalRef ?? null,
         notes: input.notes ?? null,
+        billingInterval: input.billingInterval ?? null,
+        pastDueAt:
+          input.pastDueAt === undefined || input.pastDueAt === null || input.pastDueAt === ''
+            ? null
+            : new Date(input.pastDueAt),
       });
     } else {
       row.userId = userId;
@@ -239,6 +250,15 @@ export class AdminSubscriptionService {
       }
       if (input.notes !== undefined) {
         row.notes = input.notes;
+      }
+      if (input.billingInterval !== undefined) {
+        row.billingInterval = input.billingInterval;
+      }
+      if (input.pastDueAt !== undefined) {
+        row.pastDueAt =
+          input.pastDueAt === null || input.pastDueAt === ''
+            ? null
+            : new Date(input.pastDueAt);
       }
     }
 

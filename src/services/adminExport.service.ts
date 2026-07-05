@@ -1,4 +1,5 @@
 import { Between, In } from 'typeorm';
+import { fromZonedTime } from 'date-fns-tz';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
@@ -357,6 +358,8 @@ export class AdminExportService {
         'status',
         'mrrCents',
         'currency',
+        'billingInterval',
+        'pastDueAt',
         'expiresAt',
         'provider',
       ]),
@@ -373,6 +376,8 @@ export class AdminExportService {
           sub.status,
           includeMrr ? sub.mrrCents ?? 0 : '',
           sub.currency,
+          sub.billingInterval ?? '',
+          iso(sub.pastDueAt),
           iso(sub.expiresAt),
           sub.externalProvider,
         ])
@@ -504,15 +509,7 @@ export class AdminExportService {
     return toBuffer(lines);
   }
   async buildMonthlyReport(year: number, month: number, timezone: string): Promise<Buffer> {
-    // Compute UTC window for the requested month in the given timezone.
-    // We use a simple offset approach: build local midnight boundaries and let
-    // the DB/JS Date handle the UTC conversion.
-    const tzOffset = this.resolveOffsetMinutes(timezone);
-    const startLocal = new Date(year, month - 1, 1, 0, 0, 0, 0);
-    const endLocal = new Date(year, month, 1, 0, 0, 0, 0); // exclusive
-
-    const startUtc = new Date(startLocal.getTime() - tzOffset * 60 * 1000);
-    const endUtc = new Date(endLocal.getTime() - tzOffset * 60 * 1000);
+    const { startUtc, endUtc } = this.getMonthBoundsUtc(year, month, timezone);
 
     const userRepo = AppDataSource.getRepository(User);
     const sessionRepo = AppDataSource.getRepository(Session);
@@ -600,26 +597,26 @@ export class AdminExportService {
     return Buffer.from(lines.join('\r\n'), 'utf-8');
   }
 
-  // Resolve a named timezone to its current UTC offset in minutes.
-  // Falls back to 0 (UTC) on unknown zones.
-  private resolveOffsetMinutes(timezone: string): number {
+  private getMonthBoundsUtc(
+    year: number,
+    month: number,
+    timezone: string,
+  ): { startUtc: Date; endUtc: Date } {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startLocal = `${year}-${pad(month)}-01T00:00:00`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const endLocal = `${nextYear}-${pad(nextMonth)}-01T00:00:00`;
     try {
-      const now = new Date();
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        timeZoneName: 'shortOffset',
-      });
-      const parts = formatter.formatToParts(now);
-      const offsetPart = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
-      // offsetPart looks like "GMT+5:30" or "GMT-8"
-      const match = offsetPart.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
-      if (!match) return 0;
-      const sign = match[1] === '+' ? 1 : -1;
-      const hours = parseInt(match[2], 10);
-      const minutes = parseInt(match[3] ?? '0', 10);
-      return sign * (hours * 60 + minutes);
+      return {
+        startUtc: fromZonedTime(startLocal, timezone),
+        endUtc: fromZonedTime(endLocal, timezone),
+      };
     } catch {
-      return 0;
+      return {
+        startUtc: new Date(Date.UTC(year, month - 1, 1)),
+        endUtc: new Date(Date.UTC(nextYear, nextMonth - 1, 1)),
+      };
     }
   }
 }

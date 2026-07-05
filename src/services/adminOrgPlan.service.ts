@@ -1,4 +1,6 @@
 import { validate as isUuid } from 'uuid';
+import { In } from 'typeorm';
+import { fromZonedTime } from 'date-fns-tz';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { OrgPlan, type OrgPlanType } from '@/database/entities/orgPlan.entity';
@@ -7,6 +9,7 @@ import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
+import { mrrCentsFromCatalogTier } from '@/common/constants/subscriptionMrr';
 import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
 import { familyPlanService } from './familyPlan.service';
@@ -221,10 +224,41 @@ export class AdminOrgPlanService {
     return this.update(planId, { status: 'inactive' }, adminUserId, ip);
   }
 
-  async getMembers(planId: string) {
+  private async ensureChurchPlan(planId: string): Promise<OrgPlan> {
     if (!isUuid(planId)) {
       throw new AppError('Invalid plan id', 400);
     }
+    const plan = await AppDataSource.getRepository(OrgPlan).findOne({
+      where: { id: planId, planType: CHURCH_PLAN_TYPE },
+    });
+    if (!plan) {
+      throw new AppError('Plan not found', 404);
+    }
+    return plan;
+  }
+
+  /** Remove expired pending church checkout reservations from all active plans. */
+  async pruneExpiredPendingChurchCheckouts(): Promise<number> {
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+    const plans = await planRepo.find({
+      where: { planType: CHURCH_PLAN_TYPE, status: 'active' },
+    });
+
+    let pruned = 0;
+    for (const plan of plans) {
+      const before = parsePendingChurchAssignments(plan.metadata);
+      const after = pruneExpiredPendingChurchAssignments(before);
+      if (after.length < before.length) {
+        pruned += before.length - after.length;
+        plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: after };
+        await planRepo.save(plan);
+      }
+    }
+    return pruned;
+  }
+
+  async getMembers(planId: string) {
+    await this.ensureChurchPlan(planId);
     const users = await AppDataSource.getRepository(User).find({
       where: { orgPlanId: planId },
       select: [
@@ -242,9 +276,7 @@ export class AdminOrgPlanService {
   }
 
   async getReport(planId: string) {
-    if (!isUuid(planId)) {
-      throw new AppError('Invalid plan id', 400);
-    }
+    await this.ensureChurchPlan(planId);
 
     const users = await AppDataSource.getRepository(User).find({
       where: { orgPlanId: planId },
@@ -558,7 +590,12 @@ export class AdminOrgPlanService {
   private get familyPlanRepo() { return AppDataSource.getRepository(FamilyPlan); }
   private get familyMemberRepo() { return AppDataSource.getRepository(FamilyMember); }
 
-  private serializeFamilyPlan(p: FamilyPlan, memberCount = 0, totalMonthlyEur = 0) {
+  private serializeFamilyPlan(
+    p: FamilyPlan,
+    memberCount = 0,
+    totalMonthlyEur = 0,
+    mrrIsEstimated = false,
+  ) {
     return {
       id: p.id,
       name: p.name,
@@ -570,24 +607,71 @@ export class AdminOrgPlanService {
       parentEmail: p.parent?.email ?? null,
       memberCount,
       totalMonthlyEur,
+      mrrIsEstimated,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     };
   }
 
-  private serializeFamilyMember(m: FamilyMember) {
-    const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
-    const base = TIER_PRICE[m.tier] ?? 0;
-    const monthlyPriceEur = Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
+  private async loadMemberSubscriptions(
+    members: FamilyMember[],
+  ): Promise<Map<string, UserSubscription>> {
+    if (members.length === 0) return new Map();
+    const userIds = members.map((m) => m.userId);
+    const subs = await AppDataSource.getRepository(UserSubscription).find({
+      where: { userId: In(userIds) },
+    });
+    return new Map(subs.map((s) => [s.userId, s]));
+  }
+
+  private memberMonthlyEur(m: FamilyMember, sub?: UserSubscription | null): number {
+    if (sub?.mrrCents != null && sub.mrrCents > 0) {
+      return Math.round(sub.mrrCents) / 100;
+    }
+    const interval = sub?.billingInterval ?? 'monthly';
+    if (m.tier === 'basic' || m.tier === 'pro' || m.tier === 'premium') {
+      const catalogCents = mrrCentsFromCatalogTier(m.tier, interval);
+      const discounted = Math.round(catalogCents * (1 - m.ageDiscountPercent / 100));
+      return discounted / 100;
+    }
+    return 0;
+  }
+
+  private computeFamilyTotals(
+    members: FamilyMember[],
+    subsByUser: Map<string, UserSubscription>,
+  ): { totalMonthlyEur: number; mrrIsEstimated: boolean } {
+    let totalCents = 0;
+    let mrrIsEstimated = false;
+    for (const m of members) {
+      const sub = subsByUser.get(m.userId);
+      if (sub?.mrrCents != null && sub.mrrCents > 0) {
+        totalCents += sub.mrrCents;
+      } else {
+        mrrIsEstimated = true;
+        totalCents += Math.round(this.memberMonthlyEur(m, sub) * 100);
+      }
+    }
+    return {
+      totalMonthlyEur: Math.round(totalCents) / 100,
+      mrrIsEstimated,
+    };
+  }
+
+  private serializeFamilyMember(m: FamilyMember, sub?: UserSubscription | null) {
+    const monthlyPriceEur = this.memberMonthlyEur(m, sub);
+    const mrrIsEstimated = !(sub?.mrrCents != null && sub.mrrCents > 0);
     return {
       id: m.id,
       userId: m.userId,
       firstName: m.user?.firstName ?? '',
       lastName: m.user?.lastName ?? '',
       email: m.user?.email ?? '',
+      role: m.user?.role ?? 'mentee',
       tier: m.tier,
       ageDiscountPercent: m.ageDiscountPercent,
       monthlyPriceEur,
+      mrrIsEstimated,
       isParent: m.isParent,
       stripeSubscriptionId: m.stripeSubscriptionId ?? null,
       createdAt: m.createdAt,
@@ -606,12 +690,9 @@ export class AdminOrgPlanService {
     const data = await Promise.all(
       rows.map(async (p) => {
         const members = await this.familyMemberRepo.find({ where: { familyPlanId: p.id } });
-        const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
-        const totalMonthlyEur = members.reduce((sum, m) => {
-          const base = TIER_PRICE[m.tier] ?? 0;
-          return sum + Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
-        }, 0);
-        return this.serializeFamilyPlan(p, members.length, Math.round(totalMonthlyEur * 100) / 100);
+        const subsByUser = await this.loadMemberSubscriptions(members);
+        const { totalMonthlyEur, mrrIsEstimated } = this.computeFamilyTotals(members, subsByUser);
+        return this.serializeFamilyPlan(p, members.length, totalMonthlyEur, mrrIsEstimated);
       }),
     );
 
@@ -633,15 +714,12 @@ export class AdminOrgPlanService {
       order: { createdAt: 'ASC' },
     });
 
-    const TIER_PRICE: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
-    const totalMonthlyEur = members.reduce((sum, m) => {
-      const base = TIER_PRICE[m.tier] ?? 0;
-      return sum + Math.round(base * (1 - m.ageDiscountPercent / 100) * 100) / 100;
-    }, 0);
+    const subsByUser = await this.loadMemberSubscriptions(members);
+    const { totalMonthlyEur, mrrIsEstimated } = this.computeFamilyTotals(members, subsByUser);
 
     return {
-      ...this.serializeFamilyPlan(plan, members.length, Math.round(totalMonthlyEur * 100) / 100),
-      members: members.map((m) => this.serializeFamilyMember(m)),
+      ...this.serializeFamilyPlan(plan, members.length, totalMonthlyEur, mrrIsEstimated),
+      members: members.map((m) => this.serializeFamilyMember(m, subsByUser.get(m.userId))),
     };
   }
 

@@ -96,3 +96,14 @@ export function inferBillingIntervalFromMrr(tier: PaidTier, mrrCents: number): '
   if (mrrCents === monthly) return 'monthly';
   return null;
 }
+
+/** Catalog MRR when Stripe/RC amount is unavailable (e.g. missing unit_amount). */
+export function mrrCentsFromCatalogTier(
+  tier: PaidTier,
+  billingInterval: 'monthly' | 'annual' = 'monthly',
+): number {
+  if (billingInterval === 'annual') {
+    return Math.round((TIER_ANNUAL_PRICE_EUR[tier] * 100) / 12);
+  }
+  return Math.round(TIER_PRICE_EUR[tier] * 100);
+}
