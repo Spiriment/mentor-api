@@ -2,7 +2,8 @@ import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 
-export type OrgPlanType = 'church' | 'family';
+/** Church seat plans only. Family billing uses the `family_plans` table. */
+export type OrgPlanType = 'church';
 export type OrgPlanStatus = 'active' | 'inactive';
 
 @Entity('org_plans')

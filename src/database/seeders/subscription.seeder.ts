@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { Seeder } from 'typeorm-extension';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
-import { OrgPlan, OrgPlanType, OrgPlanStatus } from '@/database/entities/orgPlan.entity';
+import { OrgPlan, OrgPlanStatus } from '@/database/entities/orgPlan.entity';
 import { faker } from '@faker-js/faker';
 
 export default class SubscriptionSeeder implements Seeder {
@@ -13,32 +13,25 @@ export default class SubscriptionSeeder implements Seeder {
 
     console.log('📦 Seeding Organization Plans...');
     const orgPlans = [
-      { name: 'Redemption Church', planType: 'church' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
-      { name: 'Grace Fellowship', planType: 'church' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
-      { name: 'City Light Church', planType: 'church' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
-      { name: 'Smith Family', planType: 'family' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 20, usedSeats: 0 },
-      { name: 'Johnson Family', planType: 'family' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 20, usedSeats: 0 },
-      { name: 'Williams Family', planType: 'family' as OrgPlanType, status: 'active' as OrgPlanStatus, totalSeats: 20, usedSeats: 0 },
+      { name: 'Redemption Church', planType: 'church' as const, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
+      { name: 'Grace Fellowship', planType: 'church' as const, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
+      { name: 'City Light Church', planType: 'church' as const, status: 'active' as OrgPlanStatus, totalSeats: 100, usedSeats: 0 },
     ];
     const savedPlans = await orgRepo.save(orgPlans);
 
-    // Get some users to give them individual subscriptions
     const users = await userRepo.find({ take: 800 });
-    
+
     console.log(`📦 Seeding ${users.length} User Subscriptions & Plan Links...`);
-    
-    // Assign billing admins to plans
+
     for (const plan of savedPlans) {
       const adminUser = faker.helpers.arrayElement(users);
       plan.billingAdminUserId = adminUser.id;
       await orgRepo.save(plan);
     }
-    
-    // Split users: first 100 go to Org Plans, rest get individual subs
+
     const orgUsers = users.slice(0, 100);
     const individualUsers = users.slice(100);
 
-    // Assign users to plans
     const planUsage: Record<string, number> = {};
     const today = new Date();
     const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -46,22 +39,19 @@ export default class SubscriptionSeeder implements Seeder {
     for (let i = 0; i < orgUsers.length; i++) {
       const user = orgUsers[i];
       const plan = savedPlans[i % savedPlans.length];
-      
-      // Give them some activity data
+
       user.orgPlanId = plan.id;
       user.currentStreak = faker.number.int({ min: 2, max: 30 });
       user.longestStreak = user.currentStreak + faker.number.int({ min: 0, max: 20 });
-      
-      // Randomly populate some days in the current month for the chart
+
       const activeDays = Array.from({ length: 15 }, () => faker.number.int({ min: 1, max: 28 }));
       user.monthlyStreakData = { [monthKey]: [...new Set(activeDays)] };
-      
+
       await userRepo.save(user);
-      
+
       planUsage[plan.id] = (planUsage[plan.id] || 0) + 1;
     }
 
-    // Update the usedSeats in the database to match reality
     for (const plan of savedPlans) {
       plan.usedSeats = planUsage[plan.id] || 0;
       await orgRepo.save(plan);
@@ -70,7 +60,7 @@ export default class SubscriptionSeeder implements Seeder {
     const subs = individualUsers.map((user, i) => {
       let tier: 'basic' | 'pro' | 'premium' = 'basic';
       let mrr = 0;
-      
+
       if (i % 10 < 2) {
         tier = 'premium';
         mrr = 2999;

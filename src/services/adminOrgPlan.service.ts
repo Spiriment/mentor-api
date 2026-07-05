@@ -17,6 +17,7 @@ import { logger } from '@/config/int-services';
 
 const subscriptionService = new SubscriptionService(new EmailService(null));
 
+const CHURCH_PLAN_TYPE: OrgPlanType = 'church';
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
 const CHURCH_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -71,10 +72,10 @@ export class AdminOrgPlanService {
     };
   }
 
-  async list(planType: OrgPlanType, page = 1, limit = 50) {
+  async list(page = 1, limit = 50) {
     const repo = AppDataSource.getRepository(OrgPlan);
     const [rows, total] = await repo.findAndCount({
-      where: { planType, status: 'active' },
+      where: { planType: CHURCH_PLAN_TYPE, status: 'active' },
       relations: ['billingAdmin'],
       order: { createdAt: 'DESC' },
       take: limit,
@@ -91,13 +92,13 @@ export class AdminOrgPlanService {
     };
   }
 
-  async get(planType: OrgPlanType, planId: string) {
+  async get(planId: string) {
     if (!isUuid(planId)) {
       throw new AppError('Invalid plan id', 400);
     }
 
     const row = await AppDataSource.getRepository(OrgPlan).findOne({
-      where: { id: planId, planType },
+      where: { id: planId, planType: CHURCH_PLAN_TYPE },
       relations: ['billingAdmin'],
     });
     if (!row) {
@@ -108,7 +109,6 @@ export class AdminOrgPlanService {
   }
 
   async create(
-    planType: OrgPlanType,
     input: {
       name: string;
       totalSeats: number;
@@ -130,7 +130,7 @@ export class AdminOrgPlanService {
 
     const repo = AppDataSource.getRepository(OrgPlan);
     const row = repo.create({
-      planType,
+      planType: CHURCH_PLAN_TYPE,
       name: input.name,
       status: 'active',
       totalSeats: input.totalSeats,
@@ -145,7 +145,7 @@ export class AdminOrgPlanService {
       action: 'admin.org_plan.create',
       targetType: 'org_plan',
       targetId: saved.id,
-      metadata: { planType },
+      metadata: { planType: CHURCH_PLAN_TYPE },
       ip: ip ?? null,
     });
 
@@ -153,7 +153,6 @@ export class AdminOrgPlanService {
   }
 
   async update(
-    planType: OrgPlanType,
     planId: string,
     input: {
       name?: string;
@@ -171,7 +170,7 @@ export class AdminOrgPlanService {
     }
 
     const repo = AppDataSource.getRepository(OrgPlan);
-    const row = await repo.findOne({ where: { id: planId, planType } });
+    const row = await repo.findOne({ where: { id: planId, planType: CHURCH_PLAN_TYPE } });
     if (!row) {
       throw new AppError('Plan not found', 404);
     }
@@ -211,26 +210,15 @@ export class AdminOrgPlanService {
       action: 'admin.org_plan.update',
       targetType: 'org_plan',
       targetId: planId,
-      metadata: { planType, patch: Object.keys(input) },
+      metadata: { planType: CHURCH_PLAN_TYPE, patch: Object.keys(input) },
       ip: ip ?? null,
     });
 
     return this.serialize(saved);
   }
 
-  async deactivate(
-    planType: OrgPlanType,
-    planId: string,
-    adminUserId: string,
-    ip?: string
-  ) {
-    return this.update(
-      planType,
-      planId,
-      { status: 'inactive' },
-      adminUserId,
-      ip
-    );
+  async deactivate(planId: string, adminUserId: string, ip?: string) {
+    return this.update(planId, { status: 'inactive' }, adminUserId, ip);
   }
 
   async getMembers(planId: string) {

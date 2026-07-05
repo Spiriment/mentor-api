@@ -8,18 +8,7 @@ export class AdminOrgPlanController {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
-      const result = await adminOrgPlanService.list('church', page, limit);
-      return sendSuccessResponse(res, result);
-    } catch (e) {
-      next(e);
-    }
-  };
-
-  listFamily = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 50;
-      const result = await adminOrgPlanService.list('family', page, limit);
+      const result = await adminOrgPlanService.list(page, limit);
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);
@@ -29,27 +18,6 @@ export class AdminOrgPlanController {
   createChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const created = await adminOrgPlanService.create(
-        'church',
-        {
-          name: req.body.name,
-          totalSeats: req.body.totalSeats,
-          usedSeats: req.body.usedSeats,
-          billingAdminUserId: req.body.billingAdminUserId,
-          metadata: req.body.metadata,
-        },
-        req.admin!.id,
-        req.ip
-      );
-      return sendSuccessResponse(res, created, 201);
-    } catch (e) {
-      next(e);
-    }
-  };
-
-  createFamily = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const created = await adminOrgPlanService.create(
-        'family',
         {
           name: req.body.name,
           totalSeats: req.body.totalSeats,
@@ -69,22 +37,6 @@ export class AdminOrgPlanController {
   patchChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updated = await adminOrgPlanService.update(
-        'church',
-        req.params.id,
-        req.body,
-        req.admin!.id,
-        req.ip
-      );
-      return sendSuccessResponse(res, updated);
-    } catch (e) {
-      next(e);
-    }
-  };
-
-  patchFamily = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const updated = await adminOrgPlanService.update(
-        'family',
         req.params.id,
         req.body,
         req.admin!.id,
@@ -98,16 +50,7 @@ export class AdminOrgPlanController {
 
   getChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const plan = await adminOrgPlanService.get('church', req.params.id);
-      return sendSuccessResponse(res, plan);
-    } catch (e) {
-      next(e);
-    }
-  };
-
-  getFamily = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const plan = await adminOrgPlanService.get('family', req.params.id);
+      const plan = await adminOrgPlanService.get(req.params.id);
       return sendSuccessResponse(res, plan);
     } catch (e) {
       next(e);
@@ -117,21 +60,6 @@ export class AdminOrgPlanController {
   deleteChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updated = await adminOrgPlanService.deactivate(
-        'church',
-        req.params.id,
-        req.admin!.id,
-        req.ip
-      );
-      return sendSuccessResponse(res, updated);
-    } catch (e) {
-      next(e);
-    }
-  };
-
-  deleteFamily = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const updated = await adminOrgPlanService.deactivate(
-        'family',
         req.params.id,
         req.admin!.id,
         req.ip
@@ -196,7 +124,7 @@ export class AdminOrgPlanController {
     }
   };
 
-  // ─── Family plan admin ────────────────────────────────────────────────────────
+  // ─── Family plan admin (FamilyPlan entity) ────────────────────────────────────
 
   listFamilyPlans = async (req: Request, res: Response, next: NextFunction) => {
     try {
