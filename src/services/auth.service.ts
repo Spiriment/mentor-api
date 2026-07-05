@@ -34,7 +34,6 @@ import {
 import { EmailService } from '@/core/email.service';
 import { RoleEnum } from '@/common/auth/rbac';
 import { User, PasswordReset, RefreshToken, MenteeProfile, MentorProfile } from '@/database/entities';
-import { SubscriptionService } from './subscription.service';
 import { UserRepository } from '@/repository/user.repository';
 import { generateOTP } from '@/common/helpers/auth';
 import { FileUploadService } from '@/core/fileUpload.service';
@@ -745,7 +744,6 @@ export class AuthService {
           if (MenteeProfile?.isOnboardingComplete) {
             isOnboardingComplete = true;
             await this.UserRepository.update(User.id, { isOnboardingComplete: true });
-            new SubscriptionService(this.emailService).createTrialForUser(User.id).catch(() => {});
           }
         } else if (User.role === 'mentor') {
           const MentorProfile = await this.UserRepository.manager.getRepository('MentorProfile').findOne({
@@ -755,7 +753,6 @@ export class AuthService {
           if (MentorProfile?.isOnboardingComplete) {
             isOnboardingComplete = true;
             await this.UserRepository.update(User.id, { isOnboardingComplete: true });
-            new SubscriptionService(this.emailService).createTrialForUser(User.id).catch(() => {});
           }
         }
       } catch (profileError) {

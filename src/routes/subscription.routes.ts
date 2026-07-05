@@ -7,6 +7,7 @@ import {
   cancelSubscription,
   redeemPromoCode,
   acknowledgeTrialExpired,
+  startFreeTrial,
   syncAppleIAP,
 } from '@/controllers/subscription.controller';
 
@@ -20,6 +21,7 @@ router.post('/portal', getBillingPortal);
 router.post('/cancel', cancelSubscription);
 router.post('/redeem', redeemPromoCode);
 router.post('/acknowledge-trial-expired', acknowledgeTrialExpired);
+router.post('/start-trial', startFreeTrial);
 router.post('/apple-iap/sync', syncAppleIAP);
 
 export default router;

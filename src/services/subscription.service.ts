@@ -42,9 +42,17 @@ export class SubscriptionService {
 
   // ─── Trial ──────────────────────────────────────────────────────────────────
 
-  async createTrialForUser(userId: string): Promise<void> {
+  async startTrialForUser(userId: string) {
     const existing = await this.subRepo.findOne({ where: { user: { id: userId } } });
-    if (existing) return;
+    if (existing) {
+      if (existing.status === 'trialing') {
+        throw new AppError('You are already on a free trial', StatusCodes.CONFLICT);
+      }
+      throw new AppError(
+        'Free trial is not available for this account',
+        StatusCodes.CONFLICT,
+      );
+    }
 
     const sub = this.subRepo.create({
       user: { id: userId } as User,
@@ -55,6 +63,8 @@ export class SubscriptionService {
       mrrCents: null,
     });
     await this.subRepo.save(sub);
+
+    return this.getSubscriptionForUser(userId);
   }
 
   // ─── Read ────────────────────────────────────────────────────────────────────
@@ -78,6 +88,7 @@ export class SubscriptionService {
       isTrialing: sub?.status === 'trialing',
       trialEndsAt: sub?.status === 'trialing' ? sub.expiresAt : null,
       shouldShowTrialExpiredPrompt: sub?.notes === TRIAL_EXPIRED_NOTE,
+      canStartTrial: !sub,
       sessionsUsed,
       sessionsAllowed,
       sessionsRemaining: Math.max(0, sessionsAllowed - sessionsUsed),

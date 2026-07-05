@@ -71,6 +71,15 @@ export const acknowledgeTrialExpired = async (req: Request, res: Response, next:
   }
 };
 
+export const startFreeTrial = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const subscription = await subscriptionService.startTrialForUser(req.user!.id);
+    res.json({ success: true, data: subscription });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const syncAppleIAP = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Subscriptions are synced via RevenueCat webhooks — client-initiated grants are not allowed

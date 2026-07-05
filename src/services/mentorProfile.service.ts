@@ -10,7 +10,6 @@ import { Session, SESSION_STATUS } from '../database/entities/session.entity';
 import { SessionReview } from '../database/entities/sessionReview.entity';
 import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '../database/entities/mentorshipRequest.entity';
 import { EmailService } from '../core/email.service';
-import { SubscriptionService } from './subscription.service';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -173,10 +172,6 @@ export class MentorProfileService {
       }
 
       await this.userRepository.update(userId, userUpdateData);
-
-      new SubscriptionService(new EmailService(null))
-        .createTrialForUser(userId)
-        .catch(() => {});
 
       if (autoApprove) {
         this.logger.info(
