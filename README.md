@@ -101,6 +101,15 @@ SMTP_PORT=587
 SMTP_USER=noreply@yourdomain.com
 SMTP_PASSWORD=your_password
 SMTP_FROM=noreply@yourdomain.com
+
+# Stripe (Android / web checkout)
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# RevenueCat (iOS subscriptions)
+# Required in production — webhook requests must include Authorization: Bearer <secret>
+REVENUECAT_WEBHOOK_SECRET=Bearer your-webhook-secret
+# If unset in development, webhooks are accepted without auth (see revenueCatWebhook.controller.ts)
 ```
 
 See [docs/EMAIL_CONFIGURATION.md](docs/EMAIL_CONFIGURATION.md) for email setup.
