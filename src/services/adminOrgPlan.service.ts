@@ -10,8 +10,12 @@ import { AppError } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
 import { familyPlanService } from './familyPlan.service';
+import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
+import { EmailService } from '@/core/email.service';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { logger } from '@/config/int-services';
+
+const subscriptionService = new SubscriptionService(new EmailService(null));
 
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
@@ -422,6 +426,25 @@ export class AdminOrgPlanService {
     plan.usedSeats = Math.max(0, plan.usedSeats - 1);
     await planRepo.save(plan);
 
+    const subRepo = AppDataSource.getRepository(UserSubscription);
+    const sub = await subRepo.findOne({ where: { userId } });
+    if (
+      sub?.externalRef &&
+      (sub.externalProvider === 'stripe' || sub.externalProvider === 'stripe_family')
+    ) {
+      await stripeService.cancelSubscriptionAtPeriodEnd(sub.externalRef);
+      await subscriptionService.upsertSubscription(userId, {
+        tier: sub.tier,
+        status: sub.status,
+        externalProvider: sub.externalProvider,
+        externalRef: sub.externalRef,
+        expiresAt: sub.expiresAt,
+        mrrCents: sub.mrrCents,
+        billingInterval: sub.billingInterval,
+        notes: CANCEL_AT_PERIOD_END_NOTE,
+      });
+    }
+
     await adminAuditService.log({
       adminUserId,
       action: 'admin.org_plan.remove_member',
@@ -475,6 +498,7 @@ export class AdminOrgPlanService {
 
   async listFamilyPlans(page = 1, limit = 50) {
     const [rows, total] = await this.familyPlanRepo.findAndCount({
+      where: { status: 'active' },
       relations: ['parent'],
       order: { createdAt: 'DESC' },
       take: limit,

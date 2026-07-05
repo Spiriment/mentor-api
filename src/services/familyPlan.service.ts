@@ -134,6 +134,18 @@ export class FamilyPlanService {
       throw new AppError('This user is already part of a family plan', 409);
     }
 
+    const memberSub = await this.subRepo.findOne({ where: { user: { id: memberUser.id } } });
+    if (
+      memberSub &&
+      ['active', 'past_due', 'trialing'].includes(memberSub.status) &&
+      ['basic', 'pro', 'premium'].includes(memberSub.tier)
+    ) {
+      throw new AppError(
+        'This user already has an active subscription. They must cancel it before joining a family plan.',
+        409,
+      );
+    }
+
     const discountPercent = calcAgeDiscount(memberUser.birthday);
     const price = effectivePrice(tier, discountPercent, interval);
 

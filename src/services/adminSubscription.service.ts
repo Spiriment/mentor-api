@@ -1,4 +1,4 @@
-import { In, IsNull } from 'typeorm';
+import { In } from 'typeorm';
 import { validate as isUuid } from 'uuid';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
@@ -126,6 +126,8 @@ export class AdminSubscriptionService {
         revenue: null,
         revenueNote:
           'MRR and revenue aggregates are visible to Super Admins only.',
+        metricsNote:
+          'Tier counts include trialing users. MRR is Super Admin only.',
       };
     }
 
@@ -140,6 +142,8 @@ export class AdminSubscriptionService {
       ...base,
       revenue: { totalMrrCents, currency: 'EUR', history: revenueHistory },
       revenueNote: null,
+      metricsNote:
+        'Tier counts include trialing users. MRR and paying subscribers count active and past_due paid tiers only.',
     };
   }
 
@@ -208,7 +212,7 @@ export class AdminSubscriptionService {
         status: input.status,
         mrrCents:
           input.mrrCents === undefined ? null : input.mrrCents,
-        currency: input.currency ?? 'USD',
+        currency: input.currency ?? 'EUR',
         expiresAt: resolveExpiresAt(),
         externalProvider: input.externalProvider ?? null,
         externalRef: input.externalRef ?? null,
@@ -258,17 +262,20 @@ export class AdminSubscriptionService {
 
   async listIndividualSubscribers(page = 1, limit = 50) {
     const subRepo = AppDataSource.getRepository(UserSubscription);
-    const [rows, total] = await subRepo.findAndCount({
-      where: {
-        status: In(ENTITLED_STATUSES),
-        tier: In(PAYING_TIERS),
-        user: { orgPlanId: IsNull() },
-      },
-      relations: ['user'],
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: (page - 1) * limit,
-    });
+    const qb = subRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.user', 'user')
+      .where('s.status IN (:...statuses)', { statuses: ENTITLED_STATUSES })
+      .andWhere('s.tier IN (:...tiers)', { tiers: PAYING_TIERS })
+      .andWhere('user.orgPlanId IS NULL')
+      .andWhere('(s.externalProvider IS NULL OR s.externalProvider != :stripeFamily)', {
+        stripeFamily: 'stripe_family',
+      })
+      .orderBy('s.createdAt', 'DESC')
+      .take(limit)
+      .skip((page - 1) * limit);
+
+    const [rows, total] = await qb.getManyAndCount();
 
     return {
       data: rows.map((r) => ({

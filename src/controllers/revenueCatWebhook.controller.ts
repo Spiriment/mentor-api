@@ -63,7 +63,17 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     return;
   }
 
-  const { type, app_user_id, product_id, expiration_at_ms, id: eventId, price, price_in_purchased_currency } = event;
+  const {
+    type,
+    app_user_id,
+    product_id,
+    expiration_at_ms,
+    id: eventId,
+    price,
+    price_in_purchased_currency,
+    transaction_id,
+    original_transaction_id,
+  } = event;
   logger.info('RevenueCat webhook received', { type, app_user_id, product_id });
 
   if (eventId && (await webhookIdempotencyService.isProcessed(String(eventId)))) {
@@ -80,6 +90,12 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
   }
 
   let shouldMarkProcessed = false;
+
+  const rcExternalRef =
+    (transaction_id ? String(transaction_id) : null) ??
+    (original_transaction_id ? String(original_transaction_id) : null) ??
+    product_id ??
+    null;
 
   try {
     switch (type) {
@@ -99,7 +115,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           tier,
           status: 'active',
           externalProvider: 'revenuecat',
-          externalRef: product_id,
+          externalRef: rcExternalRef,
           mrrCents: mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency }),
           billingInterval: inferBillingIntervalFromProductId(product_id),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
@@ -125,7 +141,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           tier,
           status: 'active',
           externalProvider: 'revenuecat',
-          externalRef: product_id ?? current.externalRef,
+          externalRef: rcExternalRef ?? current.externalRef,
           mrrCents: product_id
             ? mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency })
             : undefined,

@@ -37,6 +37,17 @@ function tierFromPriceId(priceId: string): SubscriptionTier | null {
   return tier;
 }
 
+const PAID_ACCESS_REVOKED_STRIPE_STATUSES = new Set([
+  'incomplete',
+  'incomplete_expired',
+  'unpaid',
+  'paused',
+]);
+
+function isPaidAccessRevokedStripeStatus(stripeStatus: string): boolean {
+  return PAID_ACCESS_REVOKED_STRIPE_STATUSES.has(stripeStatus);
+}
+
 function mapStripeSubscriptionStatus(stripeStatus: string): SubscriptionStatus | null {
   switch (stripeStatus) {
     case 'active':
@@ -109,6 +120,28 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         }
 
         const memberUserId = await resolveFamilyMemberUserId(stripeSub);
+
+        if (isPaidAccessRevokedStripeStatus(stripeSub.status)) {
+          if (memberUserId) {
+            await familyPlanService.syncMemberSubscription(
+              memberUserId,
+              stripeSub.id,
+              'canceled',
+            );
+          } else {
+            await subscriptionService.upsertSubscription(userId, {
+              tier: 'free',
+              status: 'active',
+              externalRef: null,
+              externalProvider: null,
+              mrrCents: 0,
+              expiresAt: null,
+            });
+          }
+          shouldMarkProcessed = true;
+          break;
+        }
+
         const priceId: string = stripeSub.items?.data?.[0]?.price?.id ?? '';
         const tier = tierFromPriceId(priceId);
         if (!tier) {

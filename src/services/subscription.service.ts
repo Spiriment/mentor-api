@@ -176,6 +176,13 @@ export class SubscriptionService {
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub) return;
 
+    if (sub.status === 'trialing') {
+      throw new AppError(
+        'You are on a free trial. Finish your trial before starting a paid subscription.',
+        StatusCodes.CONFLICT,
+      );
+    }
+
     const hasPaidTier = TIER_RANK[sub.tier] >= TIER_RANK.basic;
     const isBlockingStatus = ['active', 'past_due'].includes(sub.status);
     if (!hasPaidTier || !isBlockingStatus) return;
