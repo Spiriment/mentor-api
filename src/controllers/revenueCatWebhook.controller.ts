@@ -84,8 +84,8 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOne({ where: { id: app_user_id } });
   if (!user) {
-    logger.warn('RevenueCat webhook: user not found', { app_user_id });
-    res.json({ received: true });
+    logger.warn('RevenueCat webhook: user not found, will retry', { app_user_id, eventId, type });
+    res.status(500).json({ error: 'User not found — will retry' });
     return;
   }
 

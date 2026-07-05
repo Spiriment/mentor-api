@@ -366,39 +366,44 @@ export class AdminOrgPlanService {
   }
 
   async completeChurchMemberAssignment(userId: string, orgPlanId: string): Promise<void> {
-    if (!isUuid(userId) || !isUuid(orgPlanId)) return;
+    if (!isUuid(userId) || !isUuid(orgPlanId)) {
+      throw new AppError('Invalid church assignment ids', 400);
+    }
 
-    const userRepo = AppDataSource.getRepository(User);
-    const planRepo = AppDataSource.getRepository(OrgPlan);
+    await AppDataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const planRepo = manager.getRepository(OrgPlan);
 
-    const user = await userRepo.findOne({ where: { id: userId } });
-    if (!user) return;
+      const user = await userRepo.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new AppError('User not found for church assignment', 404);
+      }
 
-    if (user.orgPlanId === orgPlanId) return;
+      if (user.orgPlanId === orgPlanId) {
+        return;
+      }
 
-    if (user.orgPlanId) {
-      logger.warn('Church seat assignment skipped: user already on another org plan', {
-        userId,
-        orgPlanId,
-        existingOrgPlanId: user.orgPlanId,
+      if (user.orgPlanId) {
+        throw new AppError('User is already assigned to another org plan', 409);
+      }
+
+      const plan = await planRepo.findOne({
+        where: { id: orgPlanId, planType: 'church', status: 'active' },
+        lock: { mode: 'pessimistic_write' },
       });
-      return;
-    }
+      if (!plan) {
+        throw new AppError('Church plan not found or inactive', 404);
+      }
 
-    const plan = await planRepo.findOne({
-      where: { id: orgPlanId, planType: 'church', status: 'active' },
+      if (plan.usedSeats >= plan.totalSeats) {
+        throw new AppError('Church plan has no available seats', 409);
+      }
+
+      user.orgPlanId = orgPlanId;
+      plan.usedSeats += 1;
+      await userRepo.save(user);
+      await planRepo.save(plan);
     });
-    if (!plan) return;
-
-    if (plan.usedSeats >= plan.totalSeats) {
-      logger.warn('Church seat assignment skipped: plan is full', { userId, orgPlanId });
-      return;
-    }
-
-    user.orgPlanId = orgPlanId;
-    plan.usedSeats += 1;
-    await userRepo.save(user);
-    await planRepo.save(plan);
   }
 
   async removeMember(

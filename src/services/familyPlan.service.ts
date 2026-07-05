@@ -435,7 +435,12 @@ export class FamilyPlanService {
       return;
     }
 
-    if (!member) return;
+    if (!member) {
+      throw new AppError(
+        `Family member record not found for user ${memberUserId}`,
+        404,
+      );
+    }
 
     if (options?.tier) {
       member.tier = options.tier;
