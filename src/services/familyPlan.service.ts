@@ -358,6 +358,10 @@ export class FamilyPlanService {
     return this.memberRepo.findOne({ where: { stripeSubscriptionId } });
   }
 
+  async findActiveMemberByUserId(userId: string): Promise<FamilyMember | null> {
+    return this.memberRepo.findOne({ where: { userId, removedAt: IsNull() } });
+  }
+
   async ensureMemberFromCheckout(params: {
     planId: string;
     memberUserId: string;

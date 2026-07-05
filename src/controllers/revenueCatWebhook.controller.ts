@@ -40,6 +40,16 @@ function isWebhookAuthorized(authHeader: string | undefined, secret: string): bo
   return false;
 }
 
+function resolveRevenueCatEventId(event: Record<string, unknown>): string {
+  if (event.id) return String(event.id);
+  const type = String(event.type ?? 'unknown');
+  const userId = String(event.app_user_id ?? '');
+  const productId = String(event.product_id ?? '');
+  const txId = String(event.transaction_id ?? event.original_transaction_id ?? '');
+  const expires = String(event.expiration_at_ms ?? '');
+  return `rc-synthetic:${type}:${userId}:${productId}:${txId}:${expires}`;
+}
+
 export const handleRevenueCatWebhook = async (req: Request, res: Response): Promise<void> => {
   const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!secret) {
@@ -68,28 +78,33 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     app_user_id,
     product_id,
     expiration_at_ms,
-    id: eventId,
     price,
     price_in_purchased_currency,
     transaction_id,
     original_transaction_id,
   } = event;
-  logger.info('RevenueCat webhook received', { type, app_user_id, product_id });
 
-  if (eventId && (await webhookIdempotencyService.isProcessed(String(eventId)))) {
+  const eventId = resolveRevenueCatEventId(event);
+  logger.info('RevenueCat webhook received', { type, app_user_id, product_id, eventId });
+
+  const claimed = await webhookIdempotencyService.tryClaim(eventId, 'revenuecat', String(type));
+  if (!claimed) {
     res.json({ received: true });
     return;
   }
+
+  const failWebhook = async (message: string, status = 500) => {
+    await webhookIdempotencyService.releaseClaim(eventId);
+    res.status(status).json({ error: message });
+  };
 
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOne({ where: { id: app_user_id } });
   if (!user) {
     logger.warn('RevenueCat webhook: user not found, will retry', { app_user_id, eventId, type });
-    res.status(500).json({ error: 'User not found — will retry' });
+    await failWebhook('User not found — will retry');
     return;
   }
-
-  let shouldMarkProcessed = false;
 
   const rcExternalRef =
     (transaction_id ? String(transaction_id) : null) ??
@@ -102,13 +117,23 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'INITIAL_PURCHASE':
       case 'RENEWAL':
       case 'PRODUCT_CHANGE': {
+        const current = await subscriptionService.getSubscriptionForUser(user.id);
+        if (current.status === 'trialing' && !current.externalRef) {
+          logger.info('RevenueCat webhook: ignoring purchase during backend free trial', {
+            eventId,
+            app_user_id,
+            product_id,
+          });
+          break;
+        }
+
         const tier = tierFromProductId(product_id);
         if (!tier) {
           logger.warn('RevenueCat webhook: unknown product, will retry', {
             eventId,
             product_id,
           });
-          res.status(500).json({ error: 'Unknown product — will retry' });
+          await failWebhook('Unknown product — will retry');
           return;
         }
         await subscriptionService.upsertSubscription(user.id, {
@@ -120,7 +145,6 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           billingInterval: inferBillingIntervalFromProductId(product_id),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
         });
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -133,7 +157,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
 
         if (!tier) {
           logger.warn('RevenueCat webhook: CANCELLATION with unknown tier', { eventId, product_id });
-          res.status(500).json({ error: 'Unknown product — will retry' });
+          await failWebhook('Unknown product — will retry');
           return;
         }
 
@@ -153,7 +177,6 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
               : null,
           notes: CANCEL_AT_PERIOD_END_NOTE,
         });
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -167,7 +190,6 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           expiresAt: null,
           notes: null,
         });
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -180,20 +202,16 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
             externalProvider: 'revenuecat',
           });
         }
-        shouldMarkProcessed = true;
         break;
       }
 
       default:
-        shouldMarkProcessed = true;
         break;
     }
 
-    if (eventId && shouldMarkProcessed) {
-      await webhookIdempotencyService.markProcessed(String(eventId), 'revenuecat', type);
-    }
     res.json({ received: true });
   } catch (err: any) {
+    await webhookIdempotencyService.releaseClaim(eventId);
     logger.error('RevenueCat webhook processing error', err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: 'Processing failed' });
   }

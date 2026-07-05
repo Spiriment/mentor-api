@@ -83,6 +83,17 @@ function optionalMrr(mrrCents: number | null): { mrrCents?: number } {
   return mrrCents != null ? { mrrCents } : {};
 }
 
+async function releaseChurchMembershipIfNeeded(userId: string): Promise<void> {
+  try {
+    await adminOrgPlanService.releaseChurchMembership(userId);
+  } catch (err) {
+    logger.warn('Failed to release church membership', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const sig = req.headers['stripe-signature'] as string;
 
@@ -95,14 +106,19 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
     return;
   }
 
-  if (await webhookIdempotencyService.isProcessed(event.id)) {
+  const claimed = await webhookIdempotencyService.tryClaim(event.id, 'stripe', event.type);
+  if (!claimed) {
     res.json({ received: true });
     return;
   }
 
+  const failWebhook = async (message: string, status = 500) => {
+    await webhookIdempotencyService.releaseClaim(event.id);
+    res.status(status).json({ error: message });
+  };
+
   const subRepo = AppDataSource.getRepository(UserSubscription);
   const userRepo = AppDataSource.getRepository(User);
-  let shouldMarkProcessed = false;
 
   try {
     switch (event.type) {
@@ -115,7 +131,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             eventId: event.id,
             subscriptionId: stripeSub.id,
           });
-          res.status(500).json({ error: 'Missing userId — will retry' });
+          await failWebhook('Missing userId — will retry');
           return;
         }
 
@@ -137,8 +153,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               mrrCents: 0,
               expiresAt: null,
             });
+            await releaseChurchMembershipIfNeeded(userId);
           }
-          shouldMarkProcessed = true;
           break;
         }
 
@@ -150,19 +166,18 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             priceId,
             subscriptionId: stripeSub.id,
           });
-          res.status(500).json({ error: 'Unknown price — will retry' });
+          await failWebhook('Unknown price — will retry');
           return;
         }
 
         const status = mapStripeSubscriptionStatus(stripeSub.status);
         if (!status) {
-          logger.warn('Stripe webhook: skipping subscription with non-paid status', {
+          logger.info('Stripe webhook: acknowledging terminal/unhandled subscription status', {
             eventId: event.id,
             stripeStatus: stripeSub.status,
             subscriptionId: stripeSub.id,
           });
-          res.status(500).json({ error: 'Unhandled subscription status — will retry' });
-          return;
+          break;
         }
 
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
@@ -184,6 +199,16 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
                 ageDiscountPercent:
                   parseInt(stripeSub.metadata?.familyMemberAgeDiscount ?? '0', 10) || 0,
               });
+            } else {
+              const existingMember = await familyPlanService.findActiveMemberByUserId(memberUserId);
+              if (!existingMember) {
+                logger.warn('Stripe webhook: skipping family sync — no member record and no familyPlanId', {
+                  eventId: event.id,
+                  memberUserId,
+                  subscriptionId: stripeSub.id,
+                });
+                break;
+              }
             }
           }
 
@@ -200,6 +225,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             },
           );
         } else {
+          const orgPlanId = stripeSub.metadata?.orgPlanId;
+          if (orgPlanId && event.type === 'customer.subscription.created') {
+            await adminOrgPlanService.completeChurchMemberAssignment(userId, orgPlanId);
+          }
+
           await subscriptionService.upsertSubscription(userId, {
             tier,
             status,
@@ -215,14 +245,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           if (promoCodeId && event.type === 'customer.subscription.created') {
             await subscriptionService.completePromoRedemption(userId, promoCodeId);
           }
-
-          const orgPlanId = stripeSub.metadata?.orgPlanId;
-          if (orgPlanId && event.type === 'customer.subscription.created') {
-            await adminOrgPlanService.completeChurchMemberAssignment(userId, orgPlanId);
-          }
         }
 
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -234,7 +258,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             eventId: event.id,
             subscriptionId: stripeSub.id,
           });
-          res.status(500).json({ error: 'Missing userId — will retry' });
+          await failWebhook('Missing userId — will retry');
           return;
         }
 
@@ -254,9 +278,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             mrrCents: 0,
             expiresAt: null,
           });
+          await releaseChurchMembershipIfNeeded(userId);
         }
 
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -271,14 +295,12 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
           if (familyMember) {
             await subscriptionService.markPastDue(familyMember.userId);
-            shouldMarkProcessed = true;
             break;
           }
 
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
           if (memberSub?.userId) {
             await subscriptionService.markPastDue(memberSub.userId);
-            shouldMarkProcessed = true;
             break;
           }
         }
@@ -286,18 +308,15 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (!customerId) {
-          shouldMarkProcessed = true;
           break;
         }
 
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
         if (!user) {
-          shouldMarkProcessed = true;
           break;
         }
 
         await subscriptionService.markPastDue(user.id);
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -318,7 +337,6 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               'active',
               optionalMrr(mrrCents),
             );
-            shouldMarkProcessed = true;
             break;
           }
 
@@ -328,7 +346,6 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               mrrCents,
               externalRef: subscriptionId,
             });
-            shouldMarkProcessed = true;
             break;
           }
         }
@@ -336,13 +353,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (!customerId) {
-          shouldMarkProcessed = true;
           break;
         }
 
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
         if (!user) {
-          shouldMarkProcessed = true;
           break;
         }
 
@@ -350,7 +365,6 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           mrrCents,
           externalRef: subscriptionId ?? undefined,
         });
-        shouldMarkProcessed = true;
         break;
       }
 
@@ -362,20 +376,16 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           await adminOrgPlanService.releasePendingChurchCheckout(orgPlanId, userId);
           logger.info('Released pending church seat after expired checkout', { orgPlanId, userId });
         }
-        shouldMarkProcessed = true;
         break;
       }
 
       default:
-        shouldMarkProcessed = true;
         break;
     }
 
-    if (shouldMarkProcessed) {
-      await webhookIdempotencyService.markProcessed(event.id, 'stripe', event.type);
-    }
     res.json({ received: true });
   } catch (err: any) {
+    await webhookIdempotencyService.releaseClaim(event.id);
     logger.error('Error processing Stripe webhook: ' + err.message, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: 'Webhook processing failed' });
   }

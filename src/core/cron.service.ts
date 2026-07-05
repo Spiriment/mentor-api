@@ -12,6 +12,7 @@ import { AssignmentReminderService } from "@/services/assignmentReminder.service
 import { EmailService } from "./email.service";
 import { subMonths } from "date-fns";
 import { SubscriptionService } from "@/services/subscription.service";
+import { adminOrgPlanService } from "@/services/adminOrgPlan.service";
 import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
 
 export class CronService {
@@ -297,6 +298,7 @@ export class CronService {
             for (const sub of overdue) {
               if (sub.user) {
                 await subscriptionService.downgradeToFree(sub.user.id);
+                await adminOrgPlanService.releaseChurchMembership(sub.user.id);
                 await subscriptionService.sendGracePeriodDowngradeEmail(sub.user);
               }
             }

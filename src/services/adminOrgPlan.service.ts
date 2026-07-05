@@ -476,6 +476,33 @@ export class AdminOrgPlanService {
     });
   }
 
+  /** Clear church org membership and free a seat when billing ends. */
+  async releaseChurchMembership(userId: string): Promise<void> {
+    if (!isUuid(userId)) return;
+
+    await AppDataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const planRepo = manager.getRepository(OrgPlan);
+
+      const user = await userRepo.findOne({ where: { id: userId } });
+      if (!user?.orgPlanId) return;
+
+      const orgPlanId = user.orgPlanId;
+      const plan = await planRepo.findOne({
+        where: { id: orgPlanId, planType: 'church' },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      user.orgPlanId = null;
+      await userRepo.save(user);
+
+      if (plan) {
+        plan.usedSeats = Math.max(0, plan.usedSeats - 1);
+        await planRepo.save(plan);
+      }
+    });
+  }
+
   async removeMember(
     planId: string,
     userId: string,
@@ -495,12 +522,6 @@ export class AdminOrgPlanService {
     if (!user) throw new AppError('User not found', 404);
     if (user.orgPlanId !== planId) throw new AppError('User is not a member of this plan', 400);
 
-    user.orgPlanId = null;
-    await userRepo.save(user);
-
-    plan.usedSeats = Math.max(0, plan.usedSeats - 1);
-    await planRepo.save(plan);
-
     const subRepo = AppDataSource.getRepository(UserSubscription);
     const sub = await subRepo.findOne({ where: { userId } });
     if (
@@ -518,6 +539,8 @@ export class AdminOrgPlanService {
         billingInterval: sub.billingInterval,
         notes: CANCEL_AT_PERIOD_END_NOTE,
       });
+    } else {
+      await this.releaseChurchMembership(userId);
     }
 
     await adminAuditService.log({
