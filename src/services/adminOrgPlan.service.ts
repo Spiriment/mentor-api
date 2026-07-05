@@ -493,10 +493,9 @@ export class AdminOrgPlanService {
       const pending = pruneExpiredPendingChurchAssignments(
         parsePendingChurchAssignments(plan.metadata),
       );
-      const hadPending = pending.some((entry) => entry.userId === userId);
       const pendingAfterRemoval = pending.filter((entry) => entry.userId !== userId);
 
-      if (!hadPending && plan.usedSeats >= plan.totalSeats) {
+      if (plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Church plan has no available seats', 409);
       }
 
@@ -506,6 +505,26 @@ export class AdminOrgPlanService {
       await userRepo.save(user);
       await planRepo.save(plan);
     });
+  }
+
+  /** Idempotent link after Stripe checkout — safe on subscription.created and .updated. */
+  async ensureChurchMemberAssignment(userId: string, orgPlanId: string): Promise<void> {
+    if (!isUuid(userId) || !isUuid(orgPlanId)) {
+      throw new AppError('Invalid church assignment ids', 400);
+    }
+
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'orgPlanId'],
+    });
+    if (!user) {
+      throw new AppError('User not found for church assignment', 404);
+    }
+    if (user.orgPlanId === orgPlanId) {
+      return;
+    }
+
+    await this.completeChurchMemberAssignment(userId, orgPlanId);
   }
 
   /** Clear church org membership and free a seat when billing ends. */

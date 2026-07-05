@@ -108,6 +108,63 @@ async function releaseChurchMembershipIfNeeded(userId: string): Promise<void> {
   }
 }
 
+async function syncFamilyMemberFromStripeWebhook(params: {
+  stripeSub: {
+    id: string;
+    metadata?: {
+      familyPlanId?: string;
+      familyMemberAgeDiscount?: string;
+      familyMemberUserId?: string;
+    };
+  };
+  memberUserId: string;
+  tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  billingInterval: 'monthly' | 'annual';
+  mrrCents: number;
+  expiresAt: Date | null;
+  sendActivationEmail: boolean;
+}): Promise<void> {
+  const { stripeSub, memberUserId, tier, status } = params;
+
+  if (status === 'canceled') {
+    await familyPlanService.syncMemberSubscription(memberUserId, stripeSub.id, 'canceled');
+    return;
+  }
+
+  const planId = stripeSub.metadata?.familyPlanId;
+  const existingMember = await familyPlanService.findActiveMemberByUserId(memberUserId);
+
+  if (!planId && !existingMember) {
+    throw new Error(
+      `Family subscription ${stripeSub.id} has no familyPlanId metadata and no member record for user ${memberUserId}`,
+    );
+  }
+
+  if (planId) {
+    await familyPlanService.ensureMemberFromCheckout({
+      planId,
+      memberUserId,
+      tier,
+      ageDiscountPercent:
+        parseInt(stripeSub.metadata?.familyMemberAgeDiscount ?? '0', 10) || 0,
+    });
+  }
+
+  await familyPlanService.syncMemberSubscription(
+    memberUserId,
+    stripeSub.id,
+    status,
+    {
+      sendActivationEmail: params.sendActivationEmail,
+      tier,
+      ...optionalMrr(params.mrrCents),
+      billingInterval: params.billingInterval,
+      expiresAt: params.expiresAt,
+    },
+  );
+}
+
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const sig = req.headers['stripe-signature'] as string;
 
@@ -203,45 +260,31 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           : null;
 
         if (memberUserId) {
-          if (status !== 'canceled') {
-            const planId = stripeSub.metadata?.familyPlanId;
-            if (planId) {
-              await familyPlanService.ensureMemberFromCheckout({
-                planId,
-                memberUserId,
-                tier,
-                ageDiscountPercent:
-                  parseInt(stripeSub.metadata?.familyMemberAgeDiscount ?? '0', 10) || 0,
-              });
-            } else {
-              const existingMember = await familyPlanService.findActiveMemberByUserId(memberUserId);
-              if (!existingMember) {
-                logger.warn('Stripe webhook: skipping family sync — no member record and no familyPlanId', {
-                  eventId: event.id,
-                  memberUserId,
-                  subscriptionId: stripeSub.id,
-                });
-                break;
-              }
-            }
-          }
-
-          await familyPlanService.syncMemberSubscription(
-            memberUserId,
-            stripeSub.id,
-            status,
-            {
-              sendActivationEmail: event.type === 'customer.subscription.created',
+          try {
+            await syncFamilyMemberFromStripeWebhook({
+              stripeSub,
+              memberUserId,
               tier,
-              ...optionalMrr(mrrCents),
+              status,
               billingInterval,
+              mrrCents,
               expiresAt,
-            },
-          );
+              sendActivationEmail: event.type === 'customer.subscription.created',
+            });
+          } catch (err) {
+            logger.warn('Stripe webhook: family member sync failed', {
+              eventId: event.id,
+              memberUserId,
+              subscriptionId: stripeSub.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            await failWebhook('Family member sync failed — will retry');
+            return;
+          }
         } else {
           const orgPlanId = stripeSub.metadata?.orgPlanId;
-          if (orgPlanId && event.type === 'customer.subscription.created') {
-            await adminOrgPlanService.completeChurchMemberAssignment(userId, orgPlanId);
+          if (orgPlanId && status !== 'canceled') {
+            await adminOrgPlanService.ensureChurchMemberAssignment(userId, orgPlanId);
           }
 
           await subscriptionService.upsertSubscription(userId, {

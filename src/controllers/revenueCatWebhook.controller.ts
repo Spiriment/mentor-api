@@ -84,6 +84,11 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     original_transaction_id,
   } = event;
 
+  if (!app_user_id) {
+    res.status(400).json({ error: 'Missing app_user_id' });
+    return;
+  }
+
   const eventId = resolveRevenueCatEventId(event);
   logger.info('RevenueCat webhook received', { type, app_user_id, product_id, eventId });
 
