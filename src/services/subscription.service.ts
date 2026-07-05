@@ -524,6 +524,7 @@ export class SubscriptionService {
       .leftJoinAndSelect('s.user', 'u')
       .where('s.status = :status', { status: 'past_due' })
       .andWhere('COALESCE(s.pastDueAt, s.updatedAt) < :cutoff', { cutoff })
+      .andWhere('(s.externalProvider IS NULL OR s.externalProvider != :rc)', { rc: 'revenuecat' })
       .getMany();
   }
 

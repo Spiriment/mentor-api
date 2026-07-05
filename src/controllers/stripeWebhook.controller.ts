@@ -68,6 +68,10 @@ async function resolveFamilyMemberUserId(
   return member?.userId;
 }
 
+function optionalMrr(mrrCents: number | null): { mrrCents?: number } {
+  return mrrCents != null ? { mrrCents } : {};
+}
+
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const sig = req.headers['stripe-signature'] as string;
 
@@ -87,6 +91,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
   const subRepo = AppDataSource.getRepository(UserSubscription);
   const userRepo = AppDataSource.getRepository(User);
+  let shouldMarkProcessed = false;
 
   try {
     switch (event.type) {
@@ -94,20 +99,43 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
       case 'customer.subscription.updated': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
-        if (!userId) break;
+        if (!userId) {
+          logger.warn('Stripe webhook: missing userId in subscription metadata', {
+            eventId: event.id,
+            subscriptionId: stripeSub.id,
+          });
+          res.status(500).json({ error: 'Missing userId — will retry' });
+          return;
+        }
 
         const memberUserId = await resolveFamilyMemberUserId(stripeSub);
         const priceId: string = stripeSub.items?.data?.[0]?.price?.id ?? '';
         const tier = tierFromPriceId(priceId);
-        if (!tier) break;
+        if (!tier) {
+          logger.warn('Stripe webhook: could not resolve tier from price', {
+            eventId: event.id,
+            priceId,
+            subscriptionId: stripeSub.id,
+          });
+          res.status(500).json({ error: 'Unknown price — will retry' });
+          return;
+        }
 
         const status = mapStripeSubscriptionStatus(stripeSub.status);
-        if (!status) break;
+        if (!status) {
+          logger.warn('Stripe webhook: skipping subscription with non-paid status', {
+            eventId: event.id,
+            stripeStatus: stripeSub.status,
+            subscriptionId: stripeSub.id,
+          });
+          res.status(500).json({ error: 'Unhandled subscription status — will retry' });
+          return;
+        }
 
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
         const stripePrice = stripeSub.items?.data?.[0]?.price;
         const billingInterval = inferBillingIntervalFromStripeInterval(stripePrice?.recurring?.interval);
-        const mrrCents = mrrCentsFromStripeSubscription(stripeSub) ?? 0;
+        const mrrCents = mrrCentsFromStripeSubscription(stripeSub);
         const expiresAt = stripeSub.current_period_end
           ? new Date((stripeSub.current_period_end as number) * 1000)
           : null;
@@ -140,7 +168,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             {
               sendActivationEmail: event.type === 'customer.subscription.created',
               tier,
-              mrrCents,
+              ...optionalMrr(mrrCents),
               billingInterval,
               expiresAt,
             },
@@ -151,7 +179,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             status,
             externalRef: stripeSub.id,
             externalProvider: 'stripe',
-            mrrCents,
+            ...optionalMrr(mrrCents),
             billingInterval,
             expiresAt,
             notes: cancelAtPeriodEnd ? CANCEL_AT_PERIOD_END_NOTE : undefined,
@@ -168,13 +196,21 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           }
         }
 
+        shouldMarkProcessed = true;
         break;
       }
 
       case 'customer.subscription.deleted': {
         const stripeSub = event.data.object as any;
         const userId: string | undefined = stripeSub.metadata?.userId;
-        if (!userId) break;
+        if (!userId) {
+          logger.warn('Stripe webhook: missing userId on subscription.deleted', {
+            eventId: event.id,
+            subscriptionId: stripeSub.id,
+          });
+          res.status(500).json({ error: 'Missing userId — will retry' });
+          return;
+        }
 
         const memberUserId = await resolveFamilyMemberUserId(stripeSub);
         if (memberUserId) {
@@ -193,6 +229,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             expiresAt: null,
           });
         }
+
+        shouldMarkProcessed = true;
         break;
       }
 
@@ -207,24 +245,33 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
           if (familyMember) {
             await subscriptionService.markPastDue(familyMember.userId);
+            shouldMarkProcessed = true;
             break;
           }
 
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
           if (memberSub?.userId) {
             await subscriptionService.markPastDue(memberSub.userId);
+            shouldMarkProcessed = true;
             break;
           }
         }
 
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
-        if (!customerId) break;
+        if (!customerId) {
+          shouldMarkProcessed = true;
+          break;
+        }
 
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
-        if (!user) break;
+        if (!user) {
+          shouldMarkProcessed = true;
+          break;
+        }
 
         await subscriptionService.markPastDue(user.id);
+        shouldMarkProcessed = true;
         break;
       }
 
@@ -243,8 +290,9 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               familyMember.userId,
               subscriptionId,
               'active',
-              { mrrCents: mrrCents ?? undefined },
+              optionalMrr(mrrCents),
             );
+            shouldMarkProcessed = true;
             break;
           }
 
@@ -254,29 +302,40 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               mrrCents,
               externalRef: subscriptionId,
             });
+            shouldMarkProcessed = true;
             break;
           }
         }
 
         const customerId: string | undefined =
           typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
-        if (!customerId) break;
+        if (!customerId) {
+          shouldMarkProcessed = true;
+          break;
+        }
 
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
-        if (!user) break;
+        if (!user) {
+          shouldMarkProcessed = true;
+          break;
+        }
 
         await subscriptionService.reactivateFromSuccessfulPayment(user.id, {
           mrrCents,
           externalRef: subscriptionId ?? undefined,
         });
+        shouldMarkProcessed = true;
         break;
       }
 
       default:
+        shouldMarkProcessed = true;
         break;
     }
 
-    await webhookIdempotencyService.markProcessed(event.id, 'stripe', event.type);
+    if (shouldMarkProcessed) {
+      await webhookIdempotencyService.markProcessed(event.id, 'stripe', event.type);
+    }
     res.json({ received: true });
   } catch (err: any) {
     logger.error('Error processing Stripe webhook: ' + err.message, err instanceof Error ? err : new Error(String(err)));

@@ -6,7 +6,11 @@ import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 const router = Router();
 
 router.get('/summary', adminSubscriptionController.getSummary);
-router.get('/individual', adminSubscriptionController.listIndividual);
+router.get(
+  '/individual',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  adminSubscriptionController.listIndividual,
+);
 
 // Promo code management — super admin only
 router.post(

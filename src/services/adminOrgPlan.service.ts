@@ -1,10 +1,8 @@
 import { validate as isUuid } from 'uuid';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
-import {
-  OrgPlan,
-  type OrgPlanType,
-} from '@/database/entities/orgPlan.entity';
+import { OrgPlan, type OrgPlanType } from '@/database/entities/orgPlan.entity';
+import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
@@ -253,11 +251,17 @@ export class AdminOrgPlanService {
     );
     const avgStreak = Math.round(totalCurrentStreak / totalMembers);
 
-    // Mock session aggregation for the report
-    const totalSessions = users.reduce(
-      (acc, u) => acc + (u.longestStreak || 0) * 2,
-      0
-    );
+    const userIds = users.map((u) => u.id);
+    const sessionRepo = AppDataSource.getRepository(Session);
+    const totalSessions = userIds.length
+      ? await sessionRepo
+          .createQueryBuilder('s')
+          .where('s.menteeId IN (:...userIds)', { userIds })
+          .andWhere('s.status IN (:...statuses)', {
+            statuses: [SESSION_STATUS.COMPLETED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.IN_PROGRESS],
+          })
+          .getCount()
+      : 0;
 
     const today = new Date();
     const monthKey = `${today.getFullYear()}-${String(

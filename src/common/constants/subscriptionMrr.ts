@@ -14,6 +14,24 @@ export function mrrCentsFromRcProduct(productId: string): number {
   return RC_PRODUCT_MRR_CENTS[productId] ?? 0;
 }
 
+/** MRR from a RevenueCat webhook event, preferring actual paid amount over catalog list price. */
+export function mrrCentsFromRcEvent(event: {
+  product_id?: string;
+  price?: number | null;
+  price_in_purchased_currency?: number | null;
+}): number {
+  const productId = event.product_id ?? '';
+  const interval = inferBillingIntervalFromProductId(productId);
+  const paidAmount = event.price_in_purchased_currency ?? event.price;
+
+  if (paidAmount != null && paidAmount > 0) {
+    const cents = Math.round(paidAmount * 100);
+    return interval === 'annual' ? Math.round(cents / 12) : cents;
+  }
+
+  return mrrCentsFromRcProduct(productId);
+}
+
 export function inferBillingIntervalFromProductId(productId: string): 'monthly' | 'annual' {
   return productId.includes('annual') ? 'annual' : 'monthly';
 }

@@ -8,7 +8,7 @@ import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
 import {
   inferBillingIntervalFromProductId,
-  mrrCentsFromRcProduct,
+  mrrCentsFromRcEvent,
 } from '@/common/constants/subscriptionMrr';
 
 const emailService = new EmailService(null);
@@ -63,7 +63,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     return;
   }
 
-  const { type, app_user_id, product_id, expiration_at_ms, id: eventId } = event;
+  const { type, app_user_id, product_id, expiration_at_ms, id: eventId, price, price_in_purchased_currency } = event;
   logger.info('RevenueCat webhook received', { type, app_user_id, product_id });
 
   if (eventId && (await webhookIdempotencyService.isProcessed(String(eventId)))) {
@@ -74,11 +74,12 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOne({ where: { id: app_user_id } });
   if (!user) {
-    // User not found — still return 200 so RevenueCat doesn't retry
     logger.warn('RevenueCat webhook: user not found', { app_user_id });
     res.json({ received: true });
     return;
   }
+
+  let shouldMarkProcessed = false;
 
   try {
     switch (type) {
@@ -86,16 +87,24 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'RENEWAL':
       case 'PRODUCT_CHANGE': {
         const tier = tierFromProductId(product_id);
-        if (!tier) break;
+        if (!tier) {
+          logger.warn('RevenueCat webhook: unknown product, will retry', {
+            eventId,
+            product_id,
+          });
+          res.status(500).json({ error: 'Unknown product — will retry' });
+          return;
+        }
         await subscriptionService.upsertSubscription(user.id, {
           tier,
           status: 'active',
           externalProvider: 'revenuecat',
           externalRef: product_id,
-          mrrCents: mrrCentsFromRcProduct(product_id),
+          mrrCents: mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency }),
           billingInterval: inferBillingIntervalFromProductId(product_id),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
         });
+        shouldMarkProcessed = true;
         break;
       }
 
@@ -106,14 +115,20 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
             ? (current.tier as SubscriptionTier)
             : tierFromProductId(product_id);
 
-        if (!tier) break;
+        if (!tier) {
+          logger.warn('RevenueCat webhook: CANCELLATION with unknown tier', { eventId, product_id });
+          res.status(500).json({ error: 'Unknown product — will retry' });
+          return;
+        }
 
         await subscriptionService.upsertSubscription(user.id, {
           tier,
           status: 'active',
           externalProvider: 'revenuecat',
           externalRef: product_id ?? current.externalRef,
-          mrrCents: product_id ? mrrCentsFromRcProduct(product_id) : undefined,
+          mrrCents: product_id
+            ? mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency })
+            : undefined,
           billingInterval: product_id ? inferBillingIntervalFromProductId(product_id) : undefined,
           expiresAt: expiration_at_ms
             ? new Date(expiration_at_ms)
@@ -122,6 +137,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
               : null,
           notes: CANCEL_AT_PERIOD_END_NOTE,
         });
+        shouldMarkProcessed = true;
         break;
       }
 
@@ -135,6 +151,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           expiresAt: null,
           notes: null,
         });
+        shouldMarkProcessed = true;
         break;
       }
 
@@ -147,14 +164,16 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
             externalProvider: 'revenuecat',
           });
         }
+        shouldMarkProcessed = true;
         break;
       }
 
       default:
+        shouldMarkProcessed = true;
         break;
     }
 
-    if (eventId) {
+    if (eventId && shouldMarkProcessed) {
       await webhookIdempotencyService.markProcessed(String(eventId), 'revenuecat', type);
     }
     res.json({ received: true });

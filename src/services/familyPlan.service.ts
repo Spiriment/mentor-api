@@ -202,9 +202,11 @@ export class FamilyPlanService {
     const member = await this.memberRepo.findOne({ where: { familyPlanId: planId, userId: memberUserId } });
     if (!member) throw new AppError('Member not found in this plan', 404);
 
-    // Schedule existing subscription to end at period end, then checkout at the new tier
+    // Cancel existing subscription immediately to avoid double-billing with the new checkout
     if (member.stripeSubscriptionId) {
-      await stripeService.cancelSubscriptionAtPeriodEnd(member.stripeSubscriptionId);
+      await stripeService.cancelSubscription(member.stripeSubscriptionId);
+      member.stripeSubscriptionId = null;
+      await this.memberRepo.save(member);
     }
 
     let couponId: string | undefined;
