@@ -9,6 +9,14 @@ import { USER_ROLE, MENTOR_APPROVAL_STATUS } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminSubscriptionService } from './adminSubscription.service';
 import { mrrSnapshotService } from './mrrSnapshot.service';
+import {
+  applyEntitledPaidTierFilters,
+  applyMrrFilters,
+  applyPayingSubscriberFilters,
+  ENTITLED_STATUSES,
+  PAYING_TIERS,
+} from '@/common/constants/subscriptionMetrics';
+import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -27,6 +35,7 @@ export class AdminDashboardService {
     const userRepo = AppDataSource.getRepository(User);
     const mpRepo = AppDataSource.getRepository(MentorProfile);
     const orgRepo = AppDataSource.getRepository(OrgPlan);
+    const familyPlanRepo = AppDataSource.getRepository(FamilyPlan);
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -37,7 +46,7 @@ export class AdminDashboardService {
         userRepo.count({ where: { role: USER_ROLE.MENTOR } }),
         userRepo.count(),
         orgRepo.count({ where: { planType: 'church', status: 'active' } }),
-        orgRepo.count({ where: { planType: 'family', status: 'active' } }),
+        familyPlanRepo.count({ where: { status: 'active' } }),
         // Real MAU: users who made any authenticated request in the last 30 days
         userRepo
           .createQueryBuilder('user')
@@ -128,7 +137,10 @@ export class AdminDashboardService {
     ] = await Promise.all([
       userRepo.find({ select: ['id', 'role', 'createdAt'] }),
       sessionRepo.find({ select: ['id', 'scheduledAt'] }),
-      subRepo.find({ where: { status: In(['active', 'trialing']) }, select: ['id', 'tier'] }),
+      subRepo.find({
+        where: { status: In(ENTITLED_STATUSES), tier: In(PAYING_TIERS) },
+        select: ['id', 'tier'],
+      }),
       userRepo
         .createQueryBuilder('user')
         .select(`DATE_FORMAT(user.lastActiveAt, '%Y-%m')`, 'month')
@@ -181,11 +193,9 @@ export class AdminDashboardService {
     let monthlyRevenueCents: number | null = null;
     let monthlyRevenueCurrency = 'EUR';
     if (adminRole === ADMIN_ROLE.SUPER_ADMIN) {
-      const mrrRow = await subRepo
-        .createQueryBuilder('s')
-        .select('COALESCE(SUM(s.mrrCents), 0)', 'sum')
-        .where('s.status IN (:...st)', { st: ['active', 'trialing'] })
-        .getRawOne<{ sum: string }>();
+      const mrrQb = subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
+      applyMrrFilters(mrrQb, 's');
+      const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
       monthlyRevenueCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     }
 

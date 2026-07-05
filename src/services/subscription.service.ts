@@ -18,7 +18,6 @@ const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
 const TRIAL_DAYS = 7;
 const GRACE_PERIOD_DAYS = 1;
-const MAX_INTERNAL_TEST_CODES = 3;
 export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
 export const CANCEL_AT_PERIOD_END_NOTE = 'cancel_at_period_end';
 
@@ -247,6 +246,16 @@ export class SubscriptionService {
     }
 
     await stripeService.cancelSubscriptionAtPeriodEnd(sub.externalRef);
+    await this.upsertSubscription(userId, {
+      tier: sub.tier,
+      status: sub.status,
+      externalProvider: sub.externalProvider,
+      externalRef: sub.externalRef,
+      expiresAt: sub.expiresAt,
+      mrrCents: sub.mrrCents,
+      billingInterval: sub.billingInterval,
+      notes: CANCEL_AT_PERIOD_END_NOTE,
+    });
   }
 
   // ─── Promo codes ─────────────────────────────────────────────────────────────
@@ -433,17 +442,40 @@ export class SubscriptionService {
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub || sub.status === 'past_due') return;
 
-    sub.status = 'past_due';
-    sub.pastDueAt = new Date();
-    await this.subRepo.save(sub);
+    await this.upsertSubscription(userId, {
+      tier: sub.tier,
+      status: 'past_due',
+      externalProvider: sub.externalProvider,
+      externalRef: sub.externalRef,
+    });
+  }
+
+  async reactivateFromSuccessfulPayment(
+    userId: string,
+    options?: { mrrCents?: number | null; externalRef?: string | null },
+  ): Promise<void> {
+    const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
+    if (!sub || sub.status !== 'past_due') return;
+
+    await this.upsertSubscription(userId, {
+      tier: sub.tier,
+      status: 'active',
+      externalProvider: sub.externalProvider ?? 'stripe',
+      externalRef: options?.externalRef ?? sub.externalRef ?? undefined,
+      mrrCents: options?.mrrCents ?? sub.mrrCents ?? undefined,
+      billingInterval: sub.billingInterval ?? undefined,
+      expiresAt: sub.expiresAt ?? undefined,
+    });
   }
 
   // ─── Cron helpers ────────────────────────────────────────────────────────────
 
   async getExpiringTrials(daysFromNow: number): Promise<UserSubscription[]> {
     const target = addDays(new Date(), daysFromNow);
-    const dayStart = new Date(target.setHours(0, 0, 0, 0));
-    const dayEnd = new Date(target.setHours(23, 59, 59, 999));
+    const dayStart = new Date(target);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(target);
+    dayEnd.setHours(23, 59, 59, 999);
 
     return this.subRepo
       .createQueryBuilder('s')

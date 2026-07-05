@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
+import { webhookIdempotencyService } from '@/services/webhookIdempotency.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
@@ -62,8 +63,13 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     return;
   }
 
-  const { type, app_user_id, product_id, expiration_at_ms } = event;
+  const { type, app_user_id, product_id, expiration_at_ms, id: eventId } = event;
   logger.info('RevenueCat webhook received', { type, app_user_id, product_id });
+
+  if (eventId && (await webhookIdempotencyService.isProcessed(String(eventId)))) {
+    res.json({ received: true });
+    return;
+  }
 
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOne({ where: { id: app_user_id } });
@@ -148,6 +154,9 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
         break;
     }
 
+    if (eventId) {
+      await webhookIdempotencyService.markProcessed(String(eventId), 'revenuecat', type);
+    }
     res.json({ received: true });
   } catch (err: any) {
     logger.error('RevenueCat webhook processing error', err instanceof Error ? err : new Error(String(err)));

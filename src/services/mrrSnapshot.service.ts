@@ -1,11 +1,11 @@
-import { In } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { MrrSnapshot } from '@/database/entities/mrrSnapshot.entity';
-import { SubscriptionStatus } from '@/database/entities/userSubscription.entity';
 import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
-
-const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing', 'past_due'];
+import {
+  applyMrrFilters,
+  applyPayingSubscriberFilters,
+} from '@/common/constants/subscriptionMetrics';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -19,19 +19,17 @@ export class MrrSnapshotService {
   }
 
   async getCurrentMrrTotals(): Promise<{ mrrCents: number; activeSubscribers: number }> {
-    const mrrRow = await this.subRepo
-      .createQueryBuilder('s')
-      .select('COALESCE(SUM(s.mrrCents), 0)', 'sum')
-      .where('s.status IN (:...st)', { st: ACTIVE_STATUSES })
-      .getRawOne<{ sum: string }>();
+    const mrrQb = this.subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
+    applyMrrFilters(mrrQb, 's');
+    const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
 
-    const activeSubscribers = await this.subRepo.count({
-      where: { status: In(ACTIVE_STATUSES) },
-    });
+    const countQb = this.subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+    applyPayingSubscriberFilters(countQb, 's');
+    const countRow = await countQb.getRawOne<{ cnt: string }>();
 
     return {
       mrrCents: mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0,
-      activeSubscribers,
+      activeSubscribers: countRow?.cnt ? parseInt(countRow.cnt, 10) : 0,
     };
   }
 

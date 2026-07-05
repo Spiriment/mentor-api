@@ -87,6 +87,7 @@ router.post(
 router.post(
   '/:sessionId/reschedule',
   requireRole(['mentee']),
+  requireSubscription('pro'),
   sessionController.rescheduleSession
 );
 

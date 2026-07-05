@@ -3,13 +3,15 @@ import { stripeService } from '@/services/stripe.service';
 import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { familyPlanService } from '@/services/familyPlan.service';
+import { webhookIdempotencyService } from '@/services/webhookIdempotency.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
 import {
   inferBillingIntervalFromStripeInterval,
-  stripePriceToMrrCents,
+  mrrCentsFromStripeInvoice,
+  mrrCentsFromStripeSubscription,
 } from '@/common/constants/subscriptionMrr';
 
 const emailService = new EmailService(null);
@@ -77,6 +79,11 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
     return;
   }
 
+  if (await webhookIdempotencyService.isProcessed(event.id)) {
+    res.json({ received: true });
+    return;
+  }
+
   const subRepo = AppDataSource.getRepository(UserSubscription);
   const userRepo = AppDataSource.getRepository(User);
 
@@ -99,10 +106,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
         const stripePrice = stripeSub.items?.data?.[0]?.price;
         const billingInterval = inferBillingIntervalFromStripeInterval(stripePrice?.recurring?.interval);
-        const mrrCents = stripePriceToMrrCents(
-          stripePrice?.unit_amount ?? 0,
-          stripePrice?.recurring?.interval,
-        );
+        const mrrCents = mrrCentsFromStripeSubscription(stripeSub) ?? 0;
         const expiresAt = stripeSub.current_period_end
           ? new Date((stripeSub.current_period_end as number) * 1000)
           : null;
@@ -214,16 +218,13 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
         if (!user) break;
 
-        const sub = await subRepo.findOne({ where: { user: { id: user.id } } });
-        if (sub) {
-          sub.status = 'past_due';
-          await subRepo.save(sub);
-        }
+        await subscriptionService.markPastDue(user.id);
         break;
       }
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as any;
+        const mrrCents = mrrCentsFromStripeInvoice(invoice);
         const subscriptionId: string | undefined =
           typeof invoice.subscription === 'string'
             ? invoice.subscription
@@ -232,18 +233,21 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         if (subscriptionId) {
           const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
           if (familyMember) {
-            const memberSub = await subRepo.findOne({ where: { user: { id: familyMember.userId } } });
-            if (memberSub && memberSub.status === 'past_due') {
-              memberSub.status = 'active';
-              await subRepo.save(memberSub);
-              break;
-            }
+            await familyPlanService.syncMemberSubscription(
+              familyMember.userId,
+              subscriptionId,
+              'active',
+              { mrrCents: mrrCents ?? undefined },
+            );
+            break;
           }
 
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
-          if (memberSub && memberSub.status === 'past_due') {
-            memberSub.status = 'active';
-            await subRepo.save(memberSub);
+          if (memberSub?.userId) {
+            await subscriptionService.reactivateFromSuccessfulPayment(memberSub.userId, {
+              mrrCents,
+              externalRef: subscriptionId,
+            });
             break;
           }
         }
@@ -255,11 +259,10 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
         if (!user) break;
 
-        const sub = await subRepo.findOne({ where: { user: { id: user.id } } });
-        if (sub && sub.status === 'past_due') {
-          sub.status = 'active';
-          await subRepo.save(sub);
-        }
+        await subscriptionService.reactivateFromSuccessfulPayment(user.id, {
+          mrrCents,
+          externalRef: subscriptionId ?? undefined,
+        });
         break;
       }
 
@@ -267,6 +270,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         break;
     }
 
+    await webhookIdempotencyService.markProcessed(event.id, 'stripe', event.type);
     res.json({ received: true });
   } catch (err: any) {
     logger.error('Error processing Stripe webhook: ' + err.message, err instanceof Error ? err : new Error(String(err)));

@@ -13,10 +13,15 @@ import { AppError } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminAuditService } from './adminAudit.service';
 import { mrrSnapshotService } from './mrrSnapshot.service';
+import {
+  applyEntitledPaidTierFilters,
+  applyMrrFilters,
+  applyPayingSubscriberFilters,
+  ENTITLED_STATUSES,
+  PAYING_TIERS,
+} from '@/common/constants/subscriptionMetrics';
 
 const MAX_INTERNAL_TEST_CODES = 3;
-
-const ACTIVE_STATUSES: SubscriptionStatus[] = ['active', 'trialing', 'past_due'];
 
 export class AdminSubscriptionService {
   serialize(row: UserSubscription): Record<string, unknown> {
@@ -63,13 +68,12 @@ export class AdminSubscriptionService {
     const subRepo = AppDataSource.getRepository(UserSubscription);
     const userRepo = AppDataSource.getRepository(User);
 
-    const tierRows = await subRepo
+    const tierQb = subRepo
       .createQueryBuilder('s')
       .select('s.tier', 'tier')
-      .addSelect('COUNT(*)', 'cnt')
-      .where('s.status IN (:...st)', { st: ACTIVE_STATUSES })
-      .groupBy('s.tier')
-      .getRawMany<{ tier: string; cnt: string }>();
+      .addSelect('COUNT(*)', 'cnt');
+    applyEntitledPaidTierFilters(tierQb, 's');
+    const tierRows = await tierQb.groupBy('s.tier').getRawMany<{ tier: string; cnt: string }>();
 
     const countsByTier: Record<SubscriptionTier, number> = {
       free: 0,
@@ -85,10 +89,17 @@ export class AdminSubscriptionService {
       }
     }
 
-    const [totalUsers, activeSubscribers] = await Promise.all([
+    const [totalUsers, activeSubscribersRow] = await Promise.all([
       userRepo.count(),
-      subRepo.count({ where: { status: In(ACTIVE_STATUSES) } }),
+      (async () => {
+        const countQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+        applyPayingSubscriberFilters(countQb, 's');
+        return countQb.getRawOne<{ cnt: string }>();
+      })(),
     ]);
+    const activeSubscribers = activeSubscribersRow?.cnt
+      ? parseInt(activeSubscribersRow.cnt, 10)
+      : 0;
 
     const distinctRow = await subRepo
       .createQueryBuilder('s')
@@ -118,11 +129,9 @@ export class AdminSubscriptionService {
       };
     }
 
-    const mrrRow = await subRepo
-      .createQueryBuilder('s')
-      .select('COALESCE(SUM(s.mrrCents), 0)', 'sum')
-      .where('s.status IN (:...st)', { st: ACTIVE_STATUSES })
-      .getRawOne<{ sum: string }>();
+    const mrrQb = subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
+    applyMrrFilters(mrrQb, 's');
+    const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
 
     const totalMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     const revenueHistory = await this.getRevenueHistory();
@@ -251,7 +260,8 @@ export class AdminSubscriptionService {
     const subRepo = AppDataSource.getRepository(UserSubscription);
     const [rows, total] = await subRepo.findAndCount({
       where: {
-        status: In(ACTIVE_STATUSES),
+        status: In(ENTITLED_STATUSES),
+        tier: In(PAYING_TIERS),
         user: { orgPlanId: IsNull() },
       },
       relations: ['user'],

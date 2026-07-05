@@ -15,6 +15,7 @@ export * from './familyMember.entity';
 export * from './aiChapterSummary.entity';
 export * from './userSubscription.entity';
 export * from './mrrSnapshot.entity';
+export * from './processedWebhookEvent.entity';
 export * from './promoCode.entity';
 export * from './promoCodeRedemption.entity';
 export * from './adminUser.entity';
@@ -72,4 +73,4 @@ export * from './quizStreak.entity';
 
 // Church portal entities
 export * from '../../church-portal/entities';
-
+
