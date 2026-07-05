@@ -214,13 +214,6 @@ export class FamilyPlanService {
     const member = await this.memberRepo.findOne({ where: { familyPlanId: planId, userId: memberUserId } });
     if (!member) throw new AppError('Member not found in this plan', 404);
 
-    // Cancel existing subscription immediately to avoid double-billing with the new checkout
-    if (member.stripeSubscriptionId) {
-      await stripeService.cancelSubscription(member.stripeSubscriptionId);
-      member.stripeSubscriptionId = null;
-      await this.memberRepo.save(member);
-    }
-
     let couponId: string | undefined;
     if (member.ageDiscountPercent > 0) {
       couponId = await stripeService.getOrCreatePercentageCoupon(
@@ -446,8 +439,21 @@ export class FamilyPlanService {
       member.tier = options.tier;
     }
 
+    const previousStripeSubId = member.stripeSubscriptionId;
     member.stripeSubscriptionId = stripeSubscriptionId;
     await this.memberRepo.save(member);
+
+    if (
+      previousStripeSubId &&
+      previousStripeSubId !== stripeSubscriptionId &&
+      status === 'active'
+    ) {
+      try {
+        await stripeService.cancelSubscription(previousStripeSubId);
+      } catch {
+        // Old subscription may already be cancelled; non-blocking
+      }
+    }
 
     let sub = await this.subRepo.findOne({ where: { user: { id: memberUserId } } });
     if (!sub) {

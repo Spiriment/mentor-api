@@ -19,6 +19,38 @@ const subscriptionService = new SubscriptionService(new EmailService(null));
 
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
+const CHURCH_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+type PendingChurchAssignment = {
+  userId: string;
+  tier: string;
+  createdAt: string;
+};
+
+function parsePendingChurchAssignments(
+  metadata: Record<string, unknown> | null | undefined,
+): PendingChurchAssignment[] {
+  const raw = metadata?.pendingAssignments;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (entry): entry is PendingChurchAssignment =>
+      !!entry &&
+      typeof entry === 'object' &&
+      typeof (entry as PendingChurchAssignment).userId === 'string' &&
+      typeof (entry as PendingChurchAssignment).createdAt === 'string',
+  );
+}
+
+function pruneExpiredPendingChurchAssignments(
+  pending: PendingChurchAssignment[],
+): PendingChurchAssignment[] {
+  const cutoff = Date.now() - CHURCH_PENDING_TTL_MS;
+  return pending.filter((entry) => new Date(entry.createdAt).getTime() > cutoff);
+}
+
+function reservedChurchSeats(plan: OrgPlan): number {
+  return plan.usedSeats + pruneExpiredPendingChurchAssignments(parsePendingChurchAssignments(plan.metadata)).length;
+}
 
 export class AdminOrgPlanService {
   private serialize(p: OrgPlan) {
@@ -313,6 +345,24 @@ export class AdminOrgPlanService {
 
   // ─── Member assignment ────────────────────────────────────────────────────────
 
+  private async releasePendingChurchAssignment(planId: string, userId: string): Promise<void> {
+    await AppDataSource.transaction(async (manager) => {
+      const planRepo = manager.getRepository(OrgPlan);
+      const plan = await planRepo.findOne({
+        where: { id: planId, planType: 'church' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!plan) return;
+
+      const pending = pruneExpiredPendingChurchAssignments(
+        parsePendingChurchAssignments(plan.metadata),
+      ).filter((entry) => entry.userId !== userId);
+
+      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pending };
+      await planRepo.save(plan);
+    });
+  }
+
   async assignMember(
     planId: string,
     userId: string,
@@ -323,46 +373,67 @@ export class AdminOrgPlanService {
     if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
     if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
 
-    const planRepo = AppDataSource.getRepository(OrgPlan);
     const userRepo = AppDataSource.getRepository(User);
-
-    const plan = await planRepo.findOne({ where: { id: planId, status: 'active' } });
-    if (!plan) throw new AppError('Plan not found or inactive', 404);
-    if (plan.planType !== 'church') throw new AppError('Member assignment is only supported for church plans', 400);
-
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new AppError('User not found', 404);
     if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
-    if (plan.usedSeats >= plan.totalSeats) {
-      throw new AppError('Plan has no available seats', 409);
-    }
 
-    // Determine discount: 25% for 50+ member churches, 20% otherwise
+    await AppDataSource.transaction(async (manager) => {
+      const planRepo = manager.getRepository(OrgPlan);
+      const plan = await planRepo.findOne({
+        where: { id: planId, status: 'active', planType: 'church' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!plan) throw new AppError('Plan not found or inactive', 404);
+
+      const pending = pruneExpiredPendingChurchAssignments(
+        parsePendingChurchAssignments(plan.metadata),
+      );
+      if (pending.some((entry) => entry.userId === userId)) {
+        throw new AppError('This user already has a pending church checkout', 409);
+      }
+      if (reservedChurchSeats(plan) >= plan.totalSeats) {
+        throw new AppError('Plan has no available seats', 409);
+      }
+
+      pending.push({ userId, tier, createdAt: new Date().toISOString() });
+      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pending };
+      await planRepo.save(plan);
+    });
+
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+    const plan = await planRepo.findOne({ where: { id: planId, status: 'active', planType: 'church' } });
+    if (!plan) throw new AppError('Plan not found or inactive', 404);
+
     const discountPercent = plan.usedSeats >= 50 ? CHURCH_BULK_DISCOUNT_PERCENT : CHURCH_DISCOUNT_PERCENT;
 
-    // Create a Stripe coupon and checkout session with the church discount
-    const couponLabel = `church-${plan.id.slice(0, 8)}`;
-    const couponId = await stripeService.getOrCreatePercentageCoupon(discountPercent, couponLabel);
+    try {
+      const couponLabel = `church-${plan.id.slice(0, 8)}`;
+      const couponId = await stripeService.getOrCreatePercentageCoupon(discountPercent, couponLabel);
 
-    const checkoutUrl = await stripeService.createCheckoutSession({
-      user,
-      tier,
-      successUrl: APP_DEEP_LINK_SUCCESS,
-      cancelUrl: APP_DEEP_LINK_CANCEL,
-      couponId,
-      subscriptionMetadata: { orgPlanId: planId },
-    });
+      const checkoutUrl = await stripeService.createCheckoutSession({
+        user,
+        tier,
+        successUrl: APP_DEEP_LINK_SUCCESS,
+        cancelUrl: APP_DEEP_LINK_CANCEL,
+        couponId,
+        subscriptionMetadata: { orgPlanId: planId },
+      });
 
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.org_plan.assign_member',
-      targetType: 'user',
-      targetId: userId,
-      metadata: { planId, tier, discountPercent },
-      ip: ip ?? null,
-    });
+      await adminAuditService.log({
+        adminUserId,
+        action: 'admin.org_plan.assign_member',
+        targetType: 'user',
+        targetId: userId,
+        metadata: { planId, tier, discountPercent },
+        ip: ip ?? null,
+      });
 
-    return { checkoutUrl, discountPercent, tier };
+      return { checkoutUrl, discountPercent, tier };
+    } catch (err) {
+      await this.releasePendingChurchAssignment(planId, userId);
+      throw err;
+    }
   }
 
   async completeChurchMemberAssignment(userId: string, orgPlanId: string): Promise<void> {
@@ -395,10 +466,17 @@ export class AdminOrgPlanService {
         throw new AppError('Church plan not found or inactive', 404);
       }
 
-      if (plan.usedSeats >= plan.totalSeats) {
+      const pending = pruneExpiredPendingChurchAssignments(
+        parsePendingChurchAssignments(plan.metadata),
+      );
+      const hadPending = pending.some((entry) => entry.userId === userId);
+      const pendingAfterRemoval = pending.filter((entry) => entry.userId !== userId);
+
+      if (!hadPending && plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Church plan has no available seats', 409);
       }
 
+      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pendingAfterRemoval };
       user.orgPlanId = orgPlanId;
       plan.usedSeats += 1;
       await userRepo.save(user);
