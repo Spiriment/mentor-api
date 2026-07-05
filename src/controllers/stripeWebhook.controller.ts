@@ -354,6 +354,18 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         break;
       }
 
+      case 'checkout.session.expired': {
+        const session = event.data.object as { metadata?: { userId?: string; orgPlanId?: string } };
+        const orgPlanId = session.metadata?.orgPlanId;
+        const userId = session.metadata?.userId;
+        if (orgPlanId && userId) {
+          await adminOrgPlanService.releasePendingChurchCheckout(orgPlanId, userId);
+          logger.info('Released pending church seat after expired checkout', { orgPlanId, userId });
+        }
+        shouldMarkProcessed = true;
+        break;
+      }
+
       default:
         shouldMarkProcessed = true;
         break;

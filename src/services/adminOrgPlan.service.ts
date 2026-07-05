@@ -345,6 +345,10 @@ export class AdminOrgPlanService {
 
   // ─── Member assignment ────────────────────────────────────────────────────────
 
+  async releasePendingChurchCheckout(planId: string, userId: string): Promise<void> {
+    await this.releasePendingChurchAssignment(planId, userId);
+  }
+
   private async releasePendingChurchAssignment(planId: string, userId: string): Promise<void> {
     await AppDataSource.transaction(async (manager) => {
       const planRepo = manager.getRepository(OrgPlan);

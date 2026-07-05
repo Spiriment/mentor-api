@@ -1,4 +1,4 @@
-import { Between } from 'typeorm';
+import { Between, In } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
@@ -13,6 +13,7 @@ import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { USER_ROLE, NotFoundError } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
+import { MRR_STATUSES, PAYING_TIERS } from '@/common/constants/subscriptionMetrics';
 import { adminDashboardService } from './adminDashboard.service';
 
 export type AdminExportReportType =
@@ -531,8 +532,11 @@ export class AdminExportService {
         select: ['id', 'mentorId', 'menteeId', 'scheduledAt', 'duration'],
       }),
       subRepo.find({
-        where: { status: 'active' },
-        select: ['id', 'tier', 'mrrCents', 'currency'],
+        where: {
+          status: In(MRR_STATUSES),
+          tier: In(PAYING_TIERS),
+        },
+        select: ['id', 'tier', 'mrrCents', 'currency', 'status'],
         relations: ['user'],
       }),
       mpRepo
@@ -562,11 +566,11 @@ export class AdminExportService {
     lines.push(row(['New mentors', newUsers.filter((u) => u.role === USER_ROLE.MENTOR).length]));
     lines.push(row(['Completed sessions', completedSessions.length]));
     lines.push(row(['Active subscriptions (snapshot)', activeSubs.length]));
-    lines.push(row(['Active basic', activeSubs.filter((s) => s.tier === 'basic').length]));
-    lines.push(row(['Active pro', activeSubs.filter((s) => s.tier === 'pro').length]));
-    lines.push(row(['Active premium', activeSubs.filter((s) => s.tier === 'premium').length]));
+    lines.push(row(['Paying basic', activeSubs.filter((s) => s.tier === 'basic').length]));
+    lines.push(row(['Paying pro', activeSubs.filter((s) => s.tier === 'pro').length]));
+    lines.push(row(['Paying premium', activeSubs.filter((s) => s.tier === 'premium').length]));
     const totalMrr = activeSubs.reduce((sum, s) => sum + (s.mrrCents ?? 0), 0);
-    lines.push(row(['Total MRR (cents)', totalMrr]));
+    lines.push(row(['Total MRR cents (active + past_due)', totalMrr]));
     lines.push(row(['New mentor applications', newMentorApps.length]));
     lines.push('');
 
