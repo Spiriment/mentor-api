@@ -57,6 +57,22 @@ export class AdminOrgPlanService {
     };
   }
 
+  async get(planType: OrgPlanType, planId: string) {
+    if (!isUuid(planId)) {
+      throw new AppError('Invalid plan id', 400);
+    }
+
+    const row = await AppDataSource.getRepository(OrgPlan).findOne({
+      where: { id: planId, planType },
+      relations: ['billingAdmin'],
+    });
+    if (!row) {
+      throw new AppError('Plan not found', 404);
+    }
+
+    return this.serialize(row);
+  }
+
   async create(
     planType: OrgPlanType,
     input: {
@@ -315,7 +331,7 @@ export class AdminOrgPlanService {
 
     // Create a Stripe coupon and checkout session with the church discount
     const couponLabel = `church-${plan.id.slice(0, 8)}`;
-    const couponId = await stripeService.createPercentageCoupon(discountPercent, couponLabel);
+    const couponId = await stripeService.getOrCreatePercentageCoupon(discountPercent, couponLabel);
 
     const checkoutUrl = await stripeService.createCheckoutSession({
       user,

@@ -13,7 +13,9 @@ const router = Router();
 router.use(requireAdminRole(ADMIN_ROLE.SUPER_ADMIN));
 
 router.get('/church', adminOrgPlanController.listChurch);
+router.get('/church/:id', adminOrgPlanController.getChurch);
 router.get('/family', adminOrgPlanController.listFamily);
+router.get('/family/:id', adminOrgPlanController.getFamily);
 
 router.post(
   '/church',

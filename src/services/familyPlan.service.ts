@@ -8,10 +8,9 @@ import { stripeService } from './stripe.service';
 import { getYouthDiscountPercent } from '@/common/constants/userAge';
 import { EmailService } from '@/core/email.service';
 import { v4 as uuidv4 } from 'uuid';
-import { IsNull } from 'typeorm';
+import { IsNull, In } from 'typeorm';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
-
-const TIER_PRICE_EUR: Record<string, number> = { basic: 3, pro: 5, premium: 7.5 };
+import { TIER_ANNUAL_PRICE_EUR, TIER_PRICE_EUR } from '@/common/constants/subscriptionPricing';
 
 const TIER_LABELS: Record<string, string> = {
   basic: 'Basic',
@@ -29,9 +28,28 @@ function calcAgeDiscount(birthday: Date | string | null | undefined): number {
   return getYouthDiscountPercent(birthday) ?? 0;
 }
 
-function effectivePrice(tier: string, discountPercent: number): number {
-  const base = TIER_PRICE_EUR[tier] ?? 0;
+function effectivePrice(
+  tier: string,
+  discountPercent: number,
+  interval: 'monthly' | 'annual' = 'monthly',
+): number {
+  const base =
+    interval === 'annual'
+      ? (TIER_ANNUAL_PRICE_EUR[tier as keyof typeof TIER_ANNUAL_PRICE_EUR] ?? 0)
+      : (TIER_PRICE_EUR[tier as keyof typeof TIER_PRICE_EUR] ?? 0);
   return Math.round(base * (1 - discountPercent / 100) * 100) / 100;
+}
+
+function monthlyEquivalentPrice(
+  tier: string,
+  discountPercent: number,
+  interval: 'monthly' | 'annual',
+): number {
+  const billed = effectivePrice(tier, discountPercent, interval);
+  if (interval === 'annual') {
+    return Math.round((billed / 12) * 100) / 100;
+  }
+  return billed;
 }
 
 function daysReadThisMonth(monthlyStreakData?: { [key: string]: number[] } | null): number {
@@ -90,7 +108,13 @@ export class FamilyPlanService {
     parentUser: User,
     memberUserId: string,
     tier: SubscriptionTier,
-  ): Promise<{ checkoutUrl: string; discountPercent: number; effectivePriceEur: number }> {
+    interval: 'monthly' | 'annual' = 'monthly',
+  ): Promise<{
+    checkoutUrl: string;
+    discountPercent: number;
+    effectivePriceEur: number;
+    billingInterval: 'monthly' | 'annual';
+  }> {
     const plan = await this.planRepo.findOne({ where: { id: planId, status: 'active' } });
     if (!plan) throw new AppError('Family plan not found', 404);
     if (plan.parentUserId !== parentUser.id) throw new AppError('Only the plan owner can add members', 403);
@@ -111,22 +135,20 @@ export class FamilyPlanService {
     }
 
     const discountPercent = calcAgeDiscount(memberUser.birthday);
-    const price = effectivePrice(tier, discountPercent);
-
-    // Create Stripe subscription billed to parent's customer
-    const parentCustomerId = await stripeService.getOrCreateCustomer(parentUser);
+    const price = effectivePrice(tier, discountPercent, interval);
 
     let couponId: string | undefined;
     if (discountPercent > 0) {
-      couponId = await stripeService.createPercentageCoupon(
+      couponId = await stripeService.getOrCreatePercentageCoupon(
         discountPercent,
-        `family-age-${memberUser.id.slice(0, 8)}`,
+        `family-age-${memberUser.id}`,
       );
     }
 
     const checkoutUrl = await stripeService.createCheckoutSession({
       user: parentUser,
       tier: tier as 'basic' | 'pro' | 'premium',
+      interval,
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUser.id}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
@@ -137,7 +159,7 @@ export class FamilyPlanService {
       },
     });
 
-    return { checkoutUrl, discountPercent, effectivePriceEur: price };
+    return { checkoutUrl, discountPercent, effectivePriceEur: price, billingInterval: interval };
   }
 
   // ─── Remove member ────────────────────────────────────────────────────────────
@@ -171,7 +193,8 @@ export class FamilyPlanService {
     parentUser: User,
     memberUserId: string,
     newTier: SubscriptionTier,
-  ): Promise<{ checkoutUrl: string; effectivePriceEur: number }> {
+    interval: 'monthly' | 'annual' = 'monthly',
+  ): Promise<{ checkoutUrl: string; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new AppError('Family plan not found', 404);
     if (plan.parentUserId !== parentUser.id) throw new AppError('Only the plan owner can change tiers', 403);
@@ -186,15 +209,16 @@ export class FamilyPlanService {
 
     let couponId: string | undefined;
     if (member.ageDiscountPercent > 0) {
-      couponId = await stripeService.createPercentageCoupon(
+      couponId = await stripeService.getOrCreatePercentageCoupon(
         member.ageDiscountPercent,
-        `family-age-${memberUserId.slice(0, 8)}-${newTier}`,
+        `family-age-${memberUserId}`,
       );
     }
 
     const checkoutUrl = await stripeService.createCheckoutSession({
       user: parentUser,
       tier: newTier as 'basic' | 'pro' | 'premium',
+      interval,
       successUrl: `${APP_DEEP_LINK_SUCCESS}?familyMember=${memberUserId}`,
       cancelUrl: APP_DEEP_LINK_CANCEL,
       couponId,
@@ -207,7 +231,8 @@ export class FamilyPlanService {
 
     return {
       checkoutUrl,
-      effectivePriceEur: effectivePrice(newTier, member.ageDiscountPercent),
+      effectivePriceEur: effectivePrice(newTier, member.ageDiscountPercent, interval),
+      billingInterval: interval,
     };
   }
 
@@ -226,10 +251,20 @@ export class FamilyPlanService {
       relations: ['user'],
     });
 
+    const memberUserIds = members.map((m) => m.userId);
+    const subs = memberUserIds.length
+      ? await this.subRepo.find({ where: { userId: In(memberUserIds) } })
+      : [];
+    const subByUserId = new Map(subs.map((s) => [s.userId, s]));
+
     const isOwner = plan.parentUserId === userId;
     const parent = plan.parent;
 
     const memberList = members.map((m) => {
+      const sub = subByUserId.get(m.userId);
+      const billingInterval = sub?.billingInterval ?? 'monthly';
+      const billedPriceEur = effectivePrice(m.tier, m.ageDiscountPercent, billingInterval);
+      const monthlyPriceEur = monthlyEquivalentPrice(m.tier, m.ageDiscountPercent, billingInterval);
       const base = {
         id: m.id,
         userId: m.userId,
@@ -238,7 +273,9 @@ export class FamilyPlanService {
         email: m.user?.email ?? '',
         tier: m.tier,
         ageDiscountPercent: m.ageDiscountPercent,
-        monthlyPriceEur: effectivePrice(m.tier, m.ageDiscountPercent),
+        billingInterval,
+        billedPriceEur,
+        monthlyPriceEur,
         isParent: m.isParent,
         paymentStatus: m.stripeSubscriptionId ? 'active' as const : 'pending' as const,
         ...(isOwner

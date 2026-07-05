@@ -96,6 +96,24 @@ export class AdminOrgPlanController {
     }
   };
 
+  getChurch = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const plan = await adminOrgPlanService.get('church', req.params.id);
+      return sendSuccessResponse(res, plan);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  getFamily = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const plan = await adminOrgPlanService.get('family', req.params.id);
+      return sendSuccessResponse(res, plan);
+    } catch (e) {
+      next(e);
+    }
+  };
+
   deleteChurch = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updated = await adminOrgPlanService.deactivate(

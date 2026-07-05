@@ -24,12 +24,23 @@ export const getMyFamilyPlan = async (req: Request, res: Response, next: NextFun
 export const addFamilyMember = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { planId } = req.params;
-    const { userId, tier } = req.body as { userId?: string; tier?: string };
+    const { userId, tier, interval } = req.body as {
+      userId?: string;
+      tier?: string;
+      interval?: string;
+    };
     if (!userId) throw new AppError('userId is required', 400);
     if (!tier || !VALID_TIERS.includes(tier as SubscriptionTier)) {
       throw new AppError('tier must be basic, pro, or premium', 400);
     }
-    const result = await familyPlanService.addMember(planId, req.user!, userId, tier as SubscriptionTier);
+    const billingInterval = interval === 'annual' ? 'annual' : 'monthly';
+    const result = await familyPlanService.addMember(
+      planId,
+      req.user!,
+      userId,
+      tier as SubscriptionTier,
+      billingInterval,
+    );
     res.status(201).json({ success: true, data: result });
   } catch (e) { next(e); }
 };
@@ -45,11 +56,18 @@ export const removeFamilyMember = async (req: Request, res: Response, next: Next
 export const changeFamilyMemberTier = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { planId, memberId } = req.params;
-    const { tier } = req.body as { tier?: string };
+    const { tier, interval } = req.body as { tier?: string; interval?: string };
     if (!tier || !VALID_TIERS.includes(tier as SubscriptionTier)) {
       throw new AppError('tier must be basic, pro, or premium', 400);
     }
-    const result = await familyPlanService.changeMemberTier(planId, req.user!, memberId, tier as SubscriptionTier);
+    const billingInterval = interval === 'annual' ? 'annual' : 'monthly';
+    const result = await familyPlanService.changeMemberTier(
+      planId,
+      req.user!,
+      memberId,
+      tier as SubscriptionTier,
+      billingInterval,
+    );
     res.json({ success: true, data: result });
   } catch (e) { next(e); }
 };

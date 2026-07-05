@@ -97,14 +97,41 @@ class StripeService {
     });
   }
 
-  async createPercentageCoupon(discountPercent: number, promoCode: string): Promise<string> {
+  async getOrCreatePercentageCoupon(discountPercent: number, promoCode: string): Promise<string> {
+    const id = this.normalizeCouponId(promoCode);
+
+    try {
+      const existing = await this.client.coupons.retrieve(id);
+      if (existing.valid && existing.percent_off === discountPercent) {
+        return existing.id;
+      }
+    } catch (err: any) {
+      if (err?.code !== 'resource_missing') throw err;
+    }
+
     const coupon = await this.client.coupons.create({
+      id,
       percent_off: discountPercent,
       duration: 'forever',
       name: `Promo: ${promoCode}`,
       metadata: { promoCode },
     });
     return coupon.id;
+  }
+
+  /** @deprecated Use getOrCreatePercentageCoupon — kept as alias for callers */
+  async createPercentageCoupon(discountPercent: number, promoCode: string): Promise<string> {
+    return this.getOrCreatePercentageCoupon(discountPercent, promoCode);
+  }
+
+  private normalizeCouponId(label: string): string {
+    const slug = label
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 40);
+    return `spiriment_${slug || 'discount'}`;
   }
 
   constructWebhookEvent(payload: Buffer, signature: string): any {

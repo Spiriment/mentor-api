@@ -214,7 +214,7 @@ export class SubscriptionService {
     if (discount.percent !== null) {
       const couponPrefix =
         discount.type === 'mentor' ? 'mentor' : discount.type === 'church' ? 'church' : 'age';
-      couponId = await stripeService.createPercentageCoupon(
+      couponId = await stripeService.getOrCreatePercentageCoupon(
         discount.percent,
         `${couponPrefix}-${user.id.slice(0, 8)}`,
       );
@@ -310,7 +310,10 @@ export class SubscriptionService {
     // Ambassador — create Stripe coupon and return checkout URL
     await this.assertCheckoutAllowed(user.id);
 
-    const couponId = await stripeService.createPercentageCoupon(promoCode.discountPercent, code);
+    const couponId = await stripeService.getOrCreatePercentageCoupon(
+      promoCode.discountPercent,
+      `ambassador-${code}`,
+    );
     const checkoutUrl = await stripeService.createCheckoutSession({
       user,
       tier: promoCode.tier as 'basic' | 'pro' | 'premium',
