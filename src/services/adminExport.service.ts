@@ -9,6 +9,8 @@ import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entitie
 import { SessionReview } from '@/database/entities/sessionReview.entity';
 import { BibleProgress } from '@/database/entities/bibleProgress.entity';
 import { OrgPlan } from '@/database/entities/orgPlan.entity';
+import { FamilyPlan } from '@/database/entities/familyPlan.entity';
+import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { USER_ROLE, NotFoundError } from '@/common';
 import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { adminDashboardService } from './adminDashboard.service';
@@ -328,10 +330,17 @@ export class AdminExportService {
   async buildSubscriptionsReport(adminRole: ADMIN_ROLE): Promise<Buffer> {
     const subRepo = AppDataSource.getRepository(UserSubscription);
     const orgRepo = AppDataSource.getRepository(OrgPlan);
+    const familyPlanRepo = AppDataSource.getRepository(FamilyPlan);
+    const familyMemberRepo = AppDataSource.getRepository(FamilyMember);
 
-    const [subscriptions, orgPlans] = await Promise.all([
+    const [subscriptions, churchPlans, familyPlans, familyMembers] = await Promise.all([
       subRepo.find({ relations: ['user'], order: { updatedAt: 'DESC' } }),
-      orgRepo.find({ order: { createdAt: 'DESC' } }),
+      orgRepo.find({ where: { planType: 'church' }, order: { createdAt: 'DESC' } }),
+      familyPlanRepo.find({ relations: ['parent'], order: { createdAt: 'DESC' } }),
+      familyMemberRepo.find({
+        relations: ['user', 'familyPlan'],
+        order: { createdAt: 'DESC' },
+      }),
     ]);
 
     const lines: string[] = [
@@ -370,20 +379,66 @@ export class AdminExportService {
     }
 
     lines.push('');
-    lines.push('ORG PLANS (CHURCH & FAMILY)');
+    lines.push('CHURCH PLANS');
     lines.push(
-      row(['planId', 'type', 'name', 'status', 'totalSeats', 'usedSeats', 'createdAt'])
+      row(['planId', 'name', 'status', 'totalSeats', 'usedSeats', 'createdAt'])
     );
-    for (const plan of orgPlans) {
+    for (const plan of churchPlans) {
       lines.push(
         row([
           plan.id,
-          plan.planType,
           plan.name,
           plan.status,
           plan.totalSeats,
           plan.usedSeats,
           iso(plan.createdAt),
+        ])
+      );
+    }
+
+    lines.push('');
+    lines.push('FAMILY PLANS');
+    lines.push(row(['planId', 'name', 'status', 'parentUserId', 'parentEmail', 'createdAt']));
+    for (const plan of familyPlans) {
+      lines.push(
+        row([
+          plan.id,
+          plan.name,
+          plan.status,
+          plan.parentUserId,
+          plan.parent?.email,
+          iso(plan.createdAt),
+        ])
+      );
+    }
+
+    lines.push('');
+    lines.push('FAMILY MEMBERS');
+    lines.push(
+      row([
+        'memberId',
+        'familyPlanId',
+        'userId',
+        'userEmail',
+        'tier',
+        'isParent',
+        'ageDiscountPercent',
+        'removedAt',
+        'createdAt',
+      ])
+    );
+    for (const member of familyMembers) {
+      lines.push(
+        row([
+          member.id,
+          member.familyPlanId,
+          member.userId,
+          member.user?.email,
+          member.tier,
+          member.isParent,
+          member.ageDiscountPercent,
+          iso(member.removedAt),
+          iso(member.createdAt),
         ])
       );
     }

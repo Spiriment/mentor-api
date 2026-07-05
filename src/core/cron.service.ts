@@ -399,6 +399,14 @@ export class CronService {
         return "*/30 * * * * (Every 30 minutes)";
       case "assignment-reminder":
         return "0 * * * * (Every hour)";
+      case "trial-reminder":
+        return "0 9 * * * (Daily at 9 AM UTC)";
+      case "trial-convert":
+        return "0 10 * * * (Daily at 10 AM UTC)";
+      case "grace-period-downgrade":
+        return "0 11 * * * (Daily at 11 AM UTC)";
+      case "mrr-snapshot":
+        return "15 0 * * * (Daily at 00:15 UTC)";
       default:
         return "Unknown";
     }
