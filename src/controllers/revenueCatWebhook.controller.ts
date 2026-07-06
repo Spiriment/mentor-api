@@ -122,16 +122,6 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'INITIAL_PURCHASE':
       case 'RENEWAL':
       case 'PRODUCT_CHANGE': {
-        const current = await subscriptionService.getSubscriptionForUser(user.id);
-        if (current.status === 'trialing' && !current.externalRef) {
-          logger.info('RevenueCat webhook: ignoring purchase during backend free trial', {
-            eventId,
-            app_user_id,
-            product_id,
-          });
-          break;
-        }
-
         const tier = tierFromProductId(product_id);
         if (!tier) {
           logger.warn('RevenueCat webhook: unknown product, will retry', {

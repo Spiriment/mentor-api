@@ -98,6 +98,7 @@ export class SubscriptionService {
       billingInterval: sub?.billingInterval ?? null,
       currency: sub?.currency ?? 'EUR',
       externalRef: sub?.externalRef ?? null,
+      externalProvider: sub?.externalProvider ?? null,
       pricingPreview,
     };
   }
@@ -376,16 +377,11 @@ export class SubscriptionService {
         user: { id: userId } as User,
         currency: 'EUR',
       });
-    } else if (
-      data.externalProvider &&
-      sub.externalProvider &&
-      !this.isSameProviderFamily(sub.externalProvider, data.externalProvider) &&
-      this.shouldIgnoreCrossProviderUpdate(sub, data)
-    ) {
+    } else if (sub && this.shouldIgnoreCrossProviderUpdate(sub, data)) {
       logger.warn('Ignoring cross-provider subscription sync', {
         userId,
         existingProvider: sub.externalProvider,
-        incomingProvider: data.externalProvider,
+        incomingProvider: data.externalProvider ?? null,
         existingTier: sub.tier,
         incomingTier: data.tier,
       });
@@ -437,6 +433,28 @@ export class SubscriptionService {
       externalProvider?: string | null;
     },
   ): boolean {
+    // RC EXPIRATION clears provider — must not wipe an active Stripe subscription
+    const incomingClearsPaid =
+      !incoming.externalProvider &&
+      (incoming.tier === 'free' || incoming.tier === 'none');
+    const existingStripe =
+      existing.externalProvider === 'stripe' ||
+      existing.externalProvider === 'stripe_family';
+    const existingPaidStripe =
+      existingStripe &&
+      ['active', 'past_due', 'trialing'].includes(existing.status) &&
+      TIER_RANK[existing.tier] >= TIER_RANK.basic;
+    if (incomingClearsPaid && existingPaidStripe) {
+      return true;
+    }
+
+    if (!incoming.externalProvider || !existing.externalProvider) {
+      return false;
+    }
+    if (this.isSameProviderFamily(existing.externalProvider, incoming.externalProvider)) {
+      return false;
+    }
+
     // Successful Stripe payment always syncs — user completed web checkout
     if (
       incoming.externalProvider === 'stripe' &&

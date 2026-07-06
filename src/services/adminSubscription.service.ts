@@ -304,6 +304,7 @@ export class AdminSubscriptionService {
           ? `${r.user.firstName} ${r.user.lastName}`.trim() || 'No Name'
           : 'Unknown',
         userEmail: r.user?.email,
+        userRole: r.user?.role ?? 'mentee',
       })),
       meta: {
         total,

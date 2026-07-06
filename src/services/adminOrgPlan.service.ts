@@ -23,7 +23,8 @@ const subscriptionService = new SubscriptionService(new EmailService(null));
 const CHURCH_PLAN_TYPE: OrgPlanType = 'church';
 const CHURCH_DISCOUNT_PERCENT = 20;
 const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
-const CHURCH_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+/** Match Stripe checkout session max age so pending reservations survive slow payers. */
+const CHURCH_PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type PendingChurchAssignment = {
   userId: string;
@@ -78,9 +79,9 @@ export class AdminOrgPlanService {
   async list(page = 1, limit = 50) {
     const repo = AppDataSource.getRepository(OrgPlan);
     const [rows, total] = await repo.findAndCount({
-      where: { planType: CHURCH_PLAN_TYPE, status: 'active' },
+      where: { planType: CHURCH_PLAN_TYPE },
       relations: ['billingAdmin'],
-      order: { createdAt: 'DESC' },
+      order: { status: 'ASC', createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });
@@ -493,10 +494,14 @@ export class AdminOrgPlanService {
       const pending = pruneExpiredPendingChurchAssignments(
         parsePendingChurchAssignments(plan.metadata),
       );
+      const hadPending = pending.some((entry) => entry.userId === userId);
       const pendingAfterRemoval = pending.filter((entry) => entry.userId !== userId);
 
-      if (plan.usedSeats >= plan.totalSeats) {
+      if (!hadPending && plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Church plan has no available seats', 409);
+      }
+      if (hadPending && plan.usedSeats + pending.length > plan.totalSeats) {
+        throw new AppError('Church plan seat reservation is invalid', 409);
       }
 
       plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pendingAfterRemoval };
@@ -590,9 +595,8 @@ export class AdminOrgPlanService {
         billingInterval: sub.billingInterval,
         notes: CANCEL_AT_PERIOD_END_NOTE,
       });
-    } else {
-      await this.releaseChurchMembership(userId);
     }
+    await this.releaseChurchMembership(userId);
 
     await adminAuditService.log({
       adminUserId,
@@ -699,9 +703,8 @@ export class AdminOrgPlanService {
 
   async listFamilyPlans(page = 1, limit = 50) {
     const [rows, total] = await this.familyPlanRepo.findAndCount({
-      where: { status: 'active' },
       relations: ['parent'],
-      order: { createdAt: 'DESC' },
+      order: { status: 'ASC', createdAt: 'DESC' },
       take: limit,
       skip: (page - 1) * limit,
     });
