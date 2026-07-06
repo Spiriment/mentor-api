@@ -426,6 +426,10 @@ export class FamilyPlanService {
 
     if (status === 'canceled') {
       await this.downgradeMemberSubscription(memberUserId, stripeSubscriptionId);
+      if (member) {
+        member.stripeSubscriptionId = null;
+        await this.memberRepo.save(member);
+      }
       if (member?.removedAt) {
         await this.memberRepo.remove(member);
       }

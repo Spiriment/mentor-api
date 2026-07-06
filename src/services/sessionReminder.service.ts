@@ -358,7 +358,14 @@ export class SessionReminderService {
         mentor.id,
         menteeName,
         formattedTime,
-        minutesBefore
+        minutesBefore,
+        {
+          sessionId: session.id,
+          mentorId: mentor.id,
+          menteeId: session.mentee?.id,
+          mentorName,
+          menteeName,
+        },
       );
       logger.info(
         `${timeUntil} push notification sent to mentor ${mentor.email} for session ${session.id}`
@@ -393,6 +400,7 @@ export class SessionReminderService {
           menteeId: session.mentee?.id,
           menteeName,
           minutesBefore: timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0)),
+          canJoin: timeUntil === 'now' || timeUntil === '15 minutes',
         },
       });
 
@@ -478,7 +486,14 @@ export class SessionReminderService {
         mentee.id,
         mentorName,
         formattedTime,
-        minutesBefore
+        minutesBefore,
+        {
+          sessionId: session.id,
+          mentorId: session.mentor?.id,
+          menteeId: mentee.id,
+          mentorName,
+          menteeName,
+        },
       );
       logger.info(
         `${timeUntil} push notification sent to mentee ${mentee.email} for session ${session.id}`
@@ -513,6 +528,7 @@ export class SessionReminderService {
           mentorId: session.mentor?.id,
           mentorName,
           minutesBefore: timeUntil === '1 hour' ? 60 : (timeUntil === '15 minutes' ? 15 : (timeUntil === '24 hours' ? 1440 : 0)),
+          canJoin: timeUntil === 'now' || timeUntil === '15 minutes',
         },
       });
 

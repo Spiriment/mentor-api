@@ -13,6 +13,7 @@ import { buildPricingPreview, getSubscriptionDiscount } from '@/common/constants
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr';
 import { logger } from '@/config/int-services';
+import { familyPlanService } from './familyPlan.service';
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
@@ -568,15 +569,28 @@ export class SubscriptionService {
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub) return;
 
+    const externalRef = sub.externalRef;
+    const externalProvider = sub.externalProvider;
+
     if (
-      sub.externalRef &&
-      (sub.externalProvider === 'stripe' || sub.externalProvider === 'stripe_family')
+      externalRef &&
+      (externalProvider === 'stripe' || externalProvider === 'stripe_family')
     ) {
       try {
-        await stripeService.cancelSubscription(sub.externalRef);
+        await stripeService.cancelSubscription(externalRef);
       } catch (err) {
         logger.warn(
-          `Failed to cancel Stripe subscription during grace downgrade: userId=${userId} ref=${sub.externalRef}`,
+          `Failed to cancel Stripe subscription during grace downgrade: userId=${userId} ref=${externalRef}`,
+        );
+      }
+    }
+
+    if (externalProvider === 'stripe_family' && externalRef) {
+      try {
+        await familyPlanService.syncMemberSubscription(userId, externalRef, 'canceled');
+      } catch (err) {
+        logger.warn(
+          `Failed to sync family member during grace downgrade: userId=${userId} ref=${externalRef}`,
         );
       }
     }

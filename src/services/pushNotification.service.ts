@@ -142,26 +142,42 @@ export class PushNotificationService {
   async sendSessionReminder(
     pushToken: string,
     userId: string,
-    mentorName: string,
+    otherPartyName: string,
     sessionTime: string,
-    minutesBefore: number
+    minutesBefore: number,
+    sessionContext?: {
+      sessionId: string;
+      mentorId?: string;
+      menteeId?: string;
+      mentorName?: string;
+      menteeName?: string;
+      mentorImage?: string;
+      menteeImage?: string;
+    },
   ): Promise<boolean> {
     const title = minutesBefore === 60
       ? '⏰ Session Starting Soon'
       : (minutesBefore === 15 ? '⏰ Session Starting in 15 Minutes' : '🔔 Session Starting Now');
 
     const body = minutesBefore === 60
-      ? `Your session with ${mentorName} starts in 1 hour at ${sessionTime}`
+      ? `Your session with ${otherPartyName} starts in 1 hour at ${sessionTime}`
       : (minutesBefore === 15 
-          ? `Your session with ${mentorName} starts in 15 minutes at ${sessionTime}`
-          : `Your session with ${mentorName} is starting now! Tap to join.`);
+          ? `Your session with ${otherPartyName} starts in 15 minutes at ${sessionTime}`
+          : `Your session with ${otherPartyName} is starting now! Tap to join.`);
+
+    const canJoin = minutesBefore === 0 || minutesBefore === 15;
 
     return this.sendToUser({
       userId,
       pushToken,
       title,
       body,
-      data: { type: 'session_reminder', minutesBefore },
+      data: {
+        type: 'session_reminder',
+        minutesBefore,
+        ...(sessionContext ?? {}),
+        ...(canJoin && sessionContext?.sessionId ? { canJoin: true } : {}),
+      },
       channelId: 'session-reminders',
     });
   }

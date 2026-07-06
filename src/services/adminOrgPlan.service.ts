@@ -801,8 +801,11 @@ export class AdminOrgPlanService {
       ip: ip ?? null,
     });
 
+    const memberUser = await AppDataSource.getRepository(User).findOne({ where: { id: memberUserId } });
+
     return {
-      ...this.serializeFamilyMember({ ...member, tier: newTier, user: await AppDataSource.getRepository(User).findOne({ where: { id: memberUserId } }) as User }),
+      ...this.serializeFamilyMember({ ...member, user: memberUser as User }),
+      pendingTier: newTier,
       checkoutUrl: result.checkoutUrl,
       effectivePriceEur: result.effectivePriceEur,
       billingInterval: result.billingInterval,
