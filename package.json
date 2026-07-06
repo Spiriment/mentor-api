@@ -41,7 +41,8 @@
     "db:delete-user": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/delete-user.ts",
     "db:delete-user:staging": "cross-env NODE_ENV=staging ts-node -r tsconfig-paths/register scripts/delete-user.ts",
     "db:delete-user:prod": "cross-env NODE_ENV=production ts-node -r tsconfig-paths/register scripts/delete-user.ts",
-    "admin:create-user": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/create-admin-user.ts"
+    "admin:create-user": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/create-admin-user.ts",
+    "test": "cross-env NODE_ENV=development node -r ts-node/register -r tsconfig-paths/register --test src/common/subscription/crossProviderGuard.test.ts src/common/constants/subscriptionMrr.test.ts"
   },
   "dependencies": {
     "@bull-board/api": "^6.10.0",

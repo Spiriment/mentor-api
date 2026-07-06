@@ -360,6 +360,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             await subscriptionService.markPastDue(memberSub.userId);
             break;
           }
+
+          break;
         }
 
         const customerId: string | undefined =

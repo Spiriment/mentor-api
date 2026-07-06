@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 import { EmailService } from '@/core/email.service';
 import { webhookIdempotencyService } from '@/services/webhookIdempotency.service';
+import { adminOrgPlanService } from '@/services/adminOrgPlan.service';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
@@ -185,6 +186,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           expiresAt: null,
           notes: null,
         });
+        await adminOrgPlanService.releaseChurchMembership(user.id);
         break;
       }
 

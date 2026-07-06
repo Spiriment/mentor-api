@@ -195,6 +195,7 @@ export class AdminDashboardService {
     if (adminRole === ADMIN_ROLE.SUPER_ADMIN) {
       const mrrQb = subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
       applyMrrFilters(mrrQb, 's');
+      mrrQb.andWhere('s.mrrCents IS NOT NULL');
       const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
       monthlyRevenueCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     }

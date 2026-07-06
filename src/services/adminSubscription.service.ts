@@ -2,6 +2,8 @@ import { In } from 'typeorm';
 import { validate as isUuid } from 'uuid';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
+import { OrgPlan } from '@/database/entities/orgPlan.entity';
+import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import {
   UserSubscription,
   type SubscriptionTier,
@@ -135,17 +137,44 @@ export class AdminSubscriptionService {
       };
     }
 
-    const mrrQb = subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
+    const mrrQb = subRepo
+      .createQueryBuilder('s')
+      .select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
     applyMrrFilters(mrrQb, 's');
+    mrrQb.andWhere('s.mrrCents IS NOT NULL');
     const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
+
+    const unknownMrrQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+    applyMrrFilters(unknownMrrQb, 's');
+    unknownMrrQb.andWhere('s.mrrCents IS NULL');
+    const unknownMrrRow = await unknownMrrQb.getRawOne<{ cnt: string }>();
+    const mrrUnknownSubscriberCount = unknownMrrRow?.cnt
+      ? parseInt(unknownMrrRow.cnt, 10)
+      : 0;
 
     const totalMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     const revenueHistory = await this.getRevenueHistory();
 
+    const orgRepo = AppDataSource.getRepository(OrgPlan);
+    const familyPlanRepo = AppDataSource.getRepository(FamilyPlan);
+    const [activeChurchPlans, activeFamilyPlans] = await Promise.all([
+      orgRepo.count({ where: { planType: 'church', status: 'active' } }),
+      familyPlanRepo.count({ where: { status: 'active' } }),
+    ]);
+
     return {
       ...base,
-      revenue: { totalMrrCents, currency: 'EUR', history: revenueHistory },
-      revenueNote: null,
+      revenue: {
+        totalMrrCents,
+        currency: 'EUR',
+        history: revenueHistory,
+        mrrUnknownSubscriberCount,
+      },
+      activePlans: { church: activeChurchPlans, family: activeFamilyPlans },
+      revenueNote:
+        mrrUnknownSubscriberCount > 0
+          ? `${mrrUnknownSubscriberCount} paying subscriber(s) have unknown MRR and are excluded from the total.`
+          : null,
       metricsNote:
         'Tier counts include trialing users. MRR and paying subscribers count active and past_due paid tiers only.',
     };

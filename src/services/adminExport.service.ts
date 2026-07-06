@@ -566,8 +566,15 @@ export class AdminExportService {
     lines.push(row(['Paying basic', activeSubs.filter((s) => s.tier === 'basic').length]));
     lines.push(row(['Paying pro', activeSubs.filter((s) => s.tier === 'pro').length]));
     lines.push(row(['Paying premium', activeSubs.filter((s) => s.tier === 'premium').length]));
-    const totalMrr = activeSubs.reduce((sum, s) => sum + (s.mrrCents ?? 0), 0);
-    lines.push(row(['Total MRR cents (active + past_due)', totalMrr]));
+    const totalMrr = activeSubs.reduce(
+      (sum, s) => sum + (s.mrrCents != null ? s.mrrCents : 0),
+      0,
+    );
+    const unknownMrrCount = activeSubs.filter((s) => s.mrrCents == null).length;
+    lines.push(row(['Total MRR cents (active + past_due, known amounts only)', totalMrr]));
+    if (unknownMrrCount > 0) {
+      lines.push(row(['Paying subscribers with unknown MRR (excluded from total)', unknownMrrCount]));
+    }
     lines.push(row(['New mentor applications', newMentorApps.length]));
     lines.push('');
 

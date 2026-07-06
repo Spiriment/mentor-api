@@ -14,6 +14,7 @@ import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/
 import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr';
 import { logger } from '@/config/int-services';
 import { familyPlanService } from './familyPlan.service';
+import { shouldIgnoreCrossProviderUpdate } from '@/common/subscription/crossProviderGuard';
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
@@ -378,7 +379,7 @@ export class SubscriptionService {
         user: { id: userId } as User,
         currency: 'EUR',
       });
-    } else if (sub && this.shouldIgnoreCrossProviderUpdate(sub, data)) {
+    } else if (sub && shouldIgnoreCrossProviderUpdate(sub, data)) {
       logger.warn('Ignoring cross-provider subscription sync', {
         userId,
         existingProvider: sub.externalProvider,
@@ -419,63 +420,6 @@ export class SubscriptionService {
     }
 
     await this.subRepo.save(sub);
-  }
-
-  private isSameProviderFamily(a: string, b: string): boolean {
-    const normalize = (p: string) => (p === 'stripe' || p === 'stripe_family' ? 'stripe' : p);
-    return normalize(a) === normalize(b);
-  }
-
-  private shouldIgnoreCrossProviderUpdate(
-    existing: UserSubscription,
-    incoming: {
-      tier: SubscriptionTier;
-      status: SubscriptionStatus;
-      externalProvider?: string | null;
-    },
-  ): boolean {
-    // RC EXPIRATION clears provider — must not wipe an active Stripe subscription
-    const incomingClearsPaid =
-      !incoming.externalProvider &&
-      (incoming.tier === 'free' || incoming.tier === 'none');
-    const existingStripe =
-      existing.externalProvider === 'stripe' ||
-      existing.externalProvider === 'stripe_family';
-    const existingPaidStripe =
-      existingStripe &&
-      ['active', 'past_due', 'trialing'].includes(existing.status) &&
-      TIER_RANK[existing.tier] >= TIER_RANK.basic;
-    if (incomingClearsPaid && existingPaidStripe) {
-      return true;
-    }
-
-    if (!incoming.externalProvider || !existing.externalProvider) {
-      return false;
-    }
-    if (this.isSameProviderFamily(existing.externalProvider, incoming.externalProvider)) {
-      return false;
-    }
-
-    // Successful Stripe payment always syncs — user completed web checkout
-    if (
-      incoming.externalProvider === 'stripe' &&
-      ['active', 'trialing'].includes(incoming.status)
-    ) {
-      return false;
-    }
-
-    const existingPaid =
-      ['active', 'past_due', 'trialing'].includes(existing.status) &&
-      TIER_RANK[existing.tier] >= TIER_RANK.basic;
-    if (!existingPaid) return false;
-
-    const incomingUpgrade =
-      incoming.status === 'active' &&
-      TIER_RANK[incoming.tier] > TIER_RANK[existing.tier];
-    if (incomingUpgrade) return false;
-
-    const stillValid = !existing.expiresAt || existing.expiresAt > new Date();
-    return stillValid || existing.status === 'active' || existing.status === 'past_due';
   }
 
   async markPastDue(userId: string): Promise<void> {

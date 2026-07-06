@@ -21,6 +21,7 @@ export class MrrSnapshotService {
   async getCurrentMrrTotals(): Promise<{ mrrCents: number; activeSubscribers: number }> {
     const mrrQb = this.subRepo.createQueryBuilder('s').select('COALESCE(SUM(s.mrrCents), 0)', 'sum');
     applyMrrFilters(mrrQb, 's');
+    mrrQb.andWhere('s.mrrCents IS NOT NULL');
     const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
 
     const countQb = this.subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
