@@ -41,20 +41,16 @@ export class WebhookIdempotencyService {
     await this.repo.delete({ id: eventId });
   }
 
-  /** @deprecated Prefer tryClaim at the start of processing. */
-  async markProcessed(
-    eventId: string,
-    provider: string,
-    eventType: string,
-  ): Promise<void> {
-    if (!eventId) return;
-    try {
-      await this.repo.save(
-        this.repo.create({ id: eventId, provider, eventType }),
-      );
-    } catch {
-      // Concurrent duplicate delivery — safe to ignore
-    }
+  /** Delete webhook idempotency records older than the retention window. */
+  async pruneOlderThanDays(days: number): Promise<number> {
+    if (days <= 0) return 0;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .where('processedAt < :cutoff', { cutoff })
+      .execute();
+    return result.affected ?? 0;
   }
 }
 

@@ -14,6 +14,7 @@ import { subMonths } from "date-fns";
 import { SubscriptionService } from "@/services/subscription.service";
 import { adminOrgPlanService } from "@/services/adminOrgPlan.service";
 import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
+import { webhookIdempotencyService } from "@/services/webhookIdempotency.service";
 
 export class CronService {
   private dataSource: DataSource;
@@ -352,6 +353,26 @@ export class CronService {
       this.tasks.set("church-pending-prune", churchPendingPruneTask);
       logger.info("Church pending checkout prune cron scheduled (daily 00:30 UTC)");
 
+      const webhookPruneTask = cron.schedule(
+        "45 0 * * *",
+        async () => {
+          try {
+            const deleted = await webhookIdempotencyService.pruneOlderThanDays(90);
+            if (deleted > 0) {
+              logger.info(`Pruned ${deleted} processed webhook events older than 90 days`);
+            }
+          } catch (err) {
+            logger.error(
+              "Error in webhook idempotency prune cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("webhook-idempotency-prune", webhookPruneTask);
+      logger.info("Webhook idempotency prune cron scheduled (daily 00:45 UTC)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -429,6 +450,10 @@ export class CronService {
         return "0 11 * * * (Daily at 11 AM UTC)";
       case "mrr-snapshot":
         return "15 0 * * * (Daily at 00:15 UTC)";
+      case "church-pending-prune":
+        return "30 0 * * * (Daily at 00:30 UTC)";
+      case "webhook-idempotency-prune":
+        return "45 0 * * * (Daily at 00:45 UTC — retains 90 days)";
       default:
         return "Unknown";
     }
