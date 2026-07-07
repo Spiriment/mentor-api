@@ -371,7 +371,7 @@ export class SubscriptionService {
       notes?: string | null;
       billingInterval?: 'monthly' | 'annual' | null;
     }
-  ): Promise<void> {
+  ): Promise<boolean> {
     let sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
 
     if (!sub) {
@@ -387,7 +387,7 @@ export class SubscriptionService {
         existingTier: sub.tier,
         incomingTier: data.tier,
       });
-      return;
+      return false;
     }
 
     const previousStatus = sub.status;
@@ -420,6 +420,7 @@ export class SubscriptionService {
     }
 
     await this.subRepo.save(sub);
+    return true;
   }
 
   async markPastDue(userId: string): Promise<void> {

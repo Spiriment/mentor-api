@@ -70,4 +70,38 @@ describe('shouldIgnoreCrossProviderUpdate', () => {
     );
     assert.equal(ignore, false);
   });
+
+  it('blocks Stripe subscription deleted when RevenueCat paid access exists', () => {
+    const ignore = shouldIgnoreCrossProviderUpdate(
+      {
+        tier: 'pro',
+        status: 'active',
+        externalProvider: 'revenuecat',
+        expiresAt: new Date('2030-01-01'),
+      },
+      {
+        tier: 'free',
+        status: 'active',
+        externalProvider: 'stripe',
+      },
+    );
+    assert.equal(ignore, true);
+  });
+
+  it('allows Stripe subscription deleted when user is on Stripe', () => {
+    const ignore = shouldIgnoreCrossProviderUpdate(
+      {
+        tier: 'pro',
+        status: 'active',
+        externalProvider: 'stripe',
+        expiresAt: null,
+      },
+      {
+        tier: 'free',
+        status: 'active',
+        externalProvider: 'stripe',
+      },
+    );
+    assert.equal(ignore, false);
+  });
 });

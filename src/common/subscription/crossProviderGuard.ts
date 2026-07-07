@@ -59,7 +59,8 @@ export function shouldIgnoreCrossProviderUpdate(
 
   if (
     incoming.externalProvider === 'stripe' &&
-    ['active', 'trialing'].includes(incoming.status)
+    ['active', 'trialing'].includes(incoming.status) &&
+    TIER_RANK[incoming.tier] >= TIER_RANK.basic
   ) {
     return false;
   }

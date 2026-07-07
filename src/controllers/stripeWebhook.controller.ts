@@ -220,7 +220,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               tier: 'free',
               status: 'active',
               externalRef: null,
-              externalProvider: null,
+              externalProvider: 'stripe',
               mrrCents: 0,
               expiresAt: null,
             });
@@ -331,7 +331,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             tier: 'free',
             status: 'active',
             externalRef: null,
-            externalProvider: null,
+            externalProvider: 'stripe',
             mrrCents: 0,
             expiresAt: null,
           });

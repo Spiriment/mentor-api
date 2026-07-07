@@ -177,7 +177,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       }
 
       case 'EXPIRATION': {
-        await subscriptionService.upsertSubscription(user.id, {
+        const applied = await subscriptionService.upsertSubscription(user.id, {
           tier: 'free',
           status: 'active',
           externalProvider: null,
@@ -186,7 +186,9 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           expiresAt: null,
           notes: null,
         });
-        await adminOrgPlanService.releaseChurchMembership(user.id);
+        if (applied) {
+          await adminOrgPlanService.releaseChurchMembership(user.id);
+        }
         break;
       }
 
