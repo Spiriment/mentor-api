@@ -296,15 +296,24 @@ export class CronService {
         async () => {
           try {
             const overdue = await subscriptionService.getPastDueSubscriptions();
+            let downgraded = 0;
             for (const sub of overdue) {
-              if (sub.user) {
+              if (!sub.user) continue;
+              try {
                 await subscriptionService.downgradeToFree(sub.user.id);
                 await adminOrgPlanService.releaseChurchMembership(sub.user.id);
                 await subscriptionService.sendGracePeriodDowngradeEmail(sub.user);
+                downgraded += 1;
+              } catch (err) {
+                logger.error(
+                  'Grace period downgrade failed for user',
+                  err instanceof Error ? err : new Error(String(err)),
+                  { userId: sub.user.id },
+                );
               }
             }
-            if (overdue.length > 0) {
-              logger.info(`Downgraded ${overdue.length} past_due accounts to Free after grace period`);
+            if (downgraded > 0) {
+              logger.info(`Downgraded ${downgraded} past_due accounts to Free after grace period`);
             }
           } catch (err) {
             logger.error("Error in grace period downgrade cron", err instanceof Error ? err : new Error(String(err)));

@@ -15,6 +15,11 @@ import {
   mrrCentsFromStripeSubscription,
   mrrCentsFromCatalogTier,
 } from '@/common/constants/subscriptionMrr';
+import {
+  extractStripeCustomerId,
+  extractStripeSubscriptionId,
+  resolvePaymentFailedTarget,
+} from '@/common/subscription/stripePaymentFailedResolver';
 
 const emailService = new EmailService(null);
 const subscriptionService = new SubscriptionService(emailService);
@@ -343,39 +348,46 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as any;
-        const subscriptionId: string | undefined =
-          typeof invoice.subscription === 'string'
-            ? invoice.subscription
-            : invoice.subscription?.id;
+        const subscriptionId = extractStripeSubscriptionId(invoice);
+        const customerId = extractStripeCustomerId(invoice);
 
+        let familyMemberUserId: string | null = null;
         if (subscriptionId) {
-          const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
-          if (familyMember) {
-            await subscriptionService.markPastDue(familyMember.userId);
-            break;
-          }
+          const familyMember =
+            await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);
+          familyMemberUserId = familyMember?.userId ?? null;
+        }
 
+        let externalRefUserId: string | null = null;
+        if (subscriptionId && !familyMemberUserId) {
           const memberSub = await subRepo.findOne({ where: { externalRef: subscriptionId } });
-          if (memberSub?.userId) {
-            await subscriptionService.markPastDue(memberSub.userId);
-            break;
-          }
-
-          break;
+          externalRefUserId = memberSub?.userId ?? null;
         }
 
-        const customerId: string | undefined =
-          typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
-        if (!customerId) {
-          break;
+        let customerUserId: string | null = null;
+        if (customerId) {
+          const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
+          customerUserId = user?.id ?? null;
         }
 
-        const user = await userRepo.findOne({ where: { stripeCustomerId: customerId } });
-        if (!user) {
-          break;
+        const resolution = resolvePaymentFailedTarget({
+          subscriptionId,
+          familyMemberUserId,
+          externalRefUserId,
+          customerId,
+          customerUserId,
+        });
+
+        if (resolution.kind === 'user') {
+          await subscriptionService.markPastDue(resolution.userId);
+        } else {
+          logger.warn('invoice.payment_failed could not resolve user', {
+            subscriptionId,
+            customerId,
+            reason: resolution.reason,
+          });
         }
 
-        await subscriptionService.markPastDue(user.id);
         break;
       }
 
