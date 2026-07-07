@@ -374,7 +374,7 @@ export class AdminExportService {
           sub.user?.email,
           sub.tier,
           sub.status,
-          includeMrr ? sub.mrrCents ?? 0 : '',
+          includeMrr ? (sub.mrrCents != null ? sub.mrrCents : '') : '',
           sub.currency,
           sub.billingInterval ?? '',
           iso(sub.pastDueAt),
