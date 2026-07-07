@@ -11,6 +11,7 @@ import {
   inferBillingIntervalFromProductId,
   mrrCentsFromRcEvent,
 } from '@/common/constants/subscriptionMrr';
+import { resolveRevenueCatEventId } from '@/common/subscription/revenueCatEventId';
 
 const emailService = new EmailService(null);
 const subscriptionService = new SubscriptionService(emailService);
@@ -39,16 +40,6 @@ function isWebhookAuthorized(authHeader: string | undefined, secret: string): bo
   if (authHeader === secret) return true;
   if (authHeader === `Bearer ${secret}`) return true;
   return false;
-}
-
-function resolveRevenueCatEventId(event: Record<string, unknown>): string {
-  if (event.id) return String(event.id);
-  const type = String(event.type ?? 'unknown');
-  const userId = String(event.app_user_id ?? '');
-  const productId = String(event.product_id ?? '');
-  const txId = String(event.transaction_id ?? event.original_transaction_id ?? '');
-  const expires = String(event.expiration_at_ms ?? '');
-  return `rc-synthetic:${type}:${userId}:${productId}:${txId}:${expires}`;
 }
 
 export const handleRevenueCatWebhook = async (req: Request, res: Response): Promise<void> => {
@@ -182,7 +173,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           status: 'active',
           externalProvider: null,
           externalRef: null,
-          mrrCents: 0,
+          mrrCents: null,
           expiresAt: null,
           notes: null,
         });

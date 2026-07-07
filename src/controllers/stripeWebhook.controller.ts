@@ -226,7 +226,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
               status: 'active',
               externalRef: null,
               externalProvider: 'stripe',
-              mrrCents: 0,
+              mrrCents: null,
               expiresAt: null,
             });
             await releaseChurchMembershipIfNeeded(userId);
@@ -337,7 +337,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             status: 'active',
             externalRef: null,
             externalProvider: 'stripe',
-            mrrCents: 0,
+            mrrCents: null,
             expiresAt: null,
           });
           await releaseChurchMembershipIfNeeded(userId);

@@ -501,7 +501,7 @@ export class FamilyPlanService {
     sub.status = 'active';
     sub.externalRef = null;
     sub.externalProvider = null;
-    sub.mrrCents = 0;
+    sub.mrrCents = null;
     sub.expiresAt = null;
     sub.pastDueAt = null;
     sub.billingInterval = null;
