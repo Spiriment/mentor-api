@@ -15,6 +15,7 @@ import { SubscriptionService } from "@/services/subscription.service";
 import { adminOrgPlanService } from "@/services/adminOrgPlan.service";
 import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
 import { webhookIdempotencyService } from "@/services/webhookIdempotency.service";
+import { quizNotificationService } from "@/services/quizNotification.service";
 
 export class CronService {
   private dataSource: DataSource;
@@ -381,6 +382,24 @@ export class CronService {
       );
       this.tasks.set("webhook-idempotency-prune", webhookPruneTask);
       logger.info("Webhook idempotency prune cron scheduled (daily 00:45 UTC)");
+
+      // Weekly quiz reminder — every Monday at 9:00 AM UTC
+      const weeklyQuizTask = cron.schedule(
+        "0 9 * * 1",
+        async () => {
+          try {
+            await quizNotificationService.sendWeeklyQuizReminder();
+          } catch (err) {
+            logger.error(
+              "Error in weekly quiz notification cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("weekly-quiz-reminder", weeklyQuizTask);
+      logger.info("Weekly quiz reminder cron scheduled (every Monday 09:00 UTC)");
 
     } catch (error) {
       logger.error(

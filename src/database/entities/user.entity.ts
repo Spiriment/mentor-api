@@ -161,4 +161,10 @@ export class User extends BaseEntity {
 
   @Column({ name: 'stripeCustomerId', type: 'varchar', length: 64, nullable: true })
   stripeCustomerId?: string | null;
+
+  @Column({ name: 'referralCode', type: 'varchar', length: 12, nullable: true, unique: true })
+  referralCode?: string | null;
+
+  @Column({ name: 'referralPoints', type: 'int', default: 0 })
+  referralPoints!: number;
 }

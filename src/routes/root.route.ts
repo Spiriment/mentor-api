@@ -37,6 +37,7 @@ import revenueCatWebhookRoutes from './revenueCatWebhook.routes';
 import familyPlanRoutes from './familyPlan.routes';
 import aiRoutes from './ai.routes';
 import quizRoutes from './quiz.routes';
+import referralRoutes from './referral.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -191,6 +192,9 @@ const createRootRoutes = () => {
 
   // RevenueCat webhook (Apple IAP events)
   rootRouter.use('/api/revenuecat/webhook', revenueCatWebhookRoutes);
+
+  // Referral routes
+  rootRouter.use('/api/referral', referralRoutes);
 
   // Church portal routes
   rootRouter.use('/api/church-portal', (req, res, next) => {

@@ -10,6 +10,7 @@ import { Session, SESSION_STATUS } from '../database/entities/session.entity';
 import { SessionReview } from '../database/entities/sessionReview.entity';
 import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '../database/entities/mentorshipRequest.entity';
 import { EmailService } from '../core/email.service';
+import { referralService } from './referral.service';
 
 export class MentorProfileService {
   private mentorProfileRepository: Repository<MentorProfile>;
@@ -222,6 +223,18 @@ export class MentorProfileService {
             'Failed to create in-app notification for mentor application submitted',
             notifError
           );
+        }
+      }
+
+      // Award referral points if a referral code was provided
+      if (data.referralCode) {
+        try {
+          const referrer = await referralService.findReferrer(data.referralCode);
+          if (referrer && referrer.id !== userId) {
+            await referralService.recordReferral(referrer.id, userId);
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to record referral for user ${userId}: ${String(err)}`);
         }
       }
 

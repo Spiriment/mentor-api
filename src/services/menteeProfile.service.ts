@@ -4,6 +4,7 @@ import { MenteeProfile } from '../database/entities/menteeProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger, USER_ROLE } from '../common';
 import { Session, SESSION_STATUS } from '../database/entities/session.entity';
+import { referralService } from './referral.service';
 
 export class MenteeProfileService {
   private menteeProfileRepository: Repository<MenteeProfile>;
@@ -170,6 +171,18 @@ export class MenteeProfileService {
       }
 
       await this.userRepository.update(userId, userUpdateData);
+
+      // Award referral points if a referral code was provided
+      if (data.referralCode) {
+        try {
+          const referrer = await referralService.findReferrer(data.referralCode);
+          if (referrer && referrer.id !== userId) {
+            await referralService.recordReferral(referrer.id, userId);
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to record referral for user ${userId}: ${String(err)}`);
+        }
+      }
 
       this.logger.info(`Completed mentee onboarding for user ${userId}`);
 
