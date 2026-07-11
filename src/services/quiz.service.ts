@@ -382,10 +382,10 @@ export class QuizService {
     // Outer query: apply version multiplier and sum XP per user
     const rows = await this.attemptRepo.manager
       .createQueryBuilder()
-      .select('sub."userId"', 'userId')
+      .select('sub.userId', 'userId')
       .addSelect(
         `SUM(
-          sub."bestScore" * CASE sub."version"
+          sub.bestScore * CASE sub.version
             WHEN 1 THEN 1.0
             WHEN 2 THEN 1.5
             WHEN 3 THEN 2.0
@@ -397,7 +397,7 @@ export class QuizService {
       )
       .from(`(${innerSql})`, 'sub')
       .setParameters(innerParams)
-      .groupBy('sub."userId"')
+      .groupBy('sub.userId')
       .orderBy('xp', 'DESC')
       .limit(50)
       .getRawMany<{ userId: string; xp: string }>();
