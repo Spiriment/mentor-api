@@ -51,12 +51,9 @@ export const getQuizStreak = async (req: Request, res: Response, next: NextFunct
 export const getLeaderboard = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const { book } = req.query;
     const period = req.query.period === 'alltime' ? 'alltime' : 'week';
-    if (!book || typeof book !== 'string') {
-      return res.status(400).json({ success: false, message: 'book is required' });
-    }
-    const leaderboard = await quizService.getLeaderboard(userId, book, period);
+    // Returns { userId, name, profileImage, xp, isCurrentUser }[]
+    const leaderboard = await quizService.getLeaderboard(userId, period);
     res.json({ success: true, data: leaderboard });
   } catch (err) { next(err); }
 };

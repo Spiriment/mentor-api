@@ -351,42 +351,62 @@ export class QuizService {
 
   async getLeaderboard(
     userId: string,
-    book: string,
     period: 'week' | 'alltime'
-  ): Promise<{ userId: string; name: string; profileImage: string | null; score: number; total: number; isCurrentUser: boolean }[]> {
-    // Global leaderboard — all users ranked by best score for this book
-    const qb = this.attemptRepo
+  ): Promise<{ userId: string; name: string; profileImage: string | null; xp: number; isCurrentUser: boolean }[]> {
+    // Global XP leaderboard across ALL books and versions.
+    // Best score per (userId, book, version) only — prevents farming by replaying same quiz.
+    //
+    // Version multipliers:
+    //   1 → 1.0x  |  2 → 1.5x  |  3 → 2.0x  |  4 → 3.0x
+
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+
+    // Inner subquery: best score per (userId, book, version), optionally filtered by week
+    const innerQb = this.attemptRepo
       .createQueryBuilder('a')
       .select('a.userId', 'userId')
-      .addSelect('MAX(a.score)', 'score')
-      .addSelect('a.total', 'total')
-      .where('a.book = :book', { book })
+      .addSelect('a.book', 'book')
+      .addSelect('a.version', 'version')
+      .addSelect('MAX(a.score)', 'bestScore')
       .groupBy('a.userId')
-      .addGroupBy('a.total')
-      .orderBy('MAX(a.score)', 'DESC')
-      .limit(50);
+      .addGroupBy('a.book')
+      .addGroupBy('a.version');
 
     if (period === 'week') {
-      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-      qb.andWhere('a.completedAt >= :weekStart', { weekStart });
+      innerQb.andWhere('a.completedAt >= :weekStart', { weekStart });
     }
 
-    const rows = await qb.getRawMany<{ userId: string; score: string; total: string }>();
+    const innerSql = innerQb.getQuery();
+    const innerParams = innerQb.getParameters();
 
-    // Collapse to one best row per user (highest score, then highest total)
-    const bestByUser = new Map<string, { score: number; total: number }>();
-    for (const row of rows) {
-      const score = Number(row.score);
-      const total = Number(row.total);
-      const existing = bestByUser.get(row.userId);
-      if (!existing || score > existing.score || (score === existing.score && total > existing.total)) {
-        bestByUser.set(row.userId, { score, total });
-      }
-    }
+    // Outer query: apply version multiplier and sum XP per user
+    const rows = await this.attemptRepo.manager
+      .createQueryBuilder()
+      .select('sub."userId"', 'userId')
+      .addSelect(
+        `SUM(
+          sub."bestScore" * CASE sub."version"
+            WHEN 1 THEN 1.0
+            WHEN 2 THEN 1.5
+            WHEN 3 THEN 2.0
+            WHEN 4 THEN 3.0
+            ELSE 1.0
+          END
+        )`,
+        'xp'
+      )
+      .from(`(${innerSql})`, 'sub')
+      .setParameters(innerParams)
+      .groupBy('sub."userId"')
+      .orderBy('xp', 'DESC')
+      .limit(50)
+      .getRawMany<{ userId: string; xp: string }>();
 
-    if (bestByUser.size === 0) return [];
+    if (rows.length === 0) return [];
 
-    const rankedUserIds = [...bestByUser.keys()];
+    const rankedUserIds = rows.map((r) => r.userId);
+    const xpByUser = new Map(rows.map((r) => [r.userId, Math.round(Number(r.xp))]));
+
     const users = await this.userRepo.find({ where: rankedUserIds.map((id) => ({ id })) });
     const userById = new Map(users.map((u) => [u.id, u]));
 
@@ -399,23 +419,19 @@ export class QuizService {
       imageByUser.set(p.userId, p.profileImage ?? null);
     }
 
-    return rankedUserIds
-      .map((uid) => {
-        const user = userById.get(uid);
-        const best = bestByUser.get(uid)!;
-        const name = user
-          ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'User'
-          : 'User';
-        return {
-          userId: uid,
-          name,
-          profileImage: imageByUser.get(uid) ?? null,
-          score: best.score,
-          total: best.total,
-          isCurrentUser: uid === userId,
-        };
-      })
-      .sort((a, b) => b.score - a.score || b.total - a.total);
+    return rankedUserIds.map((uid) => {
+      const user = userById.get(uid);
+      const name = user
+        ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'User'
+        : 'User';
+      return {
+        userId: uid,
+        name,
+        profileImage: imageByUser.get(uid) ?? null,
+        xp: xpByUser.get(uid) ?? 0,
+        isCurrentUser: uid === userId,
+      };
+    });
   }
 
   async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {
