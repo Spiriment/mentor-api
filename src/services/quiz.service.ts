@@ -6,7 +6,6 @@ import { QuizStreak } from '@/database/entities/quizStreak.entity';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
-import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { AppError } from '@/common';
 import { logger } from '@/config/int-services';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,7 +28,6 @@ export class QuizService {
   private userRepo = AppDataSource.getRepository(User);
   private menteeProfileRepo = AppDataSource.getRepository(MenteeProfile);
   private mentorProfileRepo = AppDataSource.getRepository(MentorProfile);
-  private mentorshipRequestRepo = AppDataSource.getRepository(MentorshipRequest);
 
   // ─── Books ───────────────────────────────────────────────────────────────
 
@@ -354,36 +352,19 @@ export class QuizService {
   async getLeaderboard(
     userId: string,
     book: string,
-    period: 'week' | 'alltime',
-    role?: string
+    period: 'week' | 'alltime'
   ): Promise<{ userId: string; name: string; profileImage: string | null; score: number; total: number; isCurrentUser: boolean }[]> {
-    // If the caller is a mentee, resolve their mentor's ID so we scope to the right group
-    let mentorId = userId;
-    if (role === 'mentee') {
-      const menteeRequest = await this.mentorshipRequestRepo.findOne({
-        where: { menteeId: userId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
-      });
-      if (menteeRequest) mentorId = menteeRequest.mentorId;
-    }
-
-    // Mentor + their accepted mentees form the leaderboard audience
-    const acceptedRequests = await this.mentorshipRequestRepo.find({
-      where: { mentorId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
-      relations: ['mentee'],
-    });
-    const menteeIds = acceptedRequests.map((r) => r.mentee?.id).filter((id): id is string => !!id);
-    const userIds = [mentorId, ...menteeIds];
-
-    // Best attempt per user for this book (optionally within the current week)
+    // Global leaderboard — all users ranked by best score for this book
     const qb = this.attemptRepo
       .createQueryBuilder('a')
       .select('a.userId', 'userId')
       .addSelect('MAX(a.score)', 'score')
       .addSelect('a.total', 'total')
-      .where('a.userId IN (:...userIds)', { userIds })
-      .andWhere('a.book = :book', { book })
+      .where('a.book = :book', { book })
       .groupBy('a.userId')
-      .addGroupBy('a.total');
+      .addGroupBy('a.total')
+      .orderBy('MAX(a.score)', 'DESC')
+      .limit(50);
 
     if (period === 'week') {
       const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });

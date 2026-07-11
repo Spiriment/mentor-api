@@ -51,13 +51,12 @@ export const getQuizStreak = async (req: Request, res: Response, next: NextFunct
 export const getLeaderboard = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const role = (req.user as any)?.role as string | undefined;
     const { book } = req.query;
     const period = req.query.period === 'alltime' ? 'alltime' : 'week';
     if (!book || typeof book !== 'string') {
       return res.status(400).json({ success: false, message: 'book is required' });
     }
-    const leaderboard = await quizService.getLeaderboard(userId, book, period, role);
+    const leaderboard = await quizService.getLeaderboard(userId, book, period);
     res.json({ success: true, data: leaderboard });
   } catch (err) { next(err); }
 };
