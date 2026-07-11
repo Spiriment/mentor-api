@@ -235,6 +235,19 @@ export class QuizService {
 
       await streakRepo.save(streak);
 
+      // Sync quiz activity into user.monthlyStreakData so the streak calendar shows quiz days
+      const userRepo = manager.getRepository(User);
+      const user = await userRepo.findOne({ where: { id: userId }, select: ['id', 'monthlyStreakData'] });
+      if (user) {
+        const userMonthly = user.monthlyStreakData ?? {};
+        if (!userMonthly[monthKey]) userMonthly[monthKey] = [];
+        if (!userMonthly[monthKey].includes(dayOfMonth)) {
+          userMonthly[monthKey].push(dayOfMonth);
+          userMonthly[monthKey].sort((a: number, b: number) => a - b);
+        }
+        await userRepo.update(userId, { monthlyStreakData: userMonthly });
+      }
+
       logger.info('Quiz streak updated', { userId, newStreak, book, version });
       return streak;
     });
