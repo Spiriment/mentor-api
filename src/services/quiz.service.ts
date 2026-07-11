@@ -352,10 +352,20 @@ export class QuizService {
   // ─── Leaderboard ──────────────────────────────────────────────────────────
 
   async getLeaderboard(
-    mentorId: string,
+    userId: string,
     book: string,
-    period: 'week' | 'alltime'
+    period: 'week' | 'alltime',
+    role?: string
   ): Promise<{ userId: string; name: string; profileImage: string | null; score: number; total: number; isCurrentUser: boolean }[]> {
+    // If the caller is a mentee, resolve their mentor's ID so we scope to the right group
+    let mentorId = userId;
+    if (role === 'mentee') {
+      const menteeRequest = await this.mentorshipRequestRepo.findOne({
+        where: { menteeId: userId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
+      });
+      if (menteeRequest) mentorId = menteeRequest.mentorId;
+    }
+
     // Mentor + their accepted mentees form the leaderboard audience
     const acceptedRequests = await this.mentorshipRequestRepo.find({
       where: { mentorId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
@@ -409,19 +419,19 @@ export class QuizService {
     }
 
     return rankedUserIds
-      .map((userId) => {
-        const user = userById.get(userId);
-        const best = bestByUser.get(userId)!;
+      .map((uid) => {
+        const user = userById.get(uid);
+        const best = bestByUser.get(uid)!;
         const name = user
           ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'User'
           : 'User';
         return {
-          userId,
+          userId: uid,
           name,
-          profileImage: imageByUser.get(userId) ?? null,
+          profileImage: imageByUser.get(uid) ?? null,
           score: best.score,
           total: best.total,
-          isCurrentUser: userId === mentorId,
+          isCurrentUser: uid === userId,
         };
       })
       .sort((a, b) => b.score - a.score || b.total - a.total);
