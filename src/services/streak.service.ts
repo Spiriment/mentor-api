@@ -380,7 +380,10 @@ export class StreakService {
             }
 
             // 2. Reset current streak and weekly data if a day was missed
-            if (daysDiff > 1) {
+            // Only reset if daysDiff > 2, or daysDiff === 2 but no freeze available
+            // (mirrors the logic in incrementStreak so a freeze isn't consumed here)
+            const missedWithNoFreeze = daysDiff > 1 && !(daysDiff === 2 && user.streakFreezeCount > 0);
+            if (missedWithNoFreeze) {
               logger.info('Streak expired or ghost data detected', {
                 userId,
                 previousStreak: user.currentStreak,
