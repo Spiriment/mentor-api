@@ -96060,6 +96060,30 @@
             "verse": "Colossians 4:12"
           },
           {
+            "id": 12,
+            "question": "What does Paul say about Mark in his greetings?",
+            "options": [
+              {
+                "key": "A",
+                "text": "Mark had abandoned the mission"
+              },
+              {
+                "key": "B",
+                "text": "They had received instructions to welcome Mark if he came"
+              },
+              {
+                "key": "C",
+                "text": "Mark was sent ahead to Colossae"
+              },
+              {
+                "key": "D",
+                "text": "Mark was forbidden from visiting"
+              }
+            ],
+            "answer": "B",
+            "verse": "Colossians 4:10"
+          },
+          {
             "id": 13,
             "question": "Who is described as a doctor?",
             "options": [
