@@ -123,7 +123,7 @@ export class StreakService {
           typeof user.lastStreakDate === 'string'
             ? user.lastStreakDate
             : user.lastStreakDate.toISOString().split('T')[0];
-        lastStreakDate = startOfDay(parseISO(lastDateString));
+        lastStreakDate = startOfDay(toZonedTime(parseISO(lastDateString), userTimezone));
       }
 
       const lastStreakString = lastStreakDate
@@ -355,13 +355,13 @@ export class StreakService {
           const lDate = user.lastStreakDate as any;
           const lastDateString =
             lDate instanceof Date
-              ? format(lDate, 'yyyy-MM-dd')
+              ? format(toZonedTime(lDate, userTimezone), 'yyyy-MM-dd')
               : typeof lDate === 'string'
                 ? lDate.split('T')[0]
                 : null;
 
           if (lastDateString) {
-            const lastStreakDateParsed = parseISO(lastDateString);
+            const lastStreakDateParsed = startOfDay(toZonedTime(parseISO(lastDateString), userTimezone));
             const daysDiff = differenceInCalendarDays(todayInUserTz, lastStreakDateParsed);
 
             let needsUpdate = false;
