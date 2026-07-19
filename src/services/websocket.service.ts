@@ -432,7 +432,11 @@ export class WebSocketService {
                     participant.user.pushToken,
                     participant.userId,
                     senderName,
-                    content
+                    content,
+                    {
+                      conversationId,
+                      senderId: socket.userId!,
+                    }
                   );
                 }
               }

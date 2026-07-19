@@ -189,14 +189,23 @@ export class PushNotificationService {
     pushToken: string,
     userId: string,
     senderName: string,
-    messagePreview: string
+    messagePreview: string,
+    context?: {
+      conversationId?: string;
+      senderId?: string;
+      senderImage?: string;
+    }
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
       title: `💬 ${senderName}`,
       body: messagePreview,
-      data: { type: 'new_message', senderName },
+      data: {
+        type: 'new_message',
+        senderName,
+        ...(context ?? {}),
+      },
       channelId: 'messages',
     });
   }
