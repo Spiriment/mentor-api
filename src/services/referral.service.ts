@@ -85,6 +85,9 @@ export class ReferralService {
 
   /** Get referral stats for a mentor */
   async getStats(mentorId: string) {
+    // Ensure code exists — creates one if not yet generated
+    await this.getOrCreateCode(mentorId);
+
     const user = await this.userRepo.findOne({
       where: { id: mentorId },
       select: ['referralCode', 'referralPoints'],
