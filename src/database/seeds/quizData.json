@@ -46687,483 +46687,483 @@
         "questions": [
           {
             "id": 1,
-            "question": "What causes Jerusalem’s downfall in Lamentations?",
+            "question": "What causes Habakkuk to cry out to the LORD at the start of the book?",
             "options": [
               {
                 "key": "A",
-                "text": "Her sins and rebellion against God"
+                "text": "Violence and injustice among his own people"
               },
               {
                 "key": "B",
-                "text": "Lack of military allies"
+                "text": "A famine in the land"
               },
               {
                 "key": "C",
-                "text": "Economic collapse only"
+                "text": "Persecution from a foreign king"
               },
               {
                 "key": "D",
-                "text": "Natural disasters alone"
+                "text": "The destruction of the temple"
               }
             ],
             "answer": "A",
-            "verse": "Lamentations 1:5"
+            "verse": "Habakkuk 1:2-4"
           },
           {
             "id": 2,
-            "question": "What is Jerusalem compared to in Lamentations 1?",
+            "question": "How does Habakkuk describe the law in his opening complaint?",
             "options": [
               {
                 "key": "A",
-                "text": "A victorious queen"
+                "text": "It is being perfectly upheld"
               },
               {
                 "key": "B",
-                "text": "A desolate widow"
+                "text": "It is slacked, and justice never goes forth"
               },
               {
                 "key": "C",
-                "text": "A rising kingdom"
+                "text": "It has been rewritten"
               },
               {
                 "key": "D",
-                "text": "A strong fortress"
+                "text": "It no longer exists"
               }
             ],
             "answer": "B",
-            "verse": "Lamentations 1:1"
+            "verse": "Habakkuk 1:4"
           },
           {
             "id": 3,
-            "question": "What emotion is repeatedly expressed in Lamentations 1?",
+            "question": "What work does the LORD say He is doing that Habakkuk would not believe if told?",
             "options": [
               {
                 "key": "A",
-                "text": "Joy"
+                "text": "Raising up the Chaldeans to judge the nation"
               },
               {
                 "key": "B",
-                "text": "Confidence"
+                "text": "Sending a great flood"
               },
               {
                 "key": "C",
-                "text": "Grief and weeping"
+                "text": "Restoring the throne of David"
               },
               {
                 "key": "D",
-                "text": "Indifference"
+                "text": "Ending all warfare"
               }
             ],
-            "answer": "C",
-            "verse": "Lamentations 1:2"
+            "answer": "A",
+            "verse": "Habakkuk 1:5-6"
           },
           {
             "id": 4,
-            "question": "What has happened to Zion’s splendor?",
+            "question": "How are the Chaldeans (Babylonians) described in chapter 1?",
             "options": [
               {
                 "key": "A",
-                "text": "It has increased"
+                "text": "Weak and disorganized"
               },
               {
                 "key": "B",
-                "text": "It has been restored"
+                "text": "Bitter and hasty, terrible and dreadful"
               },
               {
                 "key": "C",
-                "text": "It has been hidden"
+                "text": "Peaceful traders"
               },
               {
                 "key": "D",
-                "text": "It has fallen from glory"
+                "text": "Loyal allies of Israel"
               }
             ],
-            "answer": "D",
-            "verse": "Lamentations 1:6"
+            "answer": "B",
+            "verse": "Habakkuk 1:6-7"
           },
           {
             "id": 5,
-            "question": "What does Jerusalem remember in her suffering?",
+            "question": "What troubles Habakkuk about God using the Chaldeans as an instrument of judgment?",
             "options": [
               {
                 "key": "A",
-                "text": "Former glory and festivals"
+                "text": "They are more righteous than Israel"
               },
               {
                 "key": "B",
-                "text": "Foreign alliances"
+                "text": "God is using a nation more wicked to punish one less wicked"
               },
               {
                 "key": "C",
-                "text": "Military victories"
+                "text": "They refuse to attack"
               },
               {
                 "key": "D",
-                "text": "Wealth and trade"
+                "text": "They worship the true God"
               }
             ],
-            "answer": "A",
-            "verse": "Lamentations 1:7"
+            "answer": "B",
+            "verse": "Habakkuk 1:13"
           },
           {
             "id": 6,
-            "question": "What is described as “no comforter” in Lamentations?",
+            "question": "What does Habakkuk compare people to, as the Chaldeans catch them with a hook?",
             "options": [
               {
                 "key": "A",
-                "text": "Kings"
+                "text": "Fish of the sea"
               },
               {
                 "key": "B",
-                "text": "Jerusalem"
+                "text": "Birds of the air"
               },
               {
                 "key": "C",
-                "text": "Prophets"
+                "text": "Sheep without a shepherd"
               },
               {
                 "key": "D",
-                "text": "Priests"
+                "text": "Sand of the sea"
               }
             ],
-            "answer": "B",
-            "verse": "Lamentations 1:9"
+            "answer": "A",
+            "verse": "Habakkuk 1:14-15"
           },
           {
             "id": 7,
-            "question": "What does God do in judgment according to Lamentations 2?",
+            "question": "Where does Habakkuk position himself to wait for God's answer?",
             "options": [
               {
                 "key": "A",
-                "text": "Forgets sin"
+                "text": "In the temple courts"
               },
               {
                 "key": "B",
-                "text": "Removes consequences"
+                "text": "Upon his watchtower"
               },
               {
                 "key": "C",
-                "text": "Fulfills His anger against Jerusalem"
+                "text": "In the wilderness"
               },
               {
                 "key": "D",
-                "text": "Restores immediately"
+                "text": "At the city gate"
               }
             ],
-            "answer": "C",
-            "verse": "Lamentations 2:2"
+            "answer": "B",
+            "verse": "Habakkuk 2:1"
           },
           {
             "id": 8,
-            "question": "What has God done to the temple in Lamentations 2?",
+            "question": "What does the LORD tell Habakkuk to do with the vision He gives?",
             "options": [
               {
                 "key": "A",
-                "text": "Expanded it"
+                "text": "Keep it secret"
               },
               {
                 "key": "B",
-                "text": "Transformed it"
+                "text": "Write it plainly on tablets so a runner may read it"
               },
               {
                 "key": "C",
-                "text": "Hidden it"
+                "text": "Speak it only to the priests"
               },
               {
                 "key": "D",
-                "text": "Rejected it in judgment"
+                "text": "Burn it after reading"
               }
             ],
-            "answer": "D",
-            "verse": "Lamentations 2:7"
+            "answer": "B",
+            "verse": "Habakkuk 2:2"
           },
           {
             "id": 9,
-            "question": "What has ceased in Zion according to Lamentations 2?",
+            "question": "What famous statement does God make about the righteous in Habakkuk 2:4?",
             "options": [
               {
                 "key": "A",
-                "text": "Festivals and appointed feasts"
+                "text": "The righteous shall live by his faith"
               },
               {
                 "key": "B",
-                "text": "Trade"
+                "text": "The righteous shall never suffer"
               },
               {
                 "key": "C",
-                "text": "Farming"
+                "text": "The righteous shall rule the nations"
               },
               {
                 "key": "D",
-                "text": "Writing"
+                "text": "The righteous shall be silent"
               }
             ],
             "answer": "A",
-            "verse": "Lamentations 2:6"
+            "verse": "Habakkuk 2:4"
           },
           {
             "id": 10,
-            "question": "What role do prophets play in Lamentations 2?",
+            "question": "How many 'woes' does Habakkuk pronounce against the proud oppressor in chapter 2?",
             "options": [
               {
                 "key": "A",
-                "text": "They guide perfectly"
+                "text": "Three"
               },
               {
                 "key": "B",
-                "text": "They see false visions and lies"
+                "text": "Five"
               },
               {
                 "key": "C",
-                "text": "They rule the city"
+                "text": "Seven"
               },
               {
                 "key": "D",
-                "text": "They are silent only"
+                "text": "Ten"
               }
             ],
             "answer": "B",
-            "verse": "Lamentations 2:14"
+            "verse": "Habakkuk 2:6-19"
           },
           {
             "id": 11,
-            "question": "What does Lamentations 3 compare suffering to?",
+            "question": "What is the first woe pronounced against, in Habakkuk 2:6?",
             "options": [
               {
                 "key": "A",
-                "text": "Light rain"
+                "text": "Increasing wealth by extortion"
               },
               {
                 "key": "B",
-                "text": "Celebration"
+                "text": "Idolatry"
               },
               {
                 "key": "C",
-                "text": "Darkness and bitterness"
+                "text": "Drunkenness"
               },
               {
                 "key": "D",
-                "text": "Peaceful rest"
+                "text": "False prophecy"
               }
             ],
-            "answer": "C",
-            "verse": "Lamentations 3:2"
+            "answer": "A",
+            "verse": "Habakkuk 2:6"
           },
           {
             "id": 12,
-            "question": "What is the writer’s condition in Lamentations 3?",
+            "question": "What does the woe in Habakkuk 2:12 condemn?",
             "options": [
               {
                 "key": "A",
-                "text": "Strengthened and joyful"
+                "text": "Building a town with bloodshed"
               },
               {
                 "key": "B",
-                "text": "Victorious in battle"
+                "text": "Failing to pay taxes"
               },
               {
                 "key": "C",
-                "text": "Wealthy and honored"
+                "text": "Refusing to fight"
               },
               {
                 "key": "D",
-                "text": "Surrounded by bitterness and affliction"
+                "text": "Breaking the Sabbath"
               }
             ],
-            "answer": "D",
-            "verse": "Lamentations 3:19"
+            "answer": "A",
+            "verse": "Habakkuk 2:12"
           },
           {
             "id": 13,
-            "question": "What brings hope in Lamentations 3?",
+            "question": "What famous promise about the knowledge of God's glory appears in Habakkuk 2:14?",
             "options": [
               {
                 "key": "A",
-                "text": "God’s steadfast love"
+                "text": "The earth will be filled with the knowledge of the glory of the LORD, as the waters cover the sea"
               },
               {
                 "key": "B",
-                "text": "Human strength"
+                "text": "Only Israel will know God's glory"
               },
               {
                 "key": "C",
-                "text": "Military victory"
+                "text": "God's glory will remain hidden"
               },
               {
                 "key": "D",
-                "text": "Temple sacrifices"
+                "text": "The nations will never see God's glory"
               }
             ],
             "answer": "A",
-            "verse": "Lamentations 3:22"
+            "verse": "Habakkuk 2:14"
           },
           {
             "id": 14,
-            "question": "What is described as “new every morning”?",
+            "question": "What does the final woe in chapter 2 condemn?",
             "options": [
               {
                 "key": "A",
-                "text": "Judgment"
+                "text": "Trusting in worthless, silent idols"
               },
               {
                 "key": "B",
-                "text": "God’s mercies"
+                "text": "Excessive feasting"
               },
               {
                 "key": "C",
-                "text": "Human suffering"
+                "text": "Neglecting the poor"
               },
               {
                 "key": "D",
-                "text": "National failure"
-              }
-            ],
-            "answer": "B",
-            "verse": "Lamentations 3:23"
-          },
-          {
-            "id": 15,
-            "question": "What is better in suffering according to Lamentations 3?",
-            "options": [
-              {
-                "key": "A",
-                "text": "Complaining loudly"
-              },
-              {
-                "key": "B",
-                "text": "Running away"
-              },
-              {
-                "key": "C",
-                "text": "Waiting quietly for salvation"
-              },
-              {
-                "key": "D",
-                "text": "Ignoring God"
-              }
-            ],
-            "answer": "C",
-            "verse": "Lamentations 3:26"
-          },
-          {
-            "id": 16,
-            "question": "What does God not do forever according to Lamentations 3?",
-            "options": [
-              {
-                "key": "A",
-                "text": "See sin"
-              },
-              {
-                "key": "B",
-                "text": "Hear prayer"
-              },
-              {
-                "key": "C",
-                "text": "Judge nations"
-              },
-              {
-                "key": "D",
-                "text": "Cast off people forever"
-              }
-            ],
-            "answer": "D",
-            "verse": "Lamentations 3:31"
-          },
-          {
-            "id": 17,
-            "question": "What does Lamentations 3 affirm about God’s justice?",
-            "options": [
-              {
-                "key": "A",
-                "text": "It is righteous and purposeful"
-              },
-              {
-                "key": "B",
-                "text": "It is random"
-              },
-              {
-                "key": "C",
-                "text": "It is absent"
-              },
-              {
-                "key": "D",
-                "text": "It is delayed forever"
+                "text": "Refusing to build the temple"
               }
             ],
             "answer": "A",
-            "verse": "Lamentations 3:33"
+            "verse": "Habakkuk 2:18-19"
           },
           {
-            "id": 18,
-            "question": "What does Lamentations 4 describe about leaders?",
+            "id": 15,
+            "question": "What does Habakkuk 2:20 say about the LORD in His holy temple?",
             "options": [
               {
                 "key": "A",
-                "text": "They prosper"
+                "text": "Let all the earth keep silence before Him"
               },
               {
                 "key": "B",
-                "text": "They become weak and powerless"
+                "text": "He has departed from His people"
               },
               {
                 "key": "C",
-                "text": "They are exalted"
+                "text": "He calls for war"
               },
               {
                 "key": "D",
-                "text": "They are immortal"
+                "text": "He sleeps"
+              }
+            ],
+            "answer": "A",
+            "verse": "Habakkuk 2:20"
+          },
+          {
+            "id": 16,
+            "question": "What literary form is chapter 3 of Habakkuk?",
+            "options": [
+              {
+                "key": "A",
+                "text": "A genealogy"
+              },
+              {
+                "key": "B",
+                "text": "A prayer set to music, in the style of a psalm"
+              },
+              {
+                "key": "C",
+                "text": "A legal contract"
+              },
+              {
+                "key": "D",
+                "text": "A list of kings"
               }
             ],
             "answer": "B",
-            "verse": "Lamentations 4:1"
+            "verse": "Habakkuk 3:1"
+          },
+          {
+            "id": 17,
+            "question": "What does Habakkuk ask God to do 'in the midst of the years' in his prayer?",
+            "options": [
+              {
+                "key": "A",
+                "text": "Revive His work and remember mercy in wrath"
+              },
+              {
+                "key": "B",
+                "text": "Destroy Israel completely"
+              },
+              {
+                "key": "C",
+                "text": "Forget His covenant"
+              },
+              {
+                "key": "D",
+                "text": "Remain silent forever"
+              }
+            ],
+            "answer": "A",
+            "verse": "Habakkuk 3:2"
+          },
+          {
+            "id": 18,
+            "question": "How does Habakkuk describe his physical reaction to the vision of God's coming judgment?",
+            "options": [
+              {
+                "key": "A",
+                "text": "He felt nothing"
+              },
+              {
+                "key": "B",
+                "text": "His body trembled and his lips quivered"
+              },
+              {
+                "key": "C",
+                "text": "He fell asleep"
+              },
+              {
+                "key": "D",
+                "text": "He rejoiced immediately"
+              }
+            ],
+            "answer": "B",
+            "verse": "Habakkuk 3:16"
           },
           {
             "id": 19,
-            "question": "What happens to children in Lamentations 4?",
+            "question": "Even if the fig tree does not blossom and the fields yield no food, what does Habakkuk resolve to do?",
             "options": [
               {
                 "key": "A",
-                "text": "They are honored"
+                "text": "Abandon his faith"
               },
               {
                 "key": "B",
-                "text": "They become rulers"
+                "text": "Rejoice in the LORD and joy in the God of his salvation"
               },
               {
                 "key": "C",
-                "text": "They suffer hunger and distress"
+                "text": "Curse God"
               },
               {
                 "key": "D",
-                "text": "They are hidden safely"
+                "text": "Leave Judah"
               }
             ],
-            "answer": "C",
-            "verse": "Lamentations 4:4"
+            "answer": "B",
+            "verse": "Habakkuk 3:17-18"
           },
           {
             "id": 20,
-            "question": "What is the final plea in Lamentations?",
+            "question": "What does Habakkuk compare his feet to, in the closing verse of the book?",
             "options": [
               {
                 "key": "A",
-                "text": "Increase wealth"
+                "text": "Hinds' feet, set upon high places"
               },
               {
                 "key": "B",
-                "text": "Build nations"
+                "text": "Feet of clay"
               },
               {
                 "key": "C",
-                "text": "Destroy enemies"
+                "text": "Feet weighed down by chains"
               },
               {
                 "key": "D",
-                "text": "Restore us, O Lord"
+                "text": "Feet that stumble in darkness"
               }
             ],
-            "answer": "D",
-            "verse": "Lamentations 5:21"
+            "answer": "A",
+            "verse": "Habakkuk 3:19"
           }
         ]
       },
