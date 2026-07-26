@@ -8,7 +8,7 @@ import { logger } from '@/config/int-services';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { startOfMonth, endOfMonth, format, differenceInCalendarDays } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { Between } from 'typeorm';
 
 export class MonthlySummaryService {
@@ -37,9 +37,12 @@ export class MonthlySummaryService {
       }
 
       const userTimezone = user.timezone || 'UTC';
-      // Create date for the first day of the target month
-      const startDate = startOfMonth(new Date(year, month - 1));
-      const endDate = endOfMonth(new Date(year, month - 1));
+      // Compute the month boundaries as wall-clock times in the user's own
+      // timezone, then convert to the equivalent UTC instants for the query.
+      // Using server-local time here would shift sessions near month
+      // boundaries into the wrong month for users far from the server's tz.
+      const startDate = fromZonedTime(startOfMonth(new Date(year, month - 1)), userTimezone);
+      const endDate = fromZonedTime(endOfMonth(new Date(year, month - 1)), userTimezone);
 
       logger.info('Fetching data for monthly summary', { userId, startDate, endDate });
 

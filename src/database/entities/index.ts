@@ -14,6 +14,7 @@ export * from './familyPlan.entity';
 export * from './familyMember.entity';
 export * from './aiChapterSummary.entity';
 export * from './userSubscription.entity';
+export * from './referral.entity';
 export * from './mrrSnapshot.entity';
 export * from './processedWebhookEvent.entity';
 export * from './promoCode.entity';
