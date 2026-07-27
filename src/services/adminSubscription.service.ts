@@ -25,6 +25,23 @@ import {
 import { CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 
 const MAX_INTERNAL_TEST_CODES = 3;
+const ADMIN_MANUAL_NOTE = 'Manually granted by admin';
+
+export function isManuallyAssignedSubscription(row: Pick<UserSubscription, 'externalProvider' | 'notes'>): boolean {
+  if (row.externalProvider === 'admin') return true;
+  return (row.notes ?? '').includes('Manually granted');
+}
+
+export function getSubscriptionAssignmentSource(
+  row: Pick<UserSubscription, 'externalProvider' | 'notes'>
+): 'admin_manual' | 'promo_comp' | 'stripe' | 'app_store' | 'family_plan' | 'unknown' {
+  if (isManuallyAssignedSubscription(row)) return 'admin_manual';
+  if (row.externalProvider === 'internal_test') return 'promo_comp';
+  if (row.externalProvider === 'stripe') return 'stripe';
+  if (row.externalProvider === 'revenuecat') return 'app_store';
+  if (row.externalProvider === 'stripe_family') return 'family_plan';
+  return 'unknown';
+}
 
 export class AdminSubscriptionService {
   serialize(row: UserSubscription): Record<string, unknown> {
@@ -43,6 +60,8 @@ export class AdminSubscriptionService {
       pastDueAt: row.pastDueAt ?? null,
       cancelAtPeriodEnd: row.notes === CANCEL_AT_PERIOD_END_NOTE,
       notes: row.notes ?? null,
+      isManuallyAssigned: isManuallyAssignedSubscription(row),
+      assignmentSource: getSubscriptionAssignmentSource(row),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -152,6 +171,18 @@ export class AdminSubscriptionService {
       ? parseInt(unknownMrrRow.cnt, 10)
       : 0;
 
+    const manualUnknownMrrQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+    applyMrrFilters(manualUnknownMrrQb, 's');
+    manualUnknownMrrQb
+      .andWhere('s.mrrCents IS NULL')
+      .andWhere("(s.externalProvider = 'admin' OR s.notes LIKE :manualNote)", {
+        manualNote: '%Manually granted%',
+      });
+    const manualUnknownMrrRow = await manualUnknownMrrQb.getRawOne<{ cnt: string }>();
+    const manualAssignmentUnknownMrrCount = manualUnknownMrrRow?.cnt
+      ? parseInt(manualUnknownMrrRow.cnt, 10)
+      : 0;
+
     const totalMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
     const revenueHistory = await this.getRevenueHistory();
 
@@ -169,11 +200,18 @@ export class AdminSubscriptionService {
         currency: 'EUR',
         history: revenueHistory,
         mrrUnknownSubscriberCount,
+        manualAssignmentUnknownMrrCount,
       },
       activePlans: { church: activeChurchPlans, family: activeFamilyPlans },
       revenueNote:
         mrrUnknownSubscriberCount > 0
-          ? `${mrrUnknownSubscriberCount} paying subscriber(s) have unknown MRR and are excluded from the total.`
+          ? manualAssignmentUnknownMrrCount > 0
+            ? `${manualAssignmentUnknownMrrCount} manually assigned by admin (excluded from MRR).${
+                mrrUnknownSubscriberCount > manualAssignmentUnknownMrrCount
+                  ? ` ${mrrUnknownSubscriberCount - manualAssignmentUnknownMrrCount} other subscriber(s) also have unknown MRR.`
+                  : ''
+              }`
+            : `${mrrUnknownSubscriberCount} paying subscriber(s) have unknown MRR and are excluded from the total.`
           : null,
       metricsNote:
         'Tier counts include trialing users. MRR and paying subscribers count active and past_due paid tiers only.',
@@ -249,9 +287,9 @@ export class AdminSubscriptionService {
           input.mrrCents === undefined ? null : input.mrrCents,
         currency: input.currency ?? 'EUR',
         expiresAt: resolveExpiresAt(),
-        externalProvider: input.externalProvider ?? null,
-        externalRef: input.externalRef ?? null,
-        notes: input.notes ?? null,
+        externalProvider: input.externalProvider ?? 'admin',
+        externalRef: input.externalRef ?? adminUserId,
+        notes: input.notes ?? ADMIN_MANUAL_NOTE,
         billingInterval: input.billingInterval ?? null,
         pastDueAt:
           input.pastDueAt === undefined || input.pastDueAt === null || input.pastDueAt === ''
@@ -273,12 +311,18 @@ export class AdminSubscriptionService {
       }
       if (input.externalProvider !== undefined) {
         row.externalProvider = input.externalProvider;
+      } else {
+        row.externalProvider = 'admin';
       }
       if (input.externalRef !== undefined) {
         row.externalRef = input.externalRef;
+      } else if (!row.externalRef) {
+        row.externalRef = adminUserId;
       }
       if (input.notes !== undefined) {
         row.notes = input.notes;
+      } else if (!row.notes?.includes('Manually granted')) {
+        row.notes = ADMIN_MANUAL_NOTE;
       }
       if (input.billingInterval !== undefined) {
         row.billingInterval = input.billingInterval;
