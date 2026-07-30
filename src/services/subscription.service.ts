@@ -23,6 +23,25 @@ const GRACE_PERIOD_DAYS = 1;
 export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
 export const CANCEL_AT_PERIOD_END_NOTE = 'cancel_at_period_end';
 
+const TIER_DISPLAY: Record<SubscriptionTier, string> = {
+  free: 'Free',
+  none: 'Free',
+  basic: 'Basic',
+  pro: 'Pro',
+  premium: 'Premium',
+};
+
+const PAID_TIERS = new Set<SubscriptionTier>(['basic', 'pro', 'premium']);
+
+function formatSubscriptionAccessUntil(expiresAt: Date | null | undefined): string {
+  if (!expiresAt) return 'the end of your current billing period';
+  return expiresAt.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export class SubscriptionService {
   private emailService: EmailService;
 
@@ -391,6 +410,8 @@ export class SubscriptionService {
     }
 
     const previousStatus = sub.status;
+    const previousTier = sub.tier;
+    const previousNotes = sub.notes;
 
     sub.tier = data.tier;
     sub.status = data.status;
@@ -420,7 +441,79 @@ export class SubscriptionService {
     }
 
     await this.subRepo.save(sub);
+
+    const becameCancelAtPeriodEnd =
+      sub.notes === CANCEL_AT_PERIOD_END_NOTE &&
+      previousNotes !== CANCEL_AT_PERIOD_END_NOTE;
+    const endedPaidSubscription =
+      PAID_TIERS.has(previousTier) &&
+      sub.tier === 'free' &&
+      sub.status === 'active';
+
+    if (becameCancelAtPeriodEnd) {
+      void this.notifySubscriptionCancelled(userId, sub).catch((err) => {
+        logger.error(
+          'Failed to send subscription cancellation email',
+          err instanceof Error ? err : new Error(String(err)),
+          { userId },
+        );
+      });
+    }
+
+    if (endedPaidSubscription) {
+      void this.notifySubscriptionEnded(userId, previousTier).catch((err) => {
+        logger.error(
+          'Failed to send subscription ended email',
+          err instanceof Error ? err : new Error(String(err)),
+          { userId },
+        );
+      });
+    }
+
     return true;
+  }
+
+  private async notifySubscriptionCancelled(
+    userId: string,
+    sub: UserSubscription,
+  ): Promise<void> {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'firstName'],
+    });
+    if (!user?.email) return;
+
+    await this.emailService.sendSubscriptionCancelledEmail({
+      to: user.email,
+      firstName: user.firstName?.trim() || 'there',
+      tierLabel: TIER_DISPLAY[sub.tier] ?? sub.tier,
+      accessUntilLabel: formatSubscriptionAccessUntil(sub.expiresAt),
+    });
+  }
+
+  async notifySubscriptionEndedForUser(
+    userId: string,
+    previousTier: SubscriptionTier,
+  ): Promise<void> {
+    if (!PAID_TIERS.has(previousTier)) return;
+    await this.notifySubscriptionEnded(userId, previousTier);
+  }
+
+  private async notifySubscriptionEnded(
+    userId: string,
+    previousTier: SubscriptionTier,
+  ): Promise<void> {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'firstName'],
+    });
+    if (!user?.email) return;
+
+    await this.emailService.sendSubscriptionEndedEmail({
+      to: user.email,
+      firstName: user.firstName?.trim() || 'there',
+      tierLabel: TIER_DISPLAY[previousTier] ?? previousTier,
+    });
   }
 
   async markPastDue(userId: string): Promise<void> {

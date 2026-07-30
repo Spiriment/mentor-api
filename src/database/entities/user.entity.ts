@@ -146,6 +146,9 @@ export class User extends BaseEntity {
   @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
   notificationPreferences?: string[]; // ['messages', 'session_reminders', 'mentorship_requests', 'study_reminders']
 
+  @Column({ name: 'marketingEmailsOptOut', default: false })
+  marketingEmailsOptOut!: boolean;
+
   @Column({ name: 'pushNotificationsEnabled', type: 'boolean', default: true })
   pushNotificationsEnabled!: boolean;
 

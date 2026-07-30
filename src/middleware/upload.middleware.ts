@@ -16,8 +16,10 @@ const videoIntroductionsDir = path.join(uploadDir, 'video-introductions');
 const chatAttachmentsDir = path.join(uploadDir, 'chat-attachments');
 const emailAttachmentsDir = path.join(uploadDir, 'email-attachments');
 const blogImagesDir = path.join(uploadDir, 'blog-images');
+const broadcastImagesDir = path.join(uploadDir, 'broadcast-images');
+const broadcastExcelDir = path.join(uploadDir, 'broadcast-excel');
 
-[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir, emailAttachmentsDir, blogImagesDir].forEach((dir) => {
+[uploadDir, profileImagesDir, videoIntroductionsDir, chatAttachmentsDir, emailAttachmentsDir, blogImagesDir, broadcastImagesDir, broadcastExcelDir].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     logger.info(`Created upload directory: ${dir}`);
@@ -39,6 +41,10 @@ const storage = multer.diskStorage({
       uploadPath = emailAttachmentsDir;
     } else if (file.fieldname === 'blogImage') {
       uploadPath = blogImagesDir;
+    } else if (file.fieldname === 'broadcastImage') {
+      uploadPath = broadcastImagesDir;
+    } else if (file.fieldname === 'broadcastExcel') {
+      uploadPath = broadcastExcelDir;
     }
 
     cb(null, uploadPath);
@@ -81,12 +87,23 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: Function) => {
     } else {
       cb(new Error('Invalid file type for chat attachment'), false);
     }
-  } else if (file.fieldname === 'attachment' || file.fieldname === 'blogImage') {
-    // Allow any standard documents and media for emails, images for blog
-    if (file.fieldname === 'blogImage' && !file.mimetype.startsWith('image/')) {
+  } else if (file.fieldname === 'attachment' || file.fieldname === 'blogImage' || file.fieldname === 'broadcastImage') {
+    // Allow any standard documents and media for emails, images for blog/broadcast
+    if ((file.fieldname === 'blogImage' || file.fieldname === 'broadcastImage') && !file.mimetype.startsWith('image/')) {
       cb(new Error('Blog image must be an image file'), false);
     } else {
       cb(null, true);
+    }
+  } else if (file.fieldname === 'broadcastExcel') {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+    ];
+    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls|csv)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Broadcast Excel must be .xlsx, .xls, or .csv'), false);
     }
   } else {
     cb(new Error('Invalid field name'), false);
@@ -123,6 +140,10 @@ export const uploadEmailAttachment = upload.single('attachment');
 
 // Middleware for blog images
 export const uploadBlogImage = upload.single('blogImage');
+
+// Middleware for broadcast uploads
+export const uploadBroadcastImage = upload.single('broadcastImage');
+export const uploadBroadcastExcel = upload.single('broadcastExcel');
 
 // Error handling middleware
 export const handleUploadError = (

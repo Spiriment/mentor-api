@@ -5,6 +5,8 @@ export interface EmailJobData {
   subject: string;
   compiledContent?: string;
   attachments?: Attachment[];
+  from?: string;
+  replyTo?: string;
 }
 export interface NotificationJob {
   pushNotificationId: string;

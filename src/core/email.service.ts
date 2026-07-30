@@ -155,11 +155,12 @@ export class EmailService {
     }
 
     const mailOptions = {
-      from: process.env.SMTP_FROM,
+      from: options.from || process.env.SMTP_FROM,
       to: options.to,
       subject: options.subject,
       html: options.compiledContent,
       attachments,
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
     };
 
     this.logger.info('📤 Attempting to send email', {
@@ -1023,6 +1024,68 @@ export class EmailService {
         title: "You're All Set",
         ...props,
       },
+    });
+  }
+
+  public async sendSubscriptionCancelledEmail(props: {
+    to: string;
+    firstName: string;
+    tierLabel: string;
+    accessUntilLabel: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: 'Your Spiriment subscription cancellation is confirmed',
+      partialName: 'subscription-cancelled',
+      templateData: {
+        title: 'Subscription Cancelled',
+        ...props,
+      },
+    });
+  }
+
+  public async sendSubscriptionEndedEmail(props: {
+    to: string;
+    firstName: string;
+    tierLabel: string;
+  }): Promise<void> {
+    await this.sendEmailWithTemplate({
+      to: props.to,
+      subject: 'Your Spiriment paid plan has ended',
+      partialName: 'subscription-ended',
+      templateData: {
+        title: 'Subscription Ended',
+        ...props,
+      },
+    });
+  }
+
+  /** Rich HTML broadcast from admin campaigns (From: info@spiriment.com via SMTP_FROM). */
+  public async sendBroadcastCampaignEmail(props: {
+    to: string;
+    subject: string;
+    htmlContent: string;
+    firstName?: string;
+    unsubscribeUrl?: string;
+    replyTo?: string;
+  }): Promise<void> {
+    const spirimentInfo = 'info@spiriment.com';
+    const content = this.generateEmailContent(
+      {
+        title: props.subject,
+        htmlContent: props.htmlContent,
+        firstName: props.firstName,
+        unsubscribeUrl: props.unsubscribeUrl,
+      },
+      'broadcast'
+    );
+
+    await this.sendEmail({
+      to: props.to,
+      subject: props.subject,
+      compiledContent: content,
+      from: process.env.SMTP_FROM || spirimentInfo,
+      replyTo: props.replyTo?.trim() || spirimentInfo,
     });
   }
 }

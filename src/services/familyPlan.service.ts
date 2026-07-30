@@ -497,6 +497,9 @@ export class FamilyPlanService {
     }
     if (!sub) return;
 
+    const previousTier = sub.tier;
+    const wasPaidTier = previousTier === 'basic' || previousTier === 'pro' || previousTier === 'premium';
+
     sub.tier = 'free';
     sub.status = 'active';
     sub.externalRef = null;
@@ -505,7 +508,24 @@ export class FamilyPlanService {
     sub.expiresAt = null;
     sub.pastDueAt = null;
     sub.billingInterval = null;
+    sub.notes = null;
     await this.subRepo.save(sub);
+
+    if (wasPaidTier) {
+      const user = await AppDataSource.getRepository(User).findOne({
+        where: { id: memberUserId },
+        select: ['id', 'email', 'firstName'],
+      });
+      if (user?.email) {
+        void getEmailService()
+          .sendSubscriptionEndedEmail({
+            to: user.email,
+            firstName: user.firstName?.trim() || 'there',
+            tierLabel: TIER_LABELS[previousTier] ?? previousTier,
+          })
+          .catch(() => {});
+      }
+    }
   }
 
   // ─── Admin operations ─────────────────────────────────────────────────────────

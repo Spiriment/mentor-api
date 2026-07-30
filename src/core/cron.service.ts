@@ -16,6 +16,7 @@ import { adminOrgPlanService } from "@/services/adminOrgPlan.service";
 import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
 import { webhookIdempotencyService } from "@/services/webhookIdempotency.service";
 import { quizNotificationService } from "@/services/quizNotification.service";
+import { adminBroadcastService } from "@/services/adminBroadcast.service";
 
 export class CronService {
   private dataSource: DataSource;
@@ -401,6 +402,23 @@ export class CronService {
       this.tasks.set("weekly-quiz-reminder", weeklyQuizTask);
       logger.info("Weekly quiz reminder cron scheduled (every Monday 09:00 UTC)");
 
+      const broadcastScheduleTask = cron.schedule(
+        "* * * * *",
+        async () => {
+          try {
+            await adminBroadcastService.processScheduledCampaigns();
+          } catch (err) {
+            logger.error(
+              "Error in broadcast schedule cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("broadcast-schedule", broadcastScheduleTask);
+      logger.info("Broadcast schedule cron scheduled (every minute UTC)");
+
     } catch (error) {
       logger.error(
         "Error initializing cron jobs:",
@@ -482,6 +500,10 @@ export class CronService {
         return "30 0 * * * (Daily at 00:30 UTC)";
       case "webhook-idempotency-prune":
         return "45 0 * * * (Daily at 00:45 UTC — retains 90 days)";
+      case "broadcast-schedule":
+        return "* * * * * (Every minute)";
+      case "weekly-quiz-reminder":
+        return "0 9 * * 1 (Every Monday 09:00 UTC)";
       default:
         return "Unknown";
     }

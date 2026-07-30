@@ -58,6 +58,8 @@ import {
   MenteeReport,
   SupportTicket,
   SupportTicketMessage,
+  EmailCampaign,
+  EmailCampaignRecipient,
 } from '@/database/entities';
 
 export const AppDataSource = new DataSource({
@@ -136,6 +138,8 @@ export const AppDataSource = new DataSource({
     MenteeReport,
     SupportTicket,
     SupportTicketMessage,
+    EmailCampaign,
+    EmailCampaignRecipient,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

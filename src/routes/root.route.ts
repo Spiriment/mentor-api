@@ -38,6 +38,7 @@ import familyPlanRoutes from './familyPlan.routes';
 import aiRoutes from './ai.routes';
 import quizRoutes from './quiz.routes';
 import referralRoutes from './referral.routes';
+import marketingRoutes from './marketing.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -195,6 +196,18 @@ const createRootRoutes = () => {
 
   // Referral routes
   rootRouter.use('/api/referral', referralRoutes);
+
+  // Marketing (public unsubscribe, etc.)
+  rootRouter.use('/api/marketing', marketingRoutes);
+
+  // Public email icons (store buttons in broadcasts)
+  rootRouter.use(
+    '/email-icons',
+    require('express').static(
+      path.join(__dirname, '../mails/assets/email-icons'),
+      { maxAge: '7d' }
+    )
+  );
 
   // Church portal routes
   rootRouter.use('/api/church-portal', (req, res, next) => {

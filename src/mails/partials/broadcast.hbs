@@ -1,0 +1,12 @@
+{{#if firstName}}
+<p>Hi {{firstName}},</p>
+{{/if}}
+
+{{{htmlContent}}}
+
+{{#if unsubscribeUrl}}
+<p style="margin-top: 32px; font-size: 12px; color: #888;">
+  You received this email because you have a Spiriment account or were included in a Spiriment announcement.
+  <a href="{{unsubscribeUrl}}" style="color: #888;">Unsubscribe from marketing emails</a>
+</p>
+{{/if}}

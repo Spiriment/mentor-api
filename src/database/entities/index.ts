@@ -75,3 +75,7 @@ export * from './quizStreak.entity';
 // Church portal entities
 export * from '../../church-portal/entities';
 
+// Email broadcast campaigns
+export * from './emailCampaign.entity';
+export * from './emailCampaignRecipient.entity';
+
