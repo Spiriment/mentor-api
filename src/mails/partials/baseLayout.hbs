@@ -29,21 +29,21 @@
         max-width: 600px;
         margin: 0 auto;
         background-color: #FFFFFF;
-        padding: 40px 32px;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 4px 24px rgba(22, 36, 25, 0.08);
         color: #162419;
       }
 
       .logo-container {
         text-align: center;
-        margin-bottom: 32px;
-        padding-bottom: 24px;
-        border-bottom: 2px solid #EBEEEC;
+        padding: 32px 32px 20px;
+        background: linear-gradient(135deg, #E7EEE4 0%, #DCE6D7 100%);
+        border-bottom: 1px solid #CFDDCA;
       }
 
       .logo-container img {
-        max-width: 160px;
+        max-width: 150px;
         width: auto;
         height: auto;
       }
@@ -52,6 +52,7 @@
         font-size: 16px;
         line-height: 1.75;
         color: #162419;
+        padding: 40px 32px;
       }
 
       .content h1,
@@ -105,46 +106,56 @@
       }
 
       .footer {
-        margin-top: 48px;
+        background: linear-gradient(180deg, #24391F 0%, #182A15 100%);
+        padding: 32px 32px 28px;
         text-align: center;
-        padding-top: 24px;
       }
 
-      .footer hr {
-        border: none;
-        border-top: 1px solid #C0CBC3;
-        margin: 0 0 24px 0;
+      .footer .social-row {
+        margin-bottom: 20px;
       }
 
-      .support-text {
-        font-size: 14px;
-        color: #555;
-        margin-bottom: 8px;
+      .footer .social-circle {
+        display: inline-block;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        text-align: center;
+        line-height: 32px;
+        margin: 0 5px;
+        color: #FFFFFF;
       }
 
-      .support-link {
-        color: #3A5A40;
-        text-decoration: none;
+      .footer-brand {
+        font-size: 18px;
+        color: #EAF0E7;
+        margin: 0 0 12px 0;
         font-weight: 600;
       }
 
-      .support-link:hover {
-        color: #162419;
-        text-decoration: underline;
+      .support-text {
+        font-size: 12px;
+        color: #B9C6B4;
+        margin: 0 0 4px 0;
       }
 
-      .tagline {
-        font-size: 13px;
-        font-style: italic;
-        color: #3A5A40;
-        margin-top: 8px;
-        font-weight: 500;
+      .support-link {
+        color: #D7E4D2;
+        text-decoration: underline;
+        font-weight: 600;
+      }
+
+      .divider {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        margin: 20px 0;
       }
 
       .copyright {
         font-size: 12px;
-        color: #999999;
-        margin-top: 6px;
+        color: #B9C6B4;
+        margin: 0 0 4px 0;
       }
 
       @media (max-width: 520px) {
@@ -152,7 +163,7 @@
           padding: 16px 8px;
         }
 
-        .email-container {
+        .content {
           padding: 24px 20px;
         }
 
@@ -175,14 +186,18 @@
         </div>
 
         <div class='footer'>
-          <hr />
-          <p class='support-text'>
-            Need help? Contact
-            <a href='mailto:support@spiriment.com' class='support-link'>support@spiriment.com</a>
-            — we're here for you.
-          </p>
-          <p class='tagline'>Spiriment – Connect, Mentor, Grow</p>
+          <div class='social-row'>
+            <span class='social-circle' style='color:#FFFFFF;'>in</span>
+            <span class='social-circle' style='color:#FFFFFF;'>ig</span>
+            <span class='social-circle' style='color:#FFFFFF;'>x</span>
+          </div>
+          <p class='footer-brand'>Spiriment</p>
+          <p class='support-text'>Connect, Mentor, Grow</p>
           <p class='copyright'>© {{currentYear}} Spiriment. All rights reserved.</p>
+          <hr class='divider' />
+          <p class='support-text'>
+            Need help? <a href='mailto:support@spiriment.com' class='support-link'>support@spiriment.com</a>
+          </p>
         </div>
       </div>
     </div>
