@@ -73,7 +73,7 @@ export class QueueBoard {
         serverAdapter: this.serverAdapter,
         options: {
           uiConfig: {
-            boardTitle: "aptfuel Queue Dashboard",
+            boardTitle: "Spiriment Queue Dashboard",
           },
         },
       });

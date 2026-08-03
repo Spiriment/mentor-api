@@ -341,7 +341,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Transaction Successful - AptFuel',
+      subject: 'Transaction Successful - Spiriment',
       partialName: 'transaction-notification',
       templateData: {
         title: 'Transaction Notification',
@@ -354,10 +354,10 @@ export class EmailService {
   public async sendWelcomeEmail(to: string, userName: string): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Welcome to AptFuel!',
+      subject: 'Welcome to Spiriment!',
       partialName: 'welcome-email',
       templateData: {
-        title: 'Welcome to AptFuel',
+        title: 'Welcome to Spiriment',
         userName,
       },
     });
@@ -372,7 +372,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Welcome to AptFuel Manager',
+      subject: 'Welcome to Spiriment',
       partialName: 'invite-station-manager',
       templateData: {
         title: 'Station Manager Invitation',
@@ -393,7 +393,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Notification - AptFuel',
+      subject: 'Notification - Spiriment',
       partialName: 'notification',
       templateData: {
         title: 'Notification',
@@ -491,7 +491,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Admin Login Credentials - AptFuel',
+      subject: 'Admin Login Credentials - Spiriment',
       partialName: 'admin-login-credentials',
       templateData: {
         title: 'Admin Login Credentials',
@@ -532,7 +532,7 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Your New Admin Password - AptFuel',
+      subject: 'Your New Admin Password - Spiriment',
       partialName: 'send-admin-new-password',
       templateData: {
         title: 'Your New Admin Password',
@@ -552,15 +552,15 @@ export class EmailService {
   ): Promise<void> {
     await this.sendEmailWithTemplate({
       to,
-      subject: 'Welcome to AptFuel - Sub-User Account Created',
+      subject: 'Welcome to Spiriment - Sub-User Account Created',
       partialName: 'send-user-login-credentials',
       templateData: {
-        title: 'Welcome to AptFuel',
+        title: 'Welcome to Spiriment',
         userName,
         message,
         email: to,
         password,
-        link: 'https://aptfuel.com',
+        link: 'https://spiriment.com',
       },
     });
   }
