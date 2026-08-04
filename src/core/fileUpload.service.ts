@@ -1,7 +1,7 @@
 import { Config } from "@/common";
 import { Logger } from "@/common/logger";
 import { AppError } from "@/common/errors";
-import { v2 as cloudinary } from "cloudinary";
+import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
 import { Readable } from "stream";
 
 export interface UploadResult {
@@ -256,12 +256,13 @@ export class FileUploadService {
       // Videos can exceed Cloudinary's ~100MB single-request upload cap and take
       // longer than the SDK's 60s default timeout, so stream them in chunks with
       // a much longer timeout. Images stay on the simple, non-chunked path.
-      const result = isVideo
-        ? await cloudinary.uploader.upload_large(filePath, {
+      // upload_large's typings include UploadStream; with await + no callback we get UploadApiResponse.
+      const result: UploadApiResponse = isVideo
+        ? ((await cloudinary.uploader.upload_large(filePath, {
             ...uploadOptions,
             chunk_size: 6 * 1024 * 1024, // 6MB per chunk
             timeout: 600000, // 10 minutes
-          })
+          })) as UploadApiResponse)
         : await cloudinary.uploader.upload(filePath, uploadOptions);
 
       this.logger.info("File uploaded successfully", {
