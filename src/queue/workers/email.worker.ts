@@ -1,9 +1,8 @@
 import { Logger } from "../../common/logger";
 import nodemailer from "nodemailer";
-import * as path from "path";
-import * as fs from "fs";
 import { Config } from "@/common";
 import { Job } from "bullmq";
+import { withDefaultEmailAttachments } from "../../common/emailAttachments";
 
 export class EmailWorker {
   private logger: Logger;
@@ -50,19 +49,7 @@ export class EmailWorker {
 
   private async sendMail(job: Job): Promise<void> {
     const { to, subject, compiledContent } = job.data;
-
-    // Use logo.png instead of logo.jpeg
-    const logoPath = path.join(__dirname, "../../mails/assets/logo.png");
-    const attachments = [];
-
-    // Add logo if it exists
-    if (fs.existsSync(logoPath)) {
-      attachments.push({
-        filename: "logo.png",
-        path: logoPath,
-        cid: "logo",
-      });
-    }
+    const attachments = withDefaultEmailAttachments();
 
     const mailOptions = {
       from: process.env.SMTP_FROM,

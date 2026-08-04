@@ -8,6 +8,7 @@ import * as handlebars from 'handlebars';
 import { DynamicEmailOptions } from '../common/types/email.types';
 import { QueueService } from './queue.service';
 import { EmailJobData } from '../queue/types';
+import { withDefaultEmailAttachments } from '../common/emailAttachments';
 
 dotenv.config();
 
@@ -136,23 +137,7 @@ export class EmailService {
   }
 
   public async sendEmail(options: EmailJobData): Promise<void> {
-    // Attach logo if not already attached
-    const logoPath = path.join(__dirname, '../mails/assets/logo.png');
-    const attachments = options.attachments || [];
-
-    // Add logo as attachment if it exists and not already included
-    if (fs.existsSync(logoPath)) {
-      const hasLogo = attachments.some(
-        (att: any) => att.filename === 'logo.png' || att.cid === 'logo'
-      );
-      if (!hasLogo) {
-        attachments.push({
-          filename: 'logo.png',
-          path: logoPath,
-          cid: 'logo', // Content ID for embedding in HTML
-        });
-      }
-    }
+    const attachments = withDefaultEmailAttachments(options.attachments || []);
 
     const mailOptions = {
       from: options.from || process.env.SMTP_FROM,
