@@ -251,7 +251,18 @@ export class FileUploadService {
         uploadOptions.format = options.format;
       }
 
-      const result = await cloudinary.uploader.upload(filePath, uploadOptions);
+      const isVideo = uploadOptions.resource_type === "video";
+
+      // Videos can exceed Cloudinary's ~100MB single-request upload cap and take
+      // longer than the SDK's 60s default timeout, so stream them in chunks with
+      // a much longer timeout. Images stay on the simple, non-chunked path.
+      const result = isVideo
+        ? await cloudinary.uploader.upload_large(filePath, {
+            ...uploadOptions,
+            chunk_size: 6 * 1024 * 1024, // 6MB per chunk
+            timeout: 600000, // 10 minutes
+          })
+        : await cloudinary.uploader.upload(filePath, uploadOptions);
 
       this.logger.info("File uploaded successfully", {
         public_id: result.public_id,
