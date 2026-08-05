@@ -173,6 +173,32 @@ export class AdminOrgPlanController {
       return sendSuccessResponse(res, { deactivated: true });
     } catch (e) { next(e); }
   };
+
+  generateChurchInvoice = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminOrgPlanService.generateChurchInvoice(
+        req.params.id,
+        req.admin!.id,
+        req.ip,
+      );
+      return sendSuccessResponse(res, result, 201);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  generateFamilyInvoice = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await adminOrgPlanService.generateFamilyInvoice(
+        req.params.id,
+        req.admin!.id,
+        req.ip,
+      );
+      return sendSuccessResponse(res, result, 201);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminOrgPlanController = new AdminOrgPlanController();

@@ -88,7 +88,9 @@ export class ChurchPortalMembersService {
     const userRepo = AppDataSource.getRepository(User);
     const member = await userRepo.findOne({ where: { id: userId, churchPortalId }, select: ['id'] });
     if (!member) throw new NotFoundError('Member not found in this church');
-    await userRepo.update(userId, { churchPortalId: null });
+    await userRepo.update(userId, { churchPortalId: null, churchDiscountPercent: 0 });
+    const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
+    await adminOrgPlanService.syncChurchPortalMemberDiscounts(churchPortalId);
     return { message: 'Member removed from this church.' };
   }
 

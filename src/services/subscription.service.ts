@@ -206,8 +206,34 @@ export class SubscriptionService {
   // ─── Checkout ────────────────────────────────────────────────────────────────
 
   async assertCheckoutAllowed(userId: string): Promise<void> {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'orgPlanId'],
+    });
+    if (user?.orgPlanId) {
+      throw new AppError(
+        'Your subscription is billed through your church plan. Contact your church administrator.',
+        StatusCodes.CONFLICT,
+      );
+    }
+
+    const familyMember = await familyPlanService.findActiveMemberByUserId(userId);
+    if (familyMember && !familyMember.isParent) {
+      throw new AppError(
+        'Your subscription is managed through a family plan.',
+        StatusCodes.CONFLICT,
+      );
+    }
+
     const sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
     if (!sub) return;
+
+    if (sub.externalProvider === 'church_central') {
+      throw new AppError(
+        'Your subscription is billed through your church plan. Contact your church administrator.',
+        StatusCodes.CONFLICT,
+      );
+    }
 
     if (sub.status === 'trialing') {
       throw new AppError(

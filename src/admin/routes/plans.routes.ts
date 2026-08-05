@@ -31,10 +31,12 @@ router.get('/:id/members', adminOrgPlanController.getMembers);
 router.get('/:id/report', adminOrgPlanController.getReport);
 router.post('/:id/members', adminOrgPlanController.assignMember);
 router.delete('/:id/members', adminOrgPlanController.removeMember);
+router.post('/:id/invoice', adminOrgPlanController.generateChurchInvoice);
 
 // Family plans (FamilyPlan entity — not org_plans)
 router.get('/family-plans', adminOrgPlanController.listFamilyPlans);
 router.get('/family-plans/:id', adminOrgPlanController.getFamilyPlan);
+router.post('/family-plans/:id/invoice', adminOrgPlanController.generateFamilyInvoice);
 router.delete('/family-plans/:id', adminOrgPlanController.adminDeactivateFamilyPlan);
 router.delete('/family-plans/:id/members', adminOrgPlanController.adminRemoveFamilyMember);
 router.patch('/family-plans/:id/members', adminOrgPlanController.adminChangeFamilyMemberTier);

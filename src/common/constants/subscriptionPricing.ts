@@ -6,6 +6,19 @@ export const TIER_PRICE_EUR = { basic: 3, pro: 5, premium: 7.5 } as const;
 export const TIER_ANNUAL_PRICE_EUR = { basic: 30, pro: 50, premium: 75 } as const;
 export const MENTOR_DISCOUNT_PERCENT = 30;
 
+/** Church member subscription discounts (mentors + mentees total). */
+export const CHURCH_DISCOUNT_PERCENT = 5;
+export const CHURCH_BULK_DISCOUNT_PERCENT = 10;
+export const CHURCH_BULK_MEMBER_THRESHOLD = 100;
+/** Monthly fee for church portal / dashboard access (central invoice). */
+export const CHURCH_PORTAL_MONTHLY_FEE_EUR = 50;
+
+export function getChurchDiscountPercentForMemberCount(memberCount: number): number {
+  return memberCount >= CHURCH_BULK_MEMBER_THRESHOLD
+    ? CHURCH_BULK_DISCOUNT_PERCENT
+    : CHURCH_DISCOUNT_PERCENT;
+}
+
 export type PaidTier = keyof typeof TIER_PRICE_EUR;
 export type DiscountType = 'mentor' | 'youth' | 'church';
 

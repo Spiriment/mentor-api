@@ -17,12 +17,19 @@ import { SubscriptionService, CANCEL_AT_PERIOD_END_NOTE } from '@/services/subsc
 import { EmailService } from '@/core/email.service';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { logger } from '@/config/int-services';
+import {
+  TIER_PRICE_EUR,
+  applyDiscount,
+  getChurchDiscountPercentForMemberCount,
+  CHURCH_PORTAL_MONTHLY_FEE_EUR,
+  CHURCH_DISCOUNT_PERCENT,
+  CHURCH_BULK_MEMBER_THRESHOLD,
+} from '@/common/constants/subscriptionPricing';
+import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
 
 const subscriptionService = new SubscriptionService(new EmailService(null));
 
 const CHURCH_PLAN_TYPE: OrgPlanType = 'church';
-const CHURCH_DISCOUNT_PERCENT = 20;
-const CHURCH_BULK_DISCOUNT_PERCENT = 25; // 20% + 5% for 50+ members
 /** Match Stripe checkout session max age so pending reservations survive slow payers. */
 const CHURCH_PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -403,6 +410,8 @@ export class AdminOrgPlanService {
     if (!user) throw new AppError('User not found', 404);
     if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
 
+    let discountPercent = CHURCH_DISCOUNT_PERCENT;
+
     await AppDataSource.transaction(async (manager) => {
       const planRepo = manager.getRepository(OrgPlan);
       const plan = await planRepo.findOne({
@@ -413,52 +422,273 @@ export class AdminOrgPlanService {
 
       const pending = pruneExpiredPendingChurchAssignments(
         parsePendingChurchAssignments(plan.metadata),
-      );
-      if (pending.some((entry) => entry.userId === userId)) {
-        throw new AppError('This user already has a pending church checkout', 409);
-      }
-      if (reservedChurchSeats(plan) >= plan.totalSeats) {
+      ).filter((entry) => entry.userId !== userId);
+
+      if (plan.usedSeats + pending.length >= plan.totalSeats) {
         throw new AppError('Plan has no available seats', 409);
       }
 
-      pending.push({ userId, tier, createdAt: new Date().toISOString() });
-      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pending };
+      const memberTiers = {
+        ...((plan.metadata?.memberTiers as Record<string, string> | undefined) ?? {}),
+        [userId]: tier,
+      };
+
+      plan.metadata = {
+        ...(plan.metadata ?? {}),
+        pendingAssignments: pending,
+        memberTiers,
+      };
+      plan.usedSeats += 1;
+      user.orgPlanId = planId;
       await planRepo.save(plan);
+      await manager.getRepository(User).save(user);
     });
 
-    const planRepo = AppDataSource.getRepository(OrgPlan);
-    const plan = await planRepo.findOne({ where: { id: planId, status: 'active', planType: 'church' } });
-    if (!plan) throw new AppError('Plan not found or inactive', 404);
+    discountPercent = await this.resolveChurchDiscountPercent(planId);
+    await userRepo.update(userId, { churchDiscountPercent: discountPercent });
 
-    const discountPercent = plan.usedSeats >= 50 ? CHURCH_BULK_DISCOUNT_PERCENT : CHURCH_DISCOUNT_PERCENT;
+    const monthlyEur = applyDiscount(TIER_PRICE_EUR[tier], discountPercent);
+    await subscriptionService.upsertSubscription(userId, {
+      tier,
+      status: 'active',
+      externalProvider: 'church_central',
+      externalRef: null,
+      mrrCents: Math.round(monthlyEur * 100),
+      billingInterval: 'monthly',
+      notes: 'church_central_billing',
+    });
 
-    try {
-      const couponLabel = `church-${plan.id.slice(0, 8)}`;
-      const couponId = await stripeService.getOrCreatePercentageCoupon(discountPercent, couponLabel);
+    await this.syncLinkedPortalDiscounts(planId);
 
-      const checkoutUrl = await stripeService.createCheckoutSession({
-        user,
-        tier,
-        successUrl: APP_DEEP_LINK_SUCCESS,
-        cancelUrl: APP_DEEP_LINK_CANCEL,
-        couponId,
-        subscriptionMetadata: { orgPlanId: planId },
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.org_plan.assign_member',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { planId, tier, discountPercent, billing: 'central' },
+      ip: ip ?? null,
+    });
+
+    return { assigned: true, discountPercent, tier, checkoutUrl: null as string | null };
+  }
+
+  /** Member count for discount = mentors + mentees on linked portal, else org-plan used seats. */
+  async resolveChurchDiscountPercent(planId: string): Promise<number> {
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { orgPlanId: planId },
+      select: ['id'],
+    });
+    if (portal) {
+      const count = await AppDataSource.getRepository(User).count({
+        where: { churchPortalId: portal.id },
       });
-
-      await adminAuditService.log({
-        adminUserId,
-        action: 'admin.org_plan.assign_member',
-        targetType: 'user',
-        targetId: userId,
-        metadata: { planId, tier, discountPercent },
-        ip: ip ?? null,
-      });
-
-      return { checkoutUrl, discountPercent, tier };
-    } catch (err) {
-      await this.releasePendingChurchAssignment(planId, userId);
-      throw err;
+      return getChurchDiscountPercentForMemberCount(count);
     }
+    const plan = await AppDataSource.getRepository(OrgPlan).findOne({
+      where: { id: planId },
+      select: ['usedSeats'],
+    });
+    return getChurchDiscountPercentForMemberCount(plan?.usedSeats ?? 0);
+  }
+
+  async syncLinkedPortalDiscounts(planId: string): Promise<void> {
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { orgPlanId: planId },
+    });
+    if (!portal) return;
+    await this.syncChurchPortalMemberDiscounts(portal.id);
+  }
+
+  async syncChurchPortalMemberDiscounts(churchPortalId: string): Promise<number> {
+    const userRepo = AppDataSource.getRepository(User);
+    const portalRepo = AppDataSource.getRepository(ChurchPortal);
+    const count = await userRepo.count({ where: { churchPortalId } });
+    const discountPercent = getChurchDiscountPercentForMemberCount(count);
+
+    await portalRepo.update(churchPortalId, { discountPercent });
+    await userRepo.update({ churchPortalId }, { churchDiscountPercent: discountPercent });
+    return discountPercent;
+  }
+
+  async generateChurchInvoice(planId: string, adminUserId: string, ip?: string) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+
+    const plan = await this.get(planId);
+    if (plan.status !== 'active') throw new AppError('Plan is not active', 400);
+
+    const billingAdminId = plan.billingAdminUserId;
+    if (!billingAdminId) {
+      throw new AppError('Assign a billing admin before generating an invoice', 400);
+    }
+    const billingAdmin = await AppDataSource.getRepository(User).findOne({
+      where: { id: billingAdminId },
+      select: ['id', 'email', 'firstName', 'lastName'],
+    });
+    if (!billingAdmin?.email) {
+      throw new AppError('Billing admin has no email address', 400);
+    }
+
+    const members = await AppDataSource.getRepository(User).find({
+      where: { orgPlanId: planId },
+      select: ['id', 'firstName', 'lastName', 'email', 'role'],
+    });
+
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { orgPlanId: planId },
+    });
+    const portalMemberCount = portal
+      ? await AppDataSource.getRepository(User).count({ where: { churchPortalId: portal.id } })
+      : members.length;
+    const discountPercent = getChurchDiscountPercentForMemberCount(portalMemberCount);
+
+    const memberTiers =
+      ((plan.metadata as any)?.memberTiers as Record<string, string> | undefined) ?? {};
+    const subs = members.length
+      ? await AppDataSource.getRepository(UserSubscription).find({
+          where: { userId: In(members.map((m) => m.id)) },
+        })
+      : [];
+    const subByUser = new Map(subs.map((s) => [s.userId, s]));
+
+    const lineItems: Array<{ description: string; amountCents: number }> = [
+      {
+        description: `Church portal dashboard — monthly access (€${CHURCH_PORTAL_MONTHLY_FEE_EUR})`,
+        amountCents: CHURCH_PORTAL_MONTHLY_FEE_EUR * 100,
+      },
+    ];
+
+    for (const member of members) {
+      const tierRaw =
+        memberTiers[member.id] ||
+        subByUser.get(member.id)?.tier ||
+        'basic';
+      const tier = (['basic', 'pro', 'premium'].includes(tierRaw) ? tierRaw : 'basic') as
+        | 'basic'
+        | 'pro'
+        | 'premium';
+      const amountEur = applyDiscount(TIER_PRICE_EUR[tier], discountPercent);
+      const name = `${member.firstName ?? ''} ${member.lastName ?? ''}`.trim() || member.email;
+      lineItems.push({
+        description: `${name} — ${tier} (${discountPercent}% church discount)`,
+        amountCents: Math.round(amountEur * 100),
+      });
+    }
+
+    const invoice = await stripeService.createAndSendInvoice({
+      email: billingAdmin.email,
+      name: `${billingAdmin.firstName ?? ''} ${billingAdmin.lastName ?? ''}`.trim(),
+      userId: billingAdmin.id,
+      description: `Spiriment church plan — ${plan.name}`,
+      lineItems,
+      metadata: {
+        planType: 'church',
+        orgPlanId: planId,
+        discountPercent: String(discountPercent),
+        memberCount: String(members.length),
+        portalMemberCount: String(portalMemberCount),
+      },
+    });
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.org_plan.generate_invoice',
+      targetType: 'org_plan',
+      targetId: planId,
+      metadata: {
+        invoiceId: invoice.invoiceId,
+        totalCents: invoice.totalCents,
+        discountPercent,
+        lineItemCount: lineItems.length,
+      },
+      ip: ip ?? null,
+    });
+
+    return {
+      ...invoice,
+      emailedTo: billingAdmin.email,
+      discountPercent,
+      portalFeeEur: CHURCH_PORTAL_MONTHLY_FEE_EUR,
+      memberCount: members.length,
+      bulkThreshold: CHURCH_BULK_MEMBER_THRESHOLD,
+    };
+  }
+
+  async generateFamilyInvoice(planId: string, adminUserId: string, ip?: string) {
+    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+
+    const plan = await this.familyPlanRepo.findOne({
+      where: { id: planId },
+      relations: ['parent'],
+    });
+    if (!plan) throw new AppError('Family plan not found', 404);
+    if (plan.status !== 'active') throw new AppError('Family plan is not active', 400);
+    if (!plan.parent?.email) {
+      throw new AppError('Family plan owner has no email address', 400);
+    }
+
+    const members = await this.familyMemberRepo.find({
+      where: { familyPlanId: planId },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+    if (members.length === 0) {
+      throw new AppError('Family plan has no members to invoice', 400);
+    }
+
+    const subsByUser = await this.loadMemberSubscriptions(members);
+    const lineItems: Array<{ description: string; amountCents: number }> = [];
+
+    for (const m of members) {
+      const eur = this.memberMonthlyEur(m, subsByUser.get(m.userId));
+      if (eur <= 0) continue;
+      const name =
+        `${m.user?.firstName ?? ''} ${m.user?.lastName ?? ''}`.trim() ||
+        m.user?.email ||
+        m.userId;
+      const discountNote =
+        m.ageDiscountPercent > 0 ? ` (${m.ageDiscountPercent}% youth discount)` : '';
+      lineItems.push({
+        description: `${name} — ${m.tier}${discountNote}`,
+        amountCents: Math.round(eur * 100),
+      });
+    }
+
+    if (lineItems.length === 0) {
+      throw new AppError('No billable family members found', 400);
+    }
+
+    const invoice = await stripeService.createAndSendInvoice({
+      email: plan.parent.email,
+      name: `${plan.parent.firstName ?? ''} ${plan.parent.lastName ?? ''}`.trim(),
+      userId: plan.parentUserId,
+      description: `Spiriment family plan — ${plan.name}`,
+      lineItems,
+      metadata: {
+        planType: 'family',
+        familyPlanId: planId,
+        memberCount: String(members.length),
+      },
+    });
+
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.family_plan.generate_invoice',
+      targetType: 'family_plan',
+      targetId: planId,
+      metadata: {
+        invoiceId: invoice.invoiceId,
+        totalCents: invoice.totalCents,
+        lineItemCount: lineItems.length,
+      },
+      ip: ip ?? null,
+    });
+
+    return {
+      ...invoice,
+      emailedTo: plan.parent.email,
+      memberCount: members.length,
+      portalFeeEur: 0,
+    };
   }
 
   async completeChurchMemberAssignment(userId: string, orgPlanId: string): Promise<void> {

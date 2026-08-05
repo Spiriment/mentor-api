@@ -124,8 +124,17 @@ export class ChurchPortalJoinRequestService {
   async clearMembershipAndRequests(appUserId: string) {
     const userRepo = AppDataSource.getRepository(User);
     const joinRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
+    const user = await userRepo.findOne({
+      where: { id: appUserId },
+      select: ['id', 'churchPortalId'],
+    });
+    const previousPortalId = user?.churchPortalId ?? null;
     await userRepo.update(appUserId, { churchPortalId: null, churchDiscountPercent: 0 });
     await joinRepo.delete({ userId: appUserId });
+    if (previousPortalId) {
+      const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
+      await adminOrgPlanService.syncChurchPortalMemberDiscounts(previousPortalId);
+    }
   }
 
   async getAppUserMembershipState(appUserId: string) {
@@ -223,14 +232,22 @@ export class ChurchPortalJoinRequestService {
     }
 
     const portal = await portalRepo.findOne({ where: { id: churchPortalId } });
-    const discount = portal?.discountPercent ?? 0;
+    if (!portal) {
+      throw new AppError('Church portal not found.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
+    }
 
-    await userRepo.update(userId, { churchPortalId, churchDiscountPercent: discount });
+    await userRepo.update(userId, { churchPortalId });
     row.status = CHURCH_JOIN_REQUEST_STATUS.APPROVED;
     row.resolvedAt = new Date();
     await joinRepo.save(row);
 
-    return { message: 'Member approved and linked to your church.' };
+    const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
+    const discount = await adminOrgPlanService.syncChurchPortalMemberDiscounts(churchPortalId);
+
+    return {
+      message: 'Member approved and linked to your church.',
+      discountPercent: discount,
+    };
   }
 
   async reject(churchPortalId: string, userId: string) {

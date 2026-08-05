@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spiriment — Sample Invoice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f3f6f3;
+        --card: #ffffff;
+        --ink: #162419;
+        --muted: #5c6a5f;
+        --line: #d5e0d4;
+        --green: #3a5a40;
+        --soft: #eaf1e8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          'Poppins',
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        padding: 32px 16px 64px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 840px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+      }
+      .lede {
+        color: var(--muted);
+        margin: 0 0 22px;
+        line-height: 1.6;
+        font-size: 15px;
+        font-weight: 400;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+      .tab {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        border-radius: 10px;
+        padding: 11px 16px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .tab.active {
+        background: var(--green);
+        color: #fff;
+        border-color: var(--green);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .stat {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px 18px;
+      }
+      .stat .label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-weight: 600;
+      }
+      .stat .value {
+        font-size: 24px;
+        font-weight: 700;
+        margin-top: 6px;
+        letter-spacing: -0.02em;
+      }
+      .invoice {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .invoice-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--line);
+        background: var(--soft);
+      }
+      .invoice-head h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .pill {
+        font-size: 12px;
+        font-weight: 600;
+        background: #dbeafe;
+        color: #1e40af;
+        border-radius: 999px;
+        padding: 5px 12px;
+      }
+      .invoice-body {
+        padding: 28px 24px;
+      }
+      .top {
+        display: flex;
+        justify-content: space-between;
+        gap: 28px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .logo {
+        display: block;
+        height: 48px;
+        width: auto;
+        max-width: 180px;
+        object-fit: contain;
+        margin-bottom: 10px;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .meta {
+        text-align: right;
+      }
+      .invoice-number {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid var(--line);
+        margin: 24px 0;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+      .section-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th,
+      td {
+        padding: 14px 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        font-size: 14px;
+      }
+      th {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        background: var(--soft);
+        font-weight: 600;
+      }
+      td.num,
+      th.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .totals {
+        margin-top: 18px;
+        max-width: 300px;
+        margin-left: auto;
+      }
+      .totals-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 7px 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .totals-row.due {
+        color: var(--ink);
+        font-size: 22px;
+        font-weight: 700;
+        border-top: 1px solid var(--line);
+        margin-top: 8px;
+        padding-top: 14px;
+        letter-spacing: -0.02em;
+      }
+      .note {
+        margin-top: 24px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 13px;
+        color: #1e3a8a;
+        line-height: 1.55;
+      }
+      .footer {
+        margin-top: 18px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      @media (max-width: 640px) {
+        .stats,
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+        .meta {
+          text-align: left;
+        }
+      }
+      @media print {
+        body {
+          background: #fff;
+          padding: 0;
+        }
+        .tabs,
+        .footer,
+        .note,
+        .stats {
+          display: none;
+        }
+        .invoice {
+          border: none;
+          border-radius: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Spiriment sample invoice</h1>
+      <p class="lede">
+        Preview of the central monthly invoice emailed via Stripe. Switch
+        samples to compare church (with portal fee) vs family (tiers only).
+      </p>
+
+      <div class="tabs">
+        <button class="tab active" data-kind="church-small">
+          Church · 25 members (5%)
+        </button>
+        <button class="tab" data-kind="church-large">
+          Church · 100+ (10%)
+        </button>
+        <button class="tab" data-kind="family">Family plan</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Amount due (EUR)</div>
+          <div class="value" id="stat-total">€147.39</div>
+        </div>
+        <div class="stat">
+          <div class="label">Payment terms</div>
+          <div class="value">14 days</div>
+        </div>
+        <div class="stat">
+          <div class="label">Sent to</div>
+          <div class="value" id="stat-sent">Pastor James Okonkwo</div>
+        </div>
+      </div>
+
+      <div class="invoice">
+        <div class="invoice-head">
+          <h2>Invoice</h2>
+          <span class="pill">Sample · Open</span>
+        </div>
+        <div class="invoice-body">
+          <div class="top">
+            <div>
+              <img class="logo" src="./spiriment-logo.png" alt="Spiriment" />
+              <div class="muted">
+                info@spiriment.com<br />Connect, Mentor, Grow
+              </div>
+            </div>
+            <div class="meta">
+              <div class="invoice-number" id="invoice-id">SPI-2026-0847</div>
+              <div class="muted" style="margin-top: 6px">
+                Issued 5 August 2026<br />
+                Due 19 August 2026
+              </div>
+            </div>
+          </div>
+
+          <hr />
+
+          <div class="grid2">
+            <div>
+              <div class="section-label">Bill to</div>
+              <div style="font-weight: 600" id="bill-to">
+                Pastor James Okonkwo
+              </div>
+              <div id="org-name">Grace Bible Church</div>
+              <div class="muted" id="email">billing@gracebible.example</div>
+            </div>
+            <div>
+              <div class="section-label">Plan</div>
+              <div style="font-weight: 600" id="plan-sub">
+                Church plan · monthly central invoice
+              </div>
+              <div id="discount-note">
+                5% church discount (under 100 members)
+              </div>
+              <div class="muted" id="fee-note">
+                Includes €50 church portal dashboard fee
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="num">Qty</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="lines"></tbody>
+          </table>
+
+          <div class="totals">
+            <div class="totals-row">
+              <span>Subtotal</span><span id="subtotal">€147.39</span>
+            </div>
+            <div class="totals-row"><span>Tax</span><span>€0.00</span></div>
+            <div class="totals-row due">
+              <span>Amount due</span><span id="total">€147.39</span>
+            </div>
+          </div>
+
+          <div class="note">
+            <strong>How this is sent:</strong> Spiriment Admin clicks Generate
+            invoice → Stripe creates the invoice → the billing contact receives
+            an email with a secure Pay link. Currency EUR.
+          </div>
+        </div>
+      </div>
+
+      <p class="footer">
+        Sample for stakeholder review · Not a live Stripe document · Catalog
+        prices €3 / €5 / €7.50 with church discounts (5% under 100 members, 10%
+        from 100+). Tip: Print → Save as PDF to share.
+      </p>
+    </div>
+
+    <script>
+      const SAMPLES = {
+        'church-small': {
+          title: 'Grace Bible Church',
+          subtitle: 'Church plan · monthly central invoice',
+          billTo: 'Pastor James Okonkwo',
+          email: 'billing@gracebible.example',
+          invoiceId: 'SPI-2026-0847',
+          discountNote: '5% church discount (under 100 members)',
+          feeNote: 'Includes €50 church portal dashboard fee',
+          sentTo: 'Billing admin',
+          lines: [
+            ['Church portal dashboard — monthly access', '1', '€50.00'],
+            ['Basic seat × 15 members (5% off €3.00)', '15', '€42.75'],
+            ['Pro seat × 7 members (5% off €5.00)', '7', '€33.25'],
+            ['Premium seat × 3 members (5% off €7.50)', '3', '€21.39'],
+          ],
+          total: '€147.39',
+        },
+        'church-large': {
+          title: 'City Light Fellowship',
+          subtitle: 'Church plan · monthly central invoice',
+          billTo: 'Admin Office — City Light',
+          email: 'finance@citylight.example',
+          invoiceId: 'SPI-2026-0912',
+          discountNote: '10% church discount (100+ members)',
+          feeNote: 'Includes €50 church portal dashboard fee',
+          sentTo: 'Billing admin',
+          lines: [
+            ['Church portal dashboard — monthly access', '1', '€50.00'],
+            ['Basic seat × 80 members (10% off €3.00)', '80', '€216.00'],
+            ['Pro seat × 15 members (10% off €5.00)', '15', '€67.50'],
+            ['Premium seat × 5 members (10% off €7.50)', '5', '€33.75'],
+          ],
+          total: '€367.25',
+        },
+        family: {
+          title: 'The Adeyemi Family',
+          subtitle: 'Family plan · monthly central invoice',
+          billTo: 'Chioma Adeyemi (plan owner)',
+          email: 'chioma@example.com',
+          invoiceId: 'SPI-2026-0551',
+          discountNote:
+            'Youth discount applied where eligible · no dashboard fee',
+          feeNote: 'No €50 portal fee (family plans have no web dashboard)',
+          sentTo: 'Parent email',
+          lines: [
+            ['Pro — Chioma Adeyemi (plan owner)', '1', '€5.00'],
+            ['Basic — David Adeyemi (youth 30% off)', '1', '€2.10'],
+            ['Basic — Amara Adeyemi (youth 30% off)', '1', '€2.10'],
+            ['Premium — Tunde Adeyemi', '1', '€7.50'],
+          ],
+          total: '€16.70',
+        },
+      };
+
+      function render(kind) {
+        const s = SAMPLES[kind];
+        document.getElementById('stat-total').textContent = s.total;
+        document.getElementById('stat-sent').textContent = s.sentTo;
+        document.getElementById('invoice-id').textContent = s.invoiceId;
+        document.getElementById('bill-to').textContent = s.billTo;
+        document.getElementById('org-name').textContent = s.title;
+        document.getElementById('email').textContent = s.email;
+        document.getElementById('plan-sub').textContent = s.subtitle;
+        document.getElementById('discount-note').textContent = s.discountNote;
+        document.getElementById('fee-note').textContent = s.feeNote;
+        document.getElementById('subtotal').textContent = s.total;
+        document.getElementById('total').textContent = s.total;
+        document.getElementById('lines').innerHTML = s.lines
+          .map(
+            ([d, q, a]) =>
+              `<tr><td>${d}</td><td class="num">${q}</td><td class="num">${a}</td></tr>`,
+          )
+          .join('');
+        document.querySelectorAll('.tab').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.kind === kind);
+        });
+      }
+
+      document.querySelectorAll('.tab').forEach((btn) => {
+        btn.addEventListener('click', () => render(btn.dataset.kind));
+      });
+
+      render('church-small');
+    </script>
+  </body>
+</html>
