@@ -8,6 +8,8 @@ import {
   CHURCH_PORTAL_USER_ROLE,
 } from '../src/church-portal/entities/churchPortalUser.entity';
 import { User } from '../src/database/entities/user.entity';
+import { OrgPlan } from '../src/database/entities/orgPlan.entity';
+import { UserSubscription } from '../src/database/entities/userSubscription.entity';
 import {
   Session,
   SESSION_DURATION,
@@ -18,10 +20,17 @@ import {
   MentorshipRequest,
   MENTORSHIP_REQUEST_STATUS,
 } from '../src/database/entities/mentorshipRequest.entity';
+import {
+  CHURCH_DISCOUNT_PERCENT,
+  TIER_PRICE_EUR,
+  applyDiscount,
+} from '../src/common/constants/subscriptionPricing';
+import { v4 as uuidv4 } from 'uuid';
 
 const PORTAL_SLUG = 'grace-bible';
 const PORTAL_NAME = 'Grace Bible Church';
 const DEFAULT_CP_PASSWORD = 'Password123!';
+const TIERS = ['basic', 'pro', 'premium'] as const;
 
 type SeedUserInput = {
   email: string;
@@ -48,13 +57,66 @@ async function upsertPortal() {
       country: 'Nigeria',
       timezone: 'Africa/Lagos',
       status: CHURCH_PORTAL_STATUS.ACTIVE,
+      discountPercent: CHURCH_DISCOUNT_PERCENT,
     });
   } else {
     portal.name = PORTAL_NAME;
     portal.status = CHURCH_PORTAL_STATUS.ACTIVE;
+    portal.discountPercent = CHURCH_DISCOUNT_PERCENT;
   }
 
   return repo.save(portal) as Promise<ChurchPortal & { id: string }>;
+}
+
+async function ensureOrgPlan(portal: ChurchPortal): Promise<OrgPlan> {
+  const planRepo = AppDataSource.getRepository(OrgPlan);
+  const portalRepo = AppDataSource.getRepository(ChurchPortal);
+
+  if (portal.orgPlanId) {
+    const existing = await planRepo.findOne({ where: { id: portal.orgPlanId } });
+    if (existing) {
+      existing.status = 'active';
+      if (existing.totalSeats < 50) existing.totalSeats = 50;
+      return planRepo.save(existing);
+    }
+  }
+
+  const plan = planRepo.create({
+    id: uuidv4(),
+    planType: 'church',
+    name: `${PORTAL_NAME} Plan`,
+    status: 'active',
+    totalSeats: 50,
+    usedSeats: 0,
+    billingAdminUserId: null,
+    metadata: { memberTiers: {} },
+  });
+  await planRepo.save(plan);
+  portal.orgPlanId = plan.id;
+  await portalRepo.save(portal);
+  return plan;
+}
+
+async function upsertChurchCentralSub(
+  userId: string,
+  tier: (typeof TIERS)[number],
+  discountPercent: number,
+) {
+  const subRepo = AppDataSource.getRepository(UserSubscription);
+  let sub = await subRepo.findOne({ where: { userId } });
+  const monthlyEur = applyDiscount(TIER_PRICE_EUR[tier], discountPercent);
+  if (!sub) {
+    sub = subRepo.create({ userId });
+  }
+  sub.tier = tier;
+  sub.status = 'active';
+  sub.externalProvider = 'church_central';
+  sub.externalRef = null;
+  sub.mrrCents = Math.round(monthlyEur * 100);
+  sub.billingInterval = 'monthly';
+  sub.currency = 'EUR';
+  sub.notes = 'church_central_billing';
+  await subRepo.save(sub);
 }
 
 async function upsertPortalLoginUser(churchPortalId: string) {
@@ -86,7 +148,7 @@ async function upsertPortalLoginUser(churchPortalId: string) {
   return repo.save(user);
 }
 
-async function upsertMember(input: SeedUserInput, churchPortalId: string) {
+async function upsertMember(input: SeedUserInput, churchPortalId: string, orgPlanId: string) {
   const repo = AppDataSource.getRepository(User);
   let user = await repo.findOne({ where: { email: input.email } });
 
@@ -110,6 +172,8 @@ async function upsertMember(input: SeedUserInput, churchPortalId: string) {
   user.lastActiveAt = input.lastActiveAt;
   user.isOnboardingComplete = true;
   user.churchPortalId = churchPortalId;
+  user.orgPlanId = orgPlanId;
+  user.churchDiscountPercent = CHURCH_DISCOUNT_PERCENT;
   user.isActive = true;
   user.accountStatus = 'active';
   user.isEmailVerified = true;
@@ -211,6 +275,7 @@ async function main() {
   console.log('✅ Connected to DB');
 
   const portal = await upsertPortal();
+  const plan = await ensureOrgPlan(portal);
   await upsertPortalLoginUser(portal.id);
 
   const seedUsers: SeedUserInput[] = [
@@ -306,23 +371,38 @@ async function main() {
 
   const users: User[] = [];
   for (const input of seedUsers) {
-    users.push(await upsertMember(input, portal.id));
+    users.push(await upsertMember(input, portal.id, plan.id));
   }
 
   const mentors = users.filter((u) => u.role === USER_ROLE.MENTOR);
   const mentees = users.filter((u) => u.role === USER_ROLE.MENTEE);
 
+  const memberTiers: Record<string, string> = {};
+  for (let i = 0; i < users.length; i++) {
+    const tier = TIERS[i % TIERS.length];
+    memberTiers[users[i].id] = tier;
+    await upsertChurchCentralSub(users[i].id, tier, CHURCH_DISCOUNT_PERCENT);
+  }
+
+  const planRepo = AppDataSource.getRepository(OrgPlan);
+  plan.usedSeats = users.length;
+  plan.billingAdminUserId = mentors[0]?.id ?? null;
+  plan.metadata = { ...(plan.metadata ?? {}), memberTiers };
+  await planRepo.save(plan);
+
   await seedMentorshipRequests(
     mentors.map((m) => m.id),
-    mentees.map((m) => m.id)
+    mentees.map((m) => m.id),
   );
   await reseedSessions(
     mentors.map((m) => m.id),
-    mentees.map((m) => m.id)
+    mentees.map((m) => m.id),
   );
 
   console.log('✅ Church portal demo data seeded');
   console.log(`Portal URL: http://localhost:8080/church/${PORTAL_SLUG}/login`);
+  console.log(`Billing URL: http://localhost:8080/church/${PORTAL_SLUG}/billing`);
+  console.log(`Org plan ID: ${plan.id}`);
   console.log('Church portal login email: pastor@gracebible.org');
   console.log(`Church portal login password: ${DEFAULT_CP_PASSWORD}`);
 

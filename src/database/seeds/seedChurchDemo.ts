@@ -1,11 +1,11 @@
 /**
  * Church portal demo seed — creates a realistic church with mentors, mentees,
- * sessions, and join requests for a client video walkthrough.
+ * sessions, join requests, and a linked church org plan (so Billing works).
  *
  * Usage:
  *   npx ts-node -r tsconfig-paths/register src/database/seeds/seedChurchDemo.ts
  *
- * Safe to re-run: cleans up by slug before reinserting.
+ * Safe to re-run: cleans up by slug before reinserting (same slug + logins).
  */
 import 'reflect-metadata';
 import { AppDataSource } from '@/config/data-source';
@@ -14,12 +14,21 @@ import { ChurchPortalUser, CHURCH_PORTAL_USER_ROLE } from '@/church-portal/entit
 import { ChurchPortalJoinRequest, CHURCH_JOIN_REQUEST_STATUS } from '@/church-portal/entities/churchPortalJoinRequest.entity';
 import { User } from '@/database/entities/user.entity';
 import { Session } from '@/database/entities/session.entity';
+import { OrgPlan } from '@/database/entities/orgPlan.entity';
+import { UserSubscription } from '@/database/entities/userSubscription.entity';
+import {
+  CHURCH_DISCOUNT_PERCENT,
+  TIER_PRICE_EUR,
+  applyDiscount,
+} from '@/common/constants/subscriptionPricing';
 import { v4 as uuidv4 } from 'uuid';
 import * as bcrypt from 'bcryptjs';
+import { In } from 'typeorm';
 
 const SLUG = 'grace-community-demo';
 const JOIN_CODE = 'GRACE2025';
 const PORTAL_PASSWORD = 'Demo1234!';
+const TIERS = ['basic', 'pro', 'premium'] as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,15 +38,38 @@ function daysAgo(n: number): Date {
   return d;
 }
 
-function daysFromNow(n: number): Date {
+function weeklyStreak(activeDays: number[]): boolean[] {
+  // activeDays: 0=Sun … 6=Sat; returns 7-element array
+  return [0, 1, 2, 3, 4, 5, 6].map((d) => activeDays.includes(d));
+}
+
+function daysOffset(n: number): Date {
   const d = new Date();
   d.setDate(d.getDate() + n);
+  d.setHours(10, 0, 0, 0);
   return d;
 }
 
-function weeklyStreak(activeDays: number[]): boolean[] {
-  // activeDays: 0=Sun … 6=Sat; returns 7-element array
-  return [0, 1, 2, 3, 4, 5, 6].map(d => activeDays.includes(d));
+async function upsertChurchCentralSub(
+  userId: string,
+  tier: (typeof TIERS)[number],
+  discountPercent: number,
+) {
+  const subRepo = AppDataSource.getRepository(UserSubscription);
+  let sub = await subRepo.findOne({ where: { userId } });
+  const monthlyEur = applyDiscount(TIER_PRICE_EUR[tier], discountPercent);
+  if (!sub) {
+    sub = subRepo.create({ userId });
+  }
+  sub.tier = tier;
+  sub.status = 'active';
+  sub.externalProvider = 'church_central';
+  sub.externalRef = null;
+  sub.mrrCents = Math.round(monthlyEur * 100);
+  sub.billingInterval = 'monthly';
+  sub.currency = 'EUR';
+  sub.notes = 'church_central_billing';
+  await subRepo.save(sub);
 }
 
 // ── Seed ─────────────────────────────────────────────────────────────────────
@@ -51,25 +83,71 @@ async function seed() {
   const joinReqRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
   const userRepo = AppDataSource.getRepository(User);
   const sessionRepo = AppDataSource.getRepository(Session);
+  const planRepo = AppDataSource.getRepository(OrgPlan);
+  const subRepo = AppDataSource.getRepository(UserSubscription);
 
   // ── 1. Clean up previous demo run ──────────────────────────────────────────
   const existing = await portalRepo.findOne({ where: { slug: SLUG } });
   if (existing) {
     console.log('🧹 Removing previous demo data…');
+    const oldPlanId = existing.orgPlanId ?? null;
     const oldUsers = await userRepo.find({ where: { churchPortalId: existing.id } });
+    const oldUserIds = oldUsers.map((u) => u.id);
+
     for (const u of oldUsers) {
       await sessionRepo.delete({ mentorId: u.id });
       await sessionRepo.delete({ menteeId: u.id });
+    }
+    if (oldUserIds.length) {
+      await subRepo.delete({ userId: In(oldUserIds) });
     }
     await userRepo.delete({ churchPortalId: existing.id });
     await joinReqRepo.delete({ churchPortalId: existing.id });
     await cpUserRepo.delete({ churchPortalId: existing.id });
     await portalRepo.delete({ id: existing.id });
+
+    if (oldPlanId) {
+      await planRepo.update({ id: oldPlanId }, { billingAdminUserId: null });
+      await userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({ orgPlanId: null })
+        .where('orgPlanId = :oldPlanId', { oldPlanId })
+        .execute();
+      await planRepo.delete({ id: oldPlanId });
+    }
   }
 
-  // ── 2. Create church portal ────────────────────────────────────────────────
+  // Remove prior pending-applicant emails so re-runs stay clean
+  const pendingEmails = [
+    'caleb.nwosu@demo.com',
+    'hannah.alabi@demo.com',
+    'solomon.oyelaran@demo.com',
+  ];
+  const staleApplicants = await userRepo.find({ where: { email: In(pendingEmails) } });
+  if (staleApplicants.length) {
+    await joinReqRepo.delete({ userId: In(staleApplicants.map((u) => u.id)) });
+    await userRepo.delete({ id: In(staleApplicants.map((u) => u.id)) });
+  }
+
+  // ── 2. Create church org plan (central billing) ────────────────────────────
+  const plan = planRepo.create({
+    id: uuidv4(),
+    planType: 'church',
+    name: 'Grace Community Church Plan',
+    status: 'active',
+    totalSeats: 50,
+    usedSeats: 0,
+    billingAdminUserId: null,
+    metadata: { memberTiers: {} },
+  });
+  await planRepo.save(plan);
+  console.log(`💳 Org plan created: ${plan.name} (${plan.id})`);
+
+  // ── 3. Create church portal linked to the plan ─────────────────────────────
   const portal = portalRepo.create({
     id: uuidv4(),
+    orgPlanId: plan.id,
     name: 'Grace Community Church',
     slug: SLUG,
     denomination: 'Baptist',
@@ -77,13 +155,13 @@ async function seed() {
     country: 'Nigeria',
     timezone: 'Africa/Lagos',
     joinCode: JOIN_CODE,
-    discountPercent: 20,
+    discountPercent: CHURCH_DISCOUNT_PERCENT,
     status: 'active',
   });
   await portalRepo.save(portal);
-  console.log(`⛪  Portal created: ${portal.name} (slug: ${portal.slug})`);
+  console.log(`⛪  Portal created: ${portal.name} (slug: ${portal.slug}) → plan ${plan.id}`);
 
-  // ── 3. Create church portal login users (pastor & deacon) ─────────────────
+  // ── 4. Create church portal login users (pastor & deacon) ─────────────────
   const passwordHash = await bcrypt.hash(PORTAL_PASSWORD, 10);
 
   const pastor = cpUserRepo.create({
@@ -112,7 +190,7 @@ async function seed() {
   await cpUserRepo.save(deacon);
   console.log(`👤 Portal users: pastor@gracedemo.com / deacon@gracedemo.com (password: ${PORTAL_PASSWORD})`);
 
-  // ── 4. Create mentor app users ─────────────────────────────────────────────
+  // ── 5. Create mentor app users (on portal + org plan) ──────────────────────
   const mentorData = [
     { first: 'James', last: 'Okonkwo', email: 'james.okonkwo@demo.com', streak: 14, gender: 'male' },
     { first: 'Blessing', last: 'Nwachukwu', email: 'blessing.nwachukwu@demo.com', streak: 21, gender: 'female' },
@@ -132,7 +210,8 @@ async function seed() {
       isEmailVerified: true,
       isOnboardingComplete: true,
       churchPortalId: portal.id,
-      churchDiscountPercent: portal.discountPercent,
+      orgPlanId: plan.id,
+      churchDiscountPercent: CHURCH_DISCOUNT_PERCENT,
       currentStreak: m.streak,
       longestStreak: m.streak + Math.floor(Math.random() * 10),
       weeklyStreakData: weeklyStreak([1, 2, 3, 4, 5]),
@@ -145,7 +224,7 @@ async function seed() {
   }
   console.log(`👨‍🏫 Created ${mentors.length} mentors`);
 
-  // ── 5. Create mentee app users ─────────────────────────────────────────────
+  // ── 6. Create mentee app users (on portal + org plan) ──────────────────────
   const menteeData = [
     { first: 'David', last: 'Chukwu', email: 'david.chukwu@demo.com', streak: 5 },
     { first: 'Esther', last: 'Obi', email: 'esther.obi@demo.com', streak: 12 },
@@ -168,7 +247,8 @@ async function seed() {
       isEmailVerified: true,
       isOnboardingComplete: true,
       churchPortalId: portal.id,
-      churchDiscountPercent: portal.discountPercent,
+      orgPlanId: plan.id,
+      churchDiscountPercent: CHURCH_DISCOUNT_PERCENT,
       currentStreak: m.streak,
       longestStreak: m.streak + 5,
       weeklyStreakData: weeklyStreak([0, 1, 3, 5]),
@@ -180,16 +260,31 @@ async function seed() {
   }
   console.log(`🎓 Created ${mentees.length} mentees`);
 
-  // ── 6. Create sessions ─────────────────────────────────────────────────────
+  // ── 7. Seat assignments + central subscriptions ────────────────────────────
+  const allMembers = [...mentors, ...mentees];
+  const memberTiers: Record<string, string> = {};
+  for (let i = 0; i < allMembers.length; i++) {
+    const tier = TIERS[i % TIERS.length];
+    memberTiers[allMembers[i].id] = tier;
+    await upsertChurchCentralSub(allMembers[i].id, tier, CHURCH_DISCOUNT_PERCENT);
+  }
+
+  plan.usedSeats = allMembers.length;
+  plan.billingAdminUserId = mentors[0]?.id ?? null;
+  plan.metadata = { memberTiers };
+  await planRepo.save(plan);
+  console.log(
+    `🧾 Plan seats: ${plan.usedSeats}/${plan.totalSeats} · billing admin: ${mentors[0]?.email ?? 'none'}`,
+  );
+
+  // ── 8. Create sessions ─────────────────────────────────────────────────────
   const sessionDefs = [
-    // Completed past sessions
     { mentorIdx: 0, menteeIdx: 0, status: 'completed', daysOffset: -7, type: 'video_call', duration: 60, title: 'Faith and Identity' },
     { mentorIdx: 1, menteeIdx: 1, status: 'completed', daysOffset: -5, type: 'video_call', duration: 60, title: 'Prayer and Discipline' },
     { mentorIdx: 2, menteeIdx: 2, status: 'completed', daysOffset: -4, type: 'phone_call', duration: 30, title: 'Overcoming Doubt' },
     { mentorIdx: 3, menteeIdx: 3, status: 'completed', daysOffset: -3, type: 'video_call', duration: 60, title: 'Scripture Deep Dive' },
     { mentorIdx: 0, menteeIdx: 4, status: 'completed', daysOffset: -2, type: 'video_call', duration: 45, title: 'The Sermon on the Mount' },
     { mentorIdx: 1, menteeIdx: 5, status: 'completed', daysOffset: -1, type: 'video_call', duration: 60, title: 'Purpose and Calling' },
-    // This week
     { mentorIdx: 2, menteeIdx: 6, status: 'confirmed', daysOffset: 1, type: 'video_call', duration: 60, title: 'Walk in the Spirit' },
     { mentorIdx: 3, menteeIdx: 7, status: 'confirmed', daysOffset: 2, type: 'video_call', duration: 60, title: 'Forgiveness and Grace' },
     { mentorIdx: 0, menteeIdx: 1, status: 'scheduled', daysOffset: 3, type: 'phone_call', duration: 30, title: 'Check-in Call' },
@@ -220,8 +315,7 @@ async function seed() {
   }
   console.log(`📅 Created ${sessionDefs.length} sessions`);
 
-  // ── 7. Pending join requests ───────────────────────────────────────────────
-  // A few mentees NOT yet in the church, requesting to join
+  // ── 9. Pending join requests ───────────────────────────────────────────────
   const pendingApplicants = [
     { first: 'Caleb', last: 'Nwosu', email: 'caleb.nwosu@demo.com' },
     { first: 'Hannah', last: 'Alabi', email: 'hannah.alabi@demo.com' },
@@ -229,7 +323,6 @@ async function seed() {
   ];
 
   for (const a of pendingApplicants) {
-    // Create app user without churchPortalId
     const u = userRepo.create({
       id: uuidv4(),
       email: a.email,
@@ -257,21 +350,16 @@ async function seed() {
   // ── Summary ────────────────────────────────────────────────────────────────
   console.log('\n🎉 Demo seed complete!\n');
   console.log('  Church portal URL:  /church/' + SLUG);
+  console.log('  Billing URL:        /church/' + SLUG + '/billing');
   console.log('  Login:              pastor@gracedemo.com  /  ' + PORTAL_PASSWORD);
   console.log('  Alt login:          deacon@gracedemo.com  /  ' + PORTAL_PASSWORD);
   console.log('  Join code:          ' + JOIN_CODE);
-  console.log('  Members:            ' + mentors.length + ' mentors + ' + mentees.length + ' mentees');
+  console.log('  Org plan:           ' + plan.id);
+  console.log('  Members:            ' + mentors.length + ' mentors + ' + mentees.length + ' mentees (on plan)');
   console.log('  Sessions:           ' + sessionDefs.length + ' (6 completed, 2 confirmed, 2 scheduled)');
   console.log('  Pending requests:   ' + pendingApplicants.length);
 
   await AppDataSource.destroy();
-}
-
-function daysOffset(n: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  d.setHours(10, 0, 0, 0);
-  return d;
 }
 
 seed().catch((err) => {

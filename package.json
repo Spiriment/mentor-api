@@ -28,6 +28,7 @@
     "seed:blogs": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/blog.seeder.ts",
     "seed:faqs": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeders/faq.seeder.ts",
     "seed:church-portal": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/seed-church-portal.ts",
+    "seed:church-demo": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeds/seedChurchDemo.ts",
     "seed:quiz": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeds/seedQuizData.ts",
     "seed:quiz:prod": "NODE_ENV=production node dist/database/seeds/seedQuizData.js",
     "db-seed:prod": "NODE_ENV=production node database/seeders/seed-runner.js",
