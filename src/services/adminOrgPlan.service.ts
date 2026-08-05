@@ -511,22 +511,125 @@ export class AdminOrgPlanService {
   }
 
   async generateChurchInvoice(planId: string, adminUserId: string, ip?: string) {
-    if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
+    return this.createChurchPlanInvoice({
+      planId,
+      actor: { kind: 'admin', id: adminUserId },
+      ip,
+    });
+  }
 
+  /**
+   * Church portal self-serve: pastor generates the same central invoice.
+   * Uses org-plan billing admin email when set; otherwise the portal user's email.
+   */
+  async generateChurchInvoiceFromPortal(
+    churchPortalId: string,
+    portalUser: { id: string; email: string; firstName?: string | null; lastName?: string | null },
+    ip?: string,
+  ) {
+    if (!isUuid(churchPortalId)) throw new AppError('Invalid portal id', 400);
+
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: churchPortalId },
+    });
+    if (!portal) throw new AppError('Church portal not found', 404);
+    if (!portal.orgPlanId) {
+      throw new AppError(
+        'This church is not linked to a billing plan yet. Contact Spiriment support.',
+        400,
+      );
+    }
+    if (!portalUser.email) {
+      throw new AppError('Your portal account has no email address', 400);
+    }
+
+    const plan = await this.get(portal.orgPlanId);
+    const lastAt = (plan.metadata as any)?.lastPortalInvoiceAt as string | undefined;
+    if (lastAt) {
+      const hours = (Date.now() - new Date(lastAt).getTime()) / (1000 * 60 * 60);
+      if (hours < 24) {
+        throw new AppError(
+          'An invoice was already generated in the last 24 hours. Please wait before generating another.',
+          429,
+        );
+      }
+    }
+
+    const result = await this.createChurchPlanInvoice({
+      planId: portal.orgPlanId,
+      actor: { kind: 'church_portal', id: portalUser.id },
+      ip,
+      fallbackRecipient: {
+        email: portalUser.email,
+        name: `${portalUser.firstName ?? ''} ${portalUser.lastName ?? ''}`.trim() || portal.name,
+      },
+    });
+
+    const fresh = await AppDataSource.getRepository(OrgPlan).findOne({
+      where: { id: portal.orgPlanId },
+    });
+    if (fresh) {
+      fresh.metadata = {
+        ...(fresh.metadata ?? {}),
+        lastPortalInvoiceAt: new Date().toISOString(),
+        lastPortalInvoiceId: result.invoiceId,
+      };
+      await AppDataSource.getRepository(OrgPlan).save(fresh);
+    }
+
+    return result;
+  }
+
+  async getChurchInvoicePreviewForPortal(churchPortalId: string) {
+    if (!isUuid(churchPortalId)) throw new AppError('Invalid portal id', 400);
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: churchPortalId },
+    });
+    if (!portal) throw new AppError('Church portal not found', 404);
+    if (!portal.orgPlanId) {
+      throw new AppError(
+        'This church is not linked to a billing plan yet. Contact Spiriment support.',
+        400,
+      );
+    }
+
+    const draft = await this.buildChurchInvoiceDraft(portal.orgPlanId);
+    const plan = await this.get(portal.orgPlanId);
+    const lastPortalInvoiceAt =
+      ((plan.metadata as any)?.lastPortalInvoiceAt as string | undefined) ?? null;
+    let canGenerate = true;
+    let nextGenerateAt: string | null = null;
+    if (lastPortalInvoiceAt) {
+      const next = new Date(lastPortalInvoiceAt).getTime() + 24 * 60 * 60 * 1000;
+      if (Date.now() < next) {
+        canGenerate = false;
+        nextGenerateAt = new Date(next).toISOString();
+      }
+    }
+
+    let billingEmail: string | null = null;
+    if (plan.billingAdminUserId) {
+      const billingAdmin = await AppDataSource.getRepository(User).findOne({
+        where: { id: plan.billingAdminUserId },
+        select: ['email'],
+      });
+      billingEmail = billingAdmin?.email ?? null;
+    }
+
+    return {
+      ...draft,
+      lastPortalInvoiceAt,
+      lastPortalInvoiceId:
+        ((plan.metadata as any)?.lastPortalInvoiceId as string | undefined) ?? null,
+      canGenerate,
+      nextGenerateAt,
+      billingEmail,
+    };
+  }
+
+  private async buildChurchInvoiceDraft(planId: string) {
     const plan = await this.get(planId);
     if (plan.status !== 'active') throw new AppError('Plan is not active', 400);
-
-    const billingAdminId = plan.billingAdminUserId;
-    if (!billingAdminId) {
-      throw new AppError('Assign a billing admin before generating an invoice', 400);
-    }
-    const billingAdmin = await AppDataSource.getRepository(User).findOne({
-      where: { id: billingAdminId },
-      select: ['id', 'email', 'firstName', 'lastName'],
-    });
-    if (!billingAdmin?.email) {
-      throw new AppError('Billing admin has no email address', 400);
-    }
 
     const members = await AppDataSource.getRepository(User).find({
       where: { orgPlanId: planId },
@@ -574,42 +677,107 @@ export class AdminOrgPlanService {
       });
     }
 
-    const invoice = await stripeService.createAndSendInvoice({
-      email: billingAdmin.email,
-      name: `${billingAdmin.firstName ?? ''} ${billingAdmin.lastName ?? ''}`.trim(),
-      userId: billingAdmin.id,
-      description: `Spiriment church plan — ${plan.name}`,
-      lineItems,
-      metadata: {
-        planType: 'church',
-        orgPlanId: planId,
-        discountPercent: String(discountPercent),
-        memberCount: String(members.length),
-        portalMemberCount: String(portalMemberCount),
-      },
-    });
-
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.org_plan.generate_invoice',
-      targetType: 'org_plan',
-      targetId: planId,
-      metadata: {
-        invoiceId: invoice.invoiceId,
-        totalCents: invoice.totalCents,
-        discountPercent,
-        lineItemCount: lineItems.length,
-      },
-      ip: ip ?? null,
-    });
-
+    const totalCents = lineItems.reduce((sum, i) => sum + i.amountCents, 0);
     return {
-      ...invoice,
-      emailedTo: billingAdmin.email,
+      planId,
+      planName: plan.name,
       discountPercent,
       portalFeeEur: CHURCH_PORTAL_MONTHLY_FEE_EUR,
       memberCount: members.length,
+      portalMemberCount,
       bulkThreshold: CHURCH_BULK_MEMBER_THRESHOLD,
+      lineItems,
+      totalCents,
+      totalEur: Math.round(totalCents) / 100,
+      billingAdminUserId: plan.billingAdminUserId ?? null,
+    };
+  }
+
+  private async createChurchPlanInvoice(opts: {
+    planId: string;
+    actor: { kind: 'admin' | 'church_portal'; id: string };
+    ip?: string;
+    billingOverride?: {
+      email?: string;
+      name?: string;
+      userId?: string | null;
+    };
+    fallbackRecipient?: { email: string; name: string };
+  }) {
+    const draft = await this.buildChurchInvoiceDraft(opts.planId);
+    const plan = await this.get(opts.planId);
+
+    let email = opts.billingOverride?.email;
+    let name = opts.billingOverride?.name;
+    let userId = opts.billingOverride?.userId;
+
+    if (!email) {
+      const billingAdminId = plan.billingAdminUserId;
+      if (billingAdminId) {
+        const billingAdmin = await AppDataSource.getRepository(User).findOne({
+          where: { id: billingAdminId },
+          select: ['id', 'email', 'firstName', 'lastName'],
+        });
+        if (!billingAdmin?.email) {
+          throw new AppError('Billing admin has no email address', 400);
+        }
+        email = billingAdmin.email;
+        name = `${billingAdmin.firstName ?? ''} ${billingAdmin.lastName ?? ''}`.trim();
+        userId = billingAdmin.id;
+      } else if (opts.fallbackRecipient?.email) {
+        email = opts.fallbackRecipient.email;
+        name = opts.fallbackRecipient.name;
+        userId = null;
+      } else {
+        throw new AppError(
+          'No billing email is configured. Assign a billing admin or use a portal account with an email.',
+          400,
+        );
+      }
+    }
+
+    const invoice = await stripeService.createAndSendInvoice({
+      email,
+      name,
+      userId: userId ?? null,
+      description: `Spiriment church plan — ${plan.name}`,
+      lineItems: draft.lineItems,
+      metadata: {
+        planType: 'church',
+        orgPlanId: opts.planId,
+        discountPercent: String(draft.discountPercent),
+        memberCount: String(draft.memberCount),
+        portalMemberCount: String(draft.portalMemberCount),
+        generatedBy: opts.actor.kind,
+        generatedById: opts.actor.id,
+      },
+    });
+
+    if (opts.actor.kind === 'admin') {
+      await adminAuditService.log({
+        adminUserId: opts.actor.id,
+        action: 'admin.org_plan.generate_invoice',
+        targetType: 'org_plan',
+        targetId: opts.planId,
+        metadata: {
+          invoiceId: invoice.invoiceId,
+          totalCents: invoice.totalCents,
+          discountPercent: draft.discountPercent,
+          lineItemCount: draft.lineItems.length,
+        },
+        ip: opts.ip ?? null,
+      });
+    }
+
+    return {
+      ...invoice,
+      emailedTo: email,
+      discountPercent: draft.discountPercent,
+      portalFeeEur: CHURCH_PORTAL_MONTHLY_FEE_EUR,
+      memberCount: draft.memberCount,
+      bulkThreshold: CHURCH_BULK_MEMBER_THRESHOLD,
+      lineItems: draft.lineItems,
+      totalEur: Math.round(invoice.totalCents) / 100,
     };
   }
 

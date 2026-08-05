@@ -294,7 +294,7 @@
         </div>
         <div class="stat">
           <div class="label">Sent to</div>
-          <div class="value" id="stat-sent">Pastor James Okonkwo</div>
+          <div class="value" id="stat-sent">billing@gracebible.example</div>
         </div>
       </div>
 
@@ -334,13 +334,7 @@
             <div>
               <div class="section-label">Plan</div>
               <div style="font-weight: 600" id="plan-sub">
-                Church plan · monthly central invoice
-              </div>
-              <div id="discount-note">
-                5% church discount (under 100 members)
-              </div>
-              <div class="muted" id="fee-note">
-                Includes €50 church portal dashboard fee
+                Church plan · monthly invoice
               </div>
             </div>
           </div>
@@ -385,13 +379,10 @@
       const SAMPLES = {
         'church-small': {
           title: 'Grace Bible Church',
-          subtitle: 'Church plan · monthly central invoice',
+          subtitle: 'Church plan · monthly invoice',
           billTo: 'Pastor James Okonkwo',
           email: 'billing@gracebible.example',
           invoiceId: 'SPI-2026-0847',
-          discountNote: '5% church discount (under 100 members)',
-          feeNote: 'Includes €50 church portal dashboard fee',
-          sentTo: 'Billing admin',
           lines: [
             ['Church portal dashboard — monthly access', '1', '€50.00'],
             ['Basic seat × 15 members (5% off €3.00)', '15', '€42.75'],
@@ -402,13 +393,10 @@
         },
         'church-large': {
           title: 'City Light Fellowship',
-          subtitle: 'Church plan · monthly central invoice',
+          subtitle: 'Church plan · monthly invoice',
           billTo: 'Admin Office — City Light',
           email: 'finance@citylight.example',
           invoiceId: 'SPI-2026-0912',
-          discountNote: '10% church discount (100+ members)',
-          feeNote: 'Includes €50 church portal dashboard fee',
-          sentTo: 'Billing admin',
           lines: [
             ['Church portal dashboard — monthly access', '1', '€50.00'],
             ['Basic seat × 80 members (10% off €3.00)', '80', '€216.00'],
@@ -419,14 +407,10 @@
         },
         family: {
           title: 'The Adeyemi Family',
-          subtitle: 'Family plan · monthly central invoice',
+          subtitle: 'Family plan · monthly invoice',
           billTo: 'Chioma Adeyemi (plan owner)',
           email: 'chioma@example.com',
           invoiceId: 'SPI-2026-0551',
-          discountNote:
-            'Youth discount applied where eligible · no dashboard fee',
-          feeNote: 'No €50 portal fee (family plans have no web dashboard)',
-          sentTo: 'Parent email',
           lines: [
             ['Pro — Chioma Adeyemi (plan owner)', '1', '€5.00'],
             ['Basic — David Adeyemi (youth 30% off)', '1', '€2.10'],
@@ -440,14 +424,12 @@
       function render(kind) {
         const s = SAMPLES[kind];
         document.getElementById('stat-total').textContent = s.total;
-        document.getElementById('stat-sent').textContent = s.sentTo;
+        document.getElementById('stat-sent').textContent = s.email;
         document.getElementById('invoice-id').textContent = s.invoiceId;
         document.getElementById('bill-to').textContent = s.billTo;
         document.getElementById('org-name').textContent = s.title;
         document.getElementById('email').textContent = s.email;
         document.getElementById('plan-sub').textContent = s.subtitle;
-        document.getElementById('discount-note').textContent = s.discountNote;
-        document.getElementById('fee-note').textContent = s.feeNote;
         document.getElementById('subtotal').textContent = s.total;
         document.getElementById('total').textContent = s.total;
         document.getElementById('lines').innerHTML = s.lines
