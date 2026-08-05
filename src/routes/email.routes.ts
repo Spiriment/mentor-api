@@ -11,4 +11,3 @@ router.get('/test-smtp', emailController.testSmtpConnection);
 router.get('/verify-config', emailController.verifySmtpConfig);
 
 export { router as emailRoutes };
-
