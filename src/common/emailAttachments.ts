@@ -15,6 +15,7 @@ const EMBEDDED_ASSETS: Array<{ relativePath: string; cid: string }> = [
   { relativePath: 'email-icons/instagram.png', cid: 'icon-instagram' },
   { relativePath: 'email-icons/tiktok.png', cid: 'icon-tiktok' },
   { relativePath: 'email-icons/x.png', cid: 'icon-x' },
+  { relativePath: 'email-icons/linkedin.png', cid: 'icon-linkedin' },
   { relativePath: 'email-icons/icon-clock.png', cid: 'icon-clock' },
   { relativePath: 'email-icons/icon-shield.png', cid: 'icon-shield' },
 ];
