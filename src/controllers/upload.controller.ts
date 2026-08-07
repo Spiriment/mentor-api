@@ -124,6 +124,28 @@ export class UploadController {
     }
   };
 
+  // Signed params for the app to upload a video introduction directly to
+  // Cloudinary, skipping the slow server-relay path used by uploadVideoIntroduction.
+  getVideoUploadSignature = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const signature = this.fileUploadService.getUploadSignature({
+        folder: 'mentor-app/video-introductions',
+      });
+
+      res.json({
+        success: true,
+        data: signature,
+      });
+    } catch (error) {
+      this.logger.error('Error generating video upload signature', error instanceof Error ? error : new Error(String(error)));
+      next(error);
+    }
+  };
+
   // Upload both files
   uploadFiles = async (req: Request, res: Response, next: NextFunction) => {
     try {

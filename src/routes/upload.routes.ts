@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UploadController } from '../controllers/upload.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
 import {
   uploadProfileImage,
   uploadVideoIntroduction,
@@ -25,6 +26,13 @@ router.post(
   uploadVideoIntroduction,
   handleUploadError,
   uploadController.uploadVideoIntroduction
+);
+
+// Signed params for uploading a video introduction directly to Cloudinary
+router.get(
+  '/video-introduction/signature',
+  authenticateToken,
+  uploadController.getVideoUploadSignature
 );
 
 // Upload both files

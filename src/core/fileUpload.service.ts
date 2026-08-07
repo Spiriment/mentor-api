@@ -289,6 +289,39 @@ export class FileUploadService {
   }
 
   /**
+   * Generate a signed set of params for the client to upload a file directly
+   * to Cloudinary, bypassing our server entirely for the file bytes. Used for
+   * large files (e.g. video) where relaying through our server first would
+   * double the transfer time and add a second point of failure.
+   */
+  getUploadSignature(options: { folder: string }): {
+    timestamp: number;
+    signature: string;
+    apiKey: string;
+    cloudName: string;
+    folder: string;
+  } {
+    const timestamp = Math.round(Date.now() / 1000);
+    const paramsToSign = {
+      folder: options.folder,
+      timestamp,
+    };
+
+    const signature = cloudinary.utils.api_sign_request(
+      paramsToSign,
+      Config.cloudinary.apiSecret
+    );
+
+    return {
+      timestamp,
+      signature,
+      apiKey: Config.cloudinary.apiKey,
+      cloudName: Config.cloudinary.cloudName,
+      folder: options.folder,
+    };
+  }
+
+  /**
    * Validate URL
    */
   private isValidUrl(url: string): boolean {
