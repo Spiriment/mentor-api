@@ -7,10 +7,17 @@ import { AppError } from '@/common';
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const ACCESS_STATUSES: SubscriptionStatus[] = ['active', 'trialing', 'past_due'];
 
-export const requireSubscription = (minTier: SubscriptionTier) => {
+export const requireSubscription = (
+  minTier: SubscriptionTier,
+  options?: { exemptRoles?: string[] }
+) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(new AppError('Authentication required', StatusCodes.UNAUTHORIZED));
+    }
+
+    if (options?.exemptRoles && req.user.role && options.exemptRoles.includes(req.user.role)) {
+      return next();
     }
 
     const sub = await AppDataSource.getRepository(UserSubscription).findOne({

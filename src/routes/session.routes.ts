@@ -31,12 +31,16 @@ router.post(
 
 router.get(
   '/',
-  requireSubscription('pro'),
+  requireSubscription('pro', { exemptRoles: ['mentor'] }),
   validate(sessionQuerySchema, 'query'),
   sessionController.getUserSessions
 );
 
-router.get('/:sessionId', requireSubscription('pro'), sessionController.getSessionById);
+router.get(
+  '/:sessionId',
+  requireSubscription('pro', { exemptRoles: ['mentor'] }),
+  sessionController.getSessionById
+);
 
 router.put(
   '/:sessionId',
