@@ -371,6 +371,7 @@ export class MentorProfileService {
       profile.isApproved = true;
       profile.approvalNotes = approvalNotes;
       profile.approvedAt = new Date();
+      profile.needsMoreInfoMessage = null;
 
       const approvedProfile = await this.mentorProfileRepository.save(profile);
 
@@ -397,7 +398,7 @@ export class MentorProfileService {
         await notificationService.createNotification({
           userId,
           type: AppNotificationType.MENTOR_APPROVAL,
-          title: '🎉 Profile Approved',
+          title: 'Profile Approved',
           message: 'An admin has reviewed and approved your mentor profile. Welcome to the team!',
           data: { type: 'mentor_approval' },
         });
@@ -492,8 +493,10 @@ export class MentorProfileService {
       throw new AppError('Mentor must complete onboarding first', 400);
     }
 
+    const applicantMessage = options?.message?.trim() || null;
     profile.isApproved = false;
     profile.approvedAt = undefined;
+    profile.needsMoreInfoMessage = applicantMessage;
     await this.mentorProfileRepository.save(profile);
 
     await this.userRepository.update(userId, {
@@ -503,7 +506,7 @@ export class MentorProfileService {
 
     const user = profile.user;
     const msg =
-      options?.message?.trim() ||
+      applicantMessage ||
       'We need a bit more information to continue reviewing your mentor application. Please open the app for details.';
 
     if (user?.pushToken) {
@@ -533,6 +536,41 @@ export class MentorProfileService {
     }
 
     this.logger.info(`Marked mentor application needs_more_info for user ${userId}`);
+    return (await this.getProfile(userId)) as MentorProfile;
+  }
+
+  async resubmitMentorApplication(userId: string): Promise<MentorProfile> {
+    const profile = await this.mentorProfileRepository.findOne({
+      where: { userId },
+      relations: ['user'],
+    });
+
+    if (!profile) {
+      throw new AppError('Mentor profile not found', 404);
+    }
+    if (!profile.isOnboardingComplete) {
+      throw new AppError('Mentor must complete onboarding first', 400);
+    }
+
+    const user = profile.user;
+    if (user?.mentorApprovalStatus !== MENTOR_APPROVAL_STATUS.NEEDS_MORE_INFO) {
+      throw new AppError(
+        'Only applications marked as needing more info can be resubmitted',
+        400
+      );
+    }
+
+    profile.needsMoreInfoMessage = null;
+    profile.isApproved = false;
+    profile.approvedAt = undefined;
+    await this.mentorProfileRepository.save(profile);
+
+    await this.userRepository.update(userId, {
+      mentorApprovalStatus: MENTOR_APPROVAL_STATUS.PENDING,
+      mentorApprovedAt: null as any,
+    });
+
+    this.logger.info(`Mentor application resubmitted for review by user ${userId}`);
     return (await this.getProfile(userId)) as MentorProfile;
   }
 

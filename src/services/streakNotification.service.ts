@@ -47,7 +47,7 @@ export class StreakNotificationService {
           // and less than 36 hours (so we don't spam if they've already lost the streak)
           if (hoursSinceLastStreak > 20 && hoursSinceLastStreak < 36) {
             await this.sendNotification(user.id, {
-              title: `Don't break your ${user.currentStreak}-day streak! 🔥`,
+              title: `Don't break your ${user.currentStreak}-day streak!`,
               message: `You're doing great! Read a Bible passage today to keep your ${user.currentStreak}-day streak alive.`,
               type: 'STREAK_REMINDER',
               userId: user.id,
@@ -176,19 +176,19 @@ export class StreakNotificationService {
   ): Promise<void> {
     try {
       const messages: Record<number, string> = {
-        7: "Amazing! You've completed a full week! 🎉",
-        30: "Incredible! 30 days in a row! You're building a powerful habit! 🚀",
-        100: "WOW! 100-day streak! You're a Bible reading champion! 🏆",
-        365: "LEGENDARY! A full year of daily reading! You're an inspiration! ⭐",
+        7: "Amazing! You've completed a full week!",
+        30: "Incredible! 30 days in a row! You're building a powerful habit!",
+        100: "WOW! 100-day streak! You're a Bible reading champion!",
+        365: "LEGENDARY! A full year of daily reading! You're an inspiration!",
       };
 
       const message = messages[milestone] ||
-        `Congratulations on your ${milestone}-day streak! Keep it up! 🔥`;
+        `Congratulations on your ${milestone}-day streak! Keep it up!`;
 
       const pushToken = await this.getUserPushToken(userId);
 
       await this.sendNotification(userId, {
-        title: `${milestone}-Day Streak Milestone! 🎊`,
+        title: `${milestone}-Day Streak Milestone!`,
         message,
         type: 'STREAK_MILESTONE',
         userId,
@@ -213,7 +213,7 @@ export class StreakNotificationService {
     try {
       const pushToken = await this.getUserPushToken(userId);
       await this.sendNotification(userId, {
-        title: 'Streak Freeze Earned! ❄️',
+        title: 'Streak Freeze Earned!',
         message: `Congratulations on your ${currentStreak}-day streak! You've earned a streak freeze. You now have ${totalFreezes} freeze${totalFreezes > 1 ? 's' : ''} available.`,
         type: 'STREAK_FREEZE_AWARDED',
         userId,
@@ -238,7 +238,7 @@ export class StreakNotificationService {
     try {
       const pushToken = await this.getUserPushToken(userId);
       await this.sendNotification(userId, {
-        title: 'Streak Freeze Used! ❄️',
+        title: 'Streak Freeze Used!',
         message: `Your ${currentStreak}-day streak was saved! You have ${remainingFreezes} freeze${remainingFreezes !== 1 ? 's' : ''} remaining.`,
         type: 'STREAK_FREEZE_USED',
         userId,

@@ -930,7 +930,7 @@ export class GroupSessionService {
             await pushNotificationService.sendToUser({
               userId: mentee.id,
               pushToken: mentee.pushToken,
-              title: '📹 Group Session Started!',
+              title: 'Group Session Started!',
               body: `"${session.title}" has started. Tap to join the call!`,
               data: {
                 type: 'group_session_started',

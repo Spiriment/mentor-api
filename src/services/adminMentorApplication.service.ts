@@ -287,7 +287,12 @@ export class AdminMentorApplicationService {
     const dynamicTemplates = settings.data.emailTemplates as Record<string, { subject: string; body: string }> | undefined;
 
     const tpl = resolveMentorApplicationTemplate(templateId, action, dynamicTemplates);
-    const emailBody = (messageOverride?.trim() || tpl.body).slice(0, 8000);
+    const override = messageOverride?.trim() || '';
+    const emailBody = (
+      action === 'needs_more_info' && override
+        ? `${override}\n\nOpen the Spiriment app to review this request, update your application, then tap “Resubmit for review.”`
+        : override || tpl.body
+    ).slice(0, 8000);
     const emailSubject = tpl.subject;
 
     switch (action) {
@@ -301,7 +306,7 @@ export class AdminMentorApplicationService {
         break;
       case 'needs_more_info':
         await this.mentorProfileService.markMentorNeedsMoreInfo(userId, {
-          message: emailBody,
+          message: override || undefined,
         });
         break;
     }

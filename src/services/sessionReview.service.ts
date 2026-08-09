@@ -115,7 +115,7 @@ export class SessionReviewService {
         await notificationService.createNotification({
           userId: session.mentorId,
           type: AppNotificationType.SESSION_REVIEW_SUBMITTED,
-          title: '⭐ New Session Review',
+          title: 'New Session Review',
           message: `${formatUserName(session.mentee)} submitted a ${data.rating}-star review for your session`,
           data: {
             sessionId: session.id,

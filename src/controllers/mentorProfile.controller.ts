@@ -504,4 +504,26 @@ export class MentorProfileController {
       next(error);
     }
   };
+
+  resubmitApplication = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const { userId } = req.params;
+      const profile = await this.mentorProfileService.resubmitMentorApplication(
+        userId
+      );
+
+      res.json({
+        success: true,
+        data: profile,
+        message: 'Application resubmitted for review',
+      });
+    } catch (error: any) {
+      this.logger.error('Error resubmitting mentor application', error);
+      next(error);
+    }
+  };
 }

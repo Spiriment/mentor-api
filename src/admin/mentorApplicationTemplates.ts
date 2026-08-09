@@ -24,7 +24,7 @@ export const MENTOR_APPLICATION_TEMPLATES: Record<
   mentor_application_needs_more_info_v1: {
     subject: 'More information needed for your mentor application',
     body:
-      'We are reviewing your mentor application and need a bit more information before we can continue. Please open the Spiriment app to review the request and update your application.',
+      'We need a bit more information before we can continue reviewing your mentor application. Open the Spiriment app to read the request, update your profile or intro video, then tap Resubmit for review.',
   },
 };
 

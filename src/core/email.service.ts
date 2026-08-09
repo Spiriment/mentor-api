@@ -8,7 +8,7 @@ import * as handlebars from 'handlebars';
 import { DynamicEmailOptions } from '../common/types/email.types';
 import { QueueService } from './queue.service';
 import { EmailJobData } from '../queue/types';
-import { withDefaultEmailAttachments } from '../common/emailAttachments';
+import { withDefaultEmailAttachments, getEmailIconsBaseUrl } from '../common/emailAttachments';
 
 dotenv.config();
 
@@ -190,10 +190,22 @@ export class EmailService {
     }
     
     // Otherwise, wrap in baseLayout
+    const emailIconsBaseUrl = getEmailIconsBaseUrl();
     return this.baseTemplate({
       ...data,
       body: bodyContent,
       currentYear: new Date().getFullYear(),
+      emailIconsBaseUrl,
+      iconInstagramSrc: emailIconsBaseUrl
+        ? `${emailIconsBaseUrl}/instagram.png`
+        : 'cid:icon-instagram',
+      iconTiktokSrc: emailIconsBaseUrl
+        ? `${emailIconsBaseUrl}/tiktok.png`
+        : 'cid:icon-tiktok',
+      iconXSrc: emailIconsBaseUrl ? `${emailIconsBaseUrl}/x.png` : 'cid:icon-x',
+      iconLinkedinSrc: emailIconsBaseUrl
+        ? `${emailIconsBaseUrl}/linkedin.png`
+        : 'cid:icon-linkedin',
     });
   }
 

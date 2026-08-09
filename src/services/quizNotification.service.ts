@@ -5,10 +5,10 @@ import { logger } from '@/config/int-services';
 import { Not, IsNull } from 'typeorm';
 
 const QUIZ_MESSAGES = [
-  { title: '📖 Weekly Bible Quiz', body: 'Ready to test your Bible knowledge? Your weekly quiz is waiting!' },
-  { title: '🧠 Quiz Time!', body: 'How well do you know the Word? Take this week\'s Bible Quiz now.' },
-  { title: '📚 Your Weekly Challenge', body: 'A new Bible Quiz set is ready for you. Give it a try!' },
-  { title: '✨ Quiz Reminder', body: 'Strengthen your Scripture knowledge — take the weekly Bible Quiz today.' },
+  { title: 'Weekly Bible Quiz', body: 'Ready to test your Bible knowledge? Your weekly quiz is waiting!' },
+  { title: 'Quiz Time!', body: 'How well do you know the Word? Take this week\'s Bible Quiz now.' },
+  { title: 'Your Weekly Challenge', body: 'A new Bible Quiz set is ready for you. Give it a try!' },
+  { title: 'Quiz Reminder', body: 'Strengthen your Scripture knowledge — take the weekly Bible Quiz today.' },
 ];
 
 export class QuizNotificationService {

@@ -1,4 +1,9 @@
-import { Expo, ExpoPushMessage, ExpoPushTicket, ExpoPushReceipt } from 'expo-server-sdk';
+import {
+  Expo,
+  ExpoPushMessage,
+  ExpoPushTicket,
+  ExpoPushReceipt,
+} from 'expo-server-sdk';
 import { Logger } from '../common';
 import { Config } from '../config';
 
@@ -33,7 +38,9 @@ export class PushNotificationService {
     try {
       // Check if the token is a valid Expo push token
       if (!Expo.isExpoPushToken(notification.pushToken)) {
-        this.logger.warn(`Push token ${notification.pushToken} is not a valid Expo push token`);
+        this.logger.warn(
+          `Push token ${notification.pushToken} is not a valid Expo push token`,
+        );
         return false;
       }
 
@@ -56,24 +63,35 @@ export class PushNotificationService {
           const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
           tickets.push(...ticketChunk);
         } catch (error) {
-          this.logger.error('Error sending push notification chunk', error instanceof Error ? error : new Error(String(error)));
+          this.logger.error(
+            'Error sending push notification chunk',
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
       }
 
       // Check for errors in tickets
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(`Error sending push notification: ${ticket.message}`,
-            ticket.details ? new Error(JSON.stringify(ticket.details)) : undefined
+          this.logger.error(
+            `Error sending push notification: ${ticket.message}`,
+            ticket.details
+              ? new Error(JSON.stringify(ticket.details))
+              : undefined,
           );
           return false;
         }
       }
 
-      this.logger.info(`Push notification sent successfully to user ${notification.userId}`);
+      this.logger.info(
+        `Push notification sent successfully to user ${notification.userId}`,
+      );
       return true;
     } catch (error) {
-      this.logger.error('Error in sendToUser', error instanceof Error ? error : new Error(String(error)));
+      this.logger.error(
+        'Error in sendToUser',
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return false;
     }
   }
@@ -87,7 +105,9 @@ export class PushNotificationService {
 
       for (const notification of notifications) {
         if (!Expo.isExpoPushToken(notification.pushToken)) {
-          this.logger.warn(`Push token ${notification.pushToken} is not a valid Expo push token`);
+          this.logger.warn(
+            `Push token ${notification.pushToken} is not a valid Expo push token`,
+          );
           continue;
         }
 
@@ -117,22 +137,33 @@ export class PushNotificationService {
           const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
           tickets.push(...ticketChunk);
         } catch (error) {
-          this.logger.error('Error sending push notification chunk', error instanceof Error ? error : new Error(String(error)));
+          this.logger.error(
+            'Error sending push notification chunk',
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
       }
 
       // Log any errors
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(`Error in batch: ${ticket.message}`,
-            ticket.details ? new Error(JSON.stringify(ticket.details)) : undefined
+          this.logger.error(
+            `Error in batch: ${ticket.message}`,
+            ticket.details
+              ? new Error(JSON.stringify(ticket.details))
+              : undefined,
           );
         }
       }
 
-      this.logger.info(`Batch push notifications sent: ${messages.length} messages`);
+      this.logger.info(
+        `Batch push notifications sent: ${messages.length} messages`,
+      );
     } catch (error) {
-      this.logger.error('Error in sendToMany', error instanceof Error ? error : new Error(String(error)));
+      this.logger.error(
+        'Error in sendToMany',
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
   }
 
@@ -155,15 +186,19 @@ export class PushNotificationService {
       menteeImage?: string;
     },
   ): Promise<boolean> {
-    const title = minutesBefore === 60
-      ? '⏰ Session Starting Soon'
-      : (minutesBefore === 15 ? '⏰ Session Starting in 15 Minutes' : '🔔 Session Starting Now');
+    const title =
+      minutesBefore === 60
+        ? 'Session Starting Soon'
+        : minutesBefore === 15
+          ? 'Session Starting in 15 Minutes'
+          : 'Session Starting Now';
 
-    const body = minutesBefore === 60
-      ? `Your session with ${otherPartyName} starts in 1 hour at ${sessionTime}`
-      : (minutesBefore === 15 
+    const body =
+      minutesBefore === 60
+        ? `Your session with ${otherPartyName} starts in 1 hour at ${sessionTime}`
+        : minutesBefore === 15
           ? `Your session with ${otherPartyName} starts in 15 minutes at ${sessionTime}`
-          : `Your session with ${otherPartyName} is starting now! Tap to join.`);
+          : `Your session with ${otherPartyName} is starting now! Tap to join.`;
 
     const canJoin = minutesBefore === 0 || minutesBefore === 15;
 
@@ -194,12 +229,12 @@ export class PushNotificationService {
       conversationId?: string;
       senderId?: string;
       senderImage?: string;
-    }
+    },
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: `💬 ${senderName}`,
+      title: senderName,
       body: messagePreview,
       data: {
         type: 'new_message',
@@ -216,12 +251,12 @@ export class PushNotificationService {
   async sendMentorshipRequestNotification(
     pushToken: string,
     userId: string,
-    menteeName: string
+    menteeName: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '🙏 New Mentorship Request',
+      title: 'New Mentorship Request',
       body: `${menteeName} has requested you as their mentor`,
       data: { type: 'mentorship_request' },
       channelId: 'mentorship-requests',
@@ -234,12 +269,12 @@ export class PushNotificationService {
   async sendMentorshipAcceptedNotification(
     pushToken: string,
     userId: string,
-    mentorName: string
+    mentorName: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '✅ Mentorship Accepted',
+      title: 'Mentorship Accepted',
       body: `${mentorName} has accepted your mentorship request!`,
       data: { type: 'mentorship_accepted' },
       channelId: 'mentorship-requests',
@@ -252,12 +287,12 @@ export class PushNotificationService {
   async sendMentorshipDeclinedNotification(
     pushToken: string,
     userId: string,
-    mentorName: string
+    mentorName: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '❌ Mentorship Request Declined',
+      title: 'Mentorship Request Declined',
       body: `${mentorName} has declined your mentorship request`,
       data: { type: 'mentorship_declined' },
       channelId: 'mentorship-requests',
@@ -270,7 +305,7 @@ export class PushNotificationService {
   async sendWelcomeNotification(
     pushToken: string,
     userId: string,
-    userName: string
+    userName: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
@@ -288,12 +323,12 @@ export class PushNotificationService {
   async sendMentorApprovalNotification(
     pushToken: string,
     userId: string,
-    userName: string
+    userName: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '🎊 Profile Approved!',
+      title: 'Profile Approved!',
       body: `Congratulations ${userName}, your mentor profile has been approved! You are now visible to mentees.`,
       data: { type: 'mentor_approval' },
       channelId: 'default',
@@ -307,12 +342,12 @@ export class PushNotificationService {
     pushToken: string,
     userId: string,
     menteeName: string,
-    sessionTime: string
+    sessionTime: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '📅 New Session Request',
+      title: 'New Session Request',
       body: `${menteeName} has requested a session for ${sessionTime}.`,
       data: { type: 'session_request' },
       channelId: 'session-reminders',
@@ -327,7 +362,7 @@ export class PushNotificationService {
     userId: string,
     partnerName: string,
     status: 'accepted' | 'declined' | 'rescheduled',
-    sessionTime: string
+    sessionTime: string,
   ): Promise<boolean> {
     let title = '';
     let body = '';
@@ -370,13 +405,13 @@ export class PushNotificationService {
       sessionId?: string;
       conversationId: string;
       isSessionCall?: boolean;
-    }
+    },
   ): Promise<boolean> {
     const callLabel = callData.isSessionCall ? 'session call' : 'call';
     return this.sendToUser({
       userId,
       pushToken,
-      title: `📞 Incoming ${callLabel} from ${callData.callerName}`,
+      title: `Incoming ${callLabel} from ${callData.callerName}`,
       body: 'Tap to answer',
       data: {
         type: 'call-invite',
@@ -401,12 +436,12 @@ export class PushNotificationService {
     userId: string,
     sessionTitle: string,
     scheduledTime: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<boolean> {
     return this.sendToUser({
       userId,
       pushToken,
-      title: '🔔 Missed Session',
+      title: 'Missed Session',
       body: `You missed "${sessionTitle}" scheduled for ${scheduledTime}. Would you like to reschedule?`,
       data: { type: 'missed_session', sessionId },
       channelId: 'session-reminders',

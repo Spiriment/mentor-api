@@ -84,6 +84,10 @@ export class MentorProfile extends BaseEntity {
   @Column({ name: 'approvalNotes', type: 'text', nullable: true })
   approvalNotes?: string;
 
+  /** Applicant-visible feedback when status is needs_more_info. */
+  @Column({ name: 'needsMoreInfoMessage', type: 'text', nullable: true })
+  needsMoreInfoMessage?: string | null;
+
   /** Admin-only threaded notes (JSON array of { createdAt, adminUserId, body }). */
   @Column({ name: 'internalAdminNotes', type: 'json', nullable: true })
   internalAdminNotes?: Array<{

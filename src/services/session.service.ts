@@ -1750,7 +1750,7 @@ export class SessionService {
         await notificationService.createNotification({
           userId: session.mentorId,
           type: AppNotificationType.RESCHEDULE_REQUEST,
-          title: '🔄 Reschedule Request',
+          title: 'Reschedule Request',
           message: `${session.mentee.firstName} ${session.mentee.lastName} requested to reschedule session from ${currentTimeFormatted} to ${newTimeFormatted}`,
           data: {
             sessionId: session.id,

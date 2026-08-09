@@ -127,4 +127,10 @@ router.post(
   mentorProfileController.acceptAgreement
 );
 
+// Resubmit application after needs_more_info
+router.post(
+  '/:userId/resubmit-application',
+  mentorProfileController.resubmitApplication
+);
+
 export { router as mentorProfileRoutes };

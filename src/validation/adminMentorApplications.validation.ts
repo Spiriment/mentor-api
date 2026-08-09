@@ -24,8 +24,21 @@ export const mentorApplicationNoteBodySchema = z.object({
   body: z.string().min(1).max(5000),
 });
 
-export const mentorApplicationDecisionBodySchema = z.object({
-  action: z.enum(['approve', 'reject', 'needs_more_info']),
-  messageOverride: z.string().max(8000).optional(),
-  templateId: z.string().max(128).optional(),
-});
+export const mentorApplicationDecisionBodySchema = z
+  .object({
+    action: z.enum(['approve', 'reject', 'needs_more_info']),
+    messageOverride: z.string().max(8000).optional(),
+    templateId: z.string().max(128).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.action === 'needs_more_info' &&
+      !data.messageOverride?.trim()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A message to the applicant is required',
+        path: ['messageOverride'],
+      });
+    }
+  });

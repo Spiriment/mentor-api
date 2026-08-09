@@ -422,8 +422,9 @@ export class AuthService {
       throw new AppError('User not found', 404);
     }
 
-    // Enrich with profile image
+    // Enrich with profile image (+ mentor feedback when applicable)
     let profileImage;
+    let needsMoreInfoMessage: string | null | undefined;
     try {
       if (User.role === USER_ROLE.MENTEE) {
         const profile = await AppDataSource.getRepository(MenteeProfile).findOne({
@@ -434,9 +435,10 @@ export class AuthService {
       } else if (User.role === USER_ROLE.MENTOR) {
         const profile = await AppDataSource.getRepository(MentorProfile).findOne({
           where: { userId: User.id },
-          select: ['profileImage'],
+          select: ['profileImage', 'needsMoreInfoMessage'],
         });
         profileImage = profile?.profileImage;
+        needsMoreInfoMessage = profile?.needsMoreInfoMessage ?? null;
       }
     } catch (error) {
       this.logger.warn('Error fetching profile image for user profile', { userId, error });
@@ -445,6 +447,7 @@ export class AuthService {
     return {
       ...User,
       profileImage,
+      ...(User.role === USER_ROLE.MENTOR ? { needsMoreInfoMessage } : {}),
     };
   };
 
