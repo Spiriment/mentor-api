@@ -24,58 +24,41 @@ export class NotificationSchedulerService {
     firstName: string,
     delayMinutes: number = 2
   ): Promise<ScheduledNotification> {
-    // First, clean up any existing duplicate pending notifications to prevent multi-sending
-    await this.cancelDuplicateWelcomeNotifications(userId);
-
-    // Check if a welcome notification already exists for this user (could be sent or just updated by cleanup)
-    const existingNotification = await this.notificationRepository.findOne({
-      where: {
-        userId,
-        type: 'welcome',
-      },
-    });
-
-    if (existingNotification) {
-      if (existingNotification.status === 'pending') {
-        // Update the token and reschedule if it's still pending
-        const scheduledFor = new Date(Date.now() + delayMinutes * 60 * 1000);
-        existingNotification.pushToken = pushToken;
-        existingNotification.scheduledFor = scheduledFor;
-        await this.notificationRepository.save(existingNotification);
-        
-        this.logger.info(
-          `🔄 Updated existing pending welcome notification for user ${userId} with new token and schedule`
-        );
-        return existingNotification;
-      } else {
-        // If already sent or failed/cancelled, don't schedule a new one
-        this.logger.info(
-          `⏭️ Welcome notification already ${existingNotification.status} for user ${userId}, skipping.`
-        );
-        return existingNotification;
-      }
-    }
-
     const scheduledFor = new Date(Date.now() + delayMinutes * 60 * 1000);
 
-    const notification = this.notificationRepository.create({
-      userId,
-      pushToken,
-      type: 'welcome',
-      title: 'Welcome to Spiriment!',
-      body: `Hi ${firstName}, we're glad to have you! Explore the app to find your perfect mentorship match.`,
-      data: {
-        screen: 'Home',
-        type: 'welcome',
-      },
-      scheduledFor,
-      status: 'pending',
+    // Atomic upsert on the (userId, type) unique constraint — closes the race
+    // where two near-simultaneous push-token saves (e.g. right after signup)
+    // could both pass a "does one already exist?" check before either commits,
+    // resulting in two welcome notifications being sent.
+    // Only touches pushToken/scheduledFor when the existing row is still
+    // 'pending' — a row that's already 'sent'/'failed'/'cancelled' is left as-is.
+    await this.notificationRepository.query(
+      `
+      INSERT INTO \`scheduled_notifications\`
+        (\`id\`, \`userId\`, \`pushToken\`, \`type\`, \`title\`, \`body\`, \`data\`, \`scheduledFor\`, \`status\`, \`retryCount\`, \`createdAt\`, \`updatedAt\`)
+      VALUES
+        (UUID(), ?, ?, 'welcome', ?, ?, ?, ?, 'pending', 0, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        \`pushToken\` = IF(\`status\` = 'pending', VALUES(\`pushToken\`), \`pushToken\`),
+        \`scheduledFor\` = IF(\`status\` = 'pending', VALUES(\`scheduledFor\`), \`scheduledFor\`),
+        \`updatedAt\` = IF(\`status\` = 'pending', NOW(), \`updatedAt\`)
+      `,
+      [
+        userId,
+        pushToken,
+        'Welcome to Spiriment!',
+        `Hi ${firstName}, we're glad to have you! Explore the app to find your perfect mentorship match.`,
+        JSON.stringify({ screen: 'Home', type: 'welcome' }),
+        scheduledFor,
+      ]
+    );
+
+    const notification = await this.notificationRepository.findOneOrFail({
+      where: { userId, type: 'welcome' },
     });
 
-    await this.notificationRepository.save(notification);
-
     this.logger.info(
-      `📅 Scheduled welcome notification for user ${userId} at ${scheduledFor.toISOString()}`
+      `Scheduled welcome notification for user ${userId} (status: ${notification.status})`
     );
 
     return notification;
