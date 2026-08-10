@@ -23,6 +23,10 @@ export class StudyProgress extends BaseEntity {
   @Column({ name: 'completedChapters', type: 'json', nullable: true })
   completedChapters?: string[];
 
+  /** Path IDs the user has fully finished (survives switching paths). */
+  @Column({ name: 'completedPathIds', type: 'json', nullable: true })
+  completedPathIds?: string[];
+
   @Column({ name: 'currentDay', type: 'int', default: 0 })
   currentDay!: number;
 

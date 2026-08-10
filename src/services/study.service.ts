@@ -23,6 +23,7 @@ export class StudyService {
         currentBookIndex: progress.currentBookIndex ?? 0,
         currentChapterIndex: progress.currentChapterIndex ?? 0,
         completedChapters: progress.completedChapters ?? [],
+        completedPathIds: progress.completedPathIds ?? [],
         currentDay: progress.currentDay ?? 0,
         totalDays: progress.totalDays ?? 0,
         lastStudiedAt: progress.lastStudiedAt ?? undefined, // Preserve lastStudiedAt
