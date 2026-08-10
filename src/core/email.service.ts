@@ -9,7 +9,7 @@ import { DynamicEmailOptions } from '../common/types/email.types';
 import { QueueService } from './queue.service';
 import { EmailJobData } from '../queue/types';
 import { withDefaultEmailAttachments } from '../common/emailAttachments';
-import { getEmailLayoutSocialIconSources } from '../common/emailSocialIcons';
+import { getEmailTemplateIconContext } from '../common/emailSocialIcons';
 
 dotenv.config();
 
@@ -182,7 +182,10 @@ export class EmailService {
     if (!partial) {
       throw new Error(`Partial ${partialName} not found`);
     }
-    const bodyContent = partial(data);
+
+    const iconContext = getEmailTemplateIconContext();
+    const enriched = { ...data, ...iconContext };
+    const bodyContent = partial(enriched);
     
     // Check if the template is standalone HTML (starts with <!DOCTYPE html>)
     // If so, return it directly without wrapping in baseLayout
@@ -192,10 +195,9 @@ export class EmailService {
     
     // Otherwise, wrap in baseLayout
     return this.baseTemplate({
-      ...data,
+      ...enriched,
       body: bodyContent,
       currentYear: new Date().getFullYear(),
-      ...getEmailLayoutSocialIconSources(),
     });
   }
 

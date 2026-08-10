@@ -1,4 +1,6 @@
-/** Email clients need absolute https URLs on every <img>. */
+/** Turn store-badge and /email-icons/ paths into Cloudinary HTTPS URLs for broadcasts. */
+import { getEmailStoreBadgeUrls } from './emailSocialIcons';
+
 export function assertBroadcastImagesReady(html: string): void {
   const tags = [...html.matchAll(/<img\b([^>]*)>/gi)];
   const broken = tags.filter((m) => {
@@ -47,32 +49,38 @@ function patchImgSrc(full: string, attrs: string, url: string): string {
   return `<img src="${url}" ${attrs.trim()}>`;
 }
 
-/** Turn `/email-icons/…` and legacy Wikimedia icon URLs into absolute public URLs for email clients. */
+/** Rewrite App Store / Play badge icons to public Cloudinary URLs (not api.spiriment.com). */
 export function prepareBroadcastHtmlForSend(html: string): string {
-  const base = (
-    process.env.API_PUBLIC_URL ||
-    process.env.API_BASE_URL ||
-    process.env.APP_URL ||
-    ''
-  )
-    .replace(/\/$/, '');
-
+  const { appleWhite, googlePlay } = getEmailStoreBadgeUrls();
   let out = html;
 
-  if (base) {
+  if (appleWhite && !appleWhite.startsWith('cid:')) {
     out = out.replace(
-      /(\bsrc\s*=\s*["'])\/email-icons\//gi,
-      `$1${base}/email-icons/`
+      /(\bsrc\s*=\s*["'])[^"']*\/email-icons\/apple-white\.png["']/gi,
+      `$1${appleWhite}"`
     );
-    const appleIcon = `${base}/email-icons/apple-white.png`;
-    const playIcon = `${base}/email-icons/google-play.png`;
+    out = out.replace(
+      /(\bsrc\s*=\s*["'])\/email-icons\/apple-white\.png["']/gi,
+      `$1${appleWhite}"`
+    );
     out = out.replace(
       /https?:\/\/upload\.wikimedia\.org\/[^"']*Apple_logo_white[^"']*/gi,
-      appleIcon
+      appleWhite
+    );
+  }
+
+  if (googlePlay && !googlePlay.startsWith('cid:')) {
+    out = out.replace(
+      /(\bsrc\s*=\s*["'])[^"']*\/email-icons\/google-play\.png["']/gi,
+      `$1${googlePlay}"`
+    );
+    out = out.replace(
+      /(\bsrc\s*=\s*["'])\/email-icons\/google-play\.png["']/gi,
+      `$1${googlePlay}"`
     );
     out = out.replace(
       /https?:\/\/upload\.wikimedia\.org\/[^"']*Google_Play[^"']*/gi,
-      playIcon
+      googlePlay
     );
   }
 

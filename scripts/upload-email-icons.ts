@@ -1,16 +1,24 @@
 /**
- * Upload footer social PNGs to Cloudinary (public HTTPS — works in Gmail).
+ * Upload email PNGs to Cloudinary (public HTTPS — works in Gmail).
  * Run from mentor-backend: npm run upload:email-icons
- *
- * After success, paste the printed URLs into EMAIL_SOCIAL_ICON_CDN_URLS in
- * src/common/emailSocialIcons.ts (or set EMAIL_SOCIAL_ICONS_BASE_URL in .env).
  */
 import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v2 as cloudinary } from 'cloudinary';
 
-const ICONS = ['instagram', 'tiktok', 'x', 'linkedin'] as const;
+/** File basename (without .png) = Cloudinary public_id under spiriment/email-icons */
+const ICONS = [
+  'instagram',
+  'tiktok',
+  'x',
+  'linkedin',
+  'icon-clock',
+  'icon-shield',
+  'apple-white',
+  'google-play',
+] as const;
+
 const ASSETS = path.join(__dirname, '../src/mails/assets/email-icons');
 
 async function main() {
@@ -30,8 +38,8 @@ async function main() {
   for (const name of ICONS) {
     const filePath = path.join(ASSETS, `${name}.png`);
     if (!fs.existsSync(filePath)) {
-      console.error('Missing file:', filePath);
-      process.exit(1);
+      console.warn('Skip (missing):', filePath);
+      continue;
     }
 
     const result = await cloudinary.uploader.upload(filePath, {
@@ -45,7 +53,7 @@ async function main() {
     console.log(`${name}: ${result.secure_url}`);
   }
 
-  console.log('\nAdd to src/common/emailSocialIcons.ts EMAIL_SOCIAL_ICON_CDN_URLS:');
+  console.log('\nPaste into EMAIL_ICON_CDN_URLS in src/common/emailSocialIcons.ts:');
   console.log(JSON.stringify(urls, null, 2));
 }
 
