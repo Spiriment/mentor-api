@@ -29,4 +29,15 @@ export class QuizStreak extends BaseEntity {
 
   @Column({ type: 'json', nullable: true })
   highScores?: { [bookVersion: string]: number }; // { 'Genesis_1': 18, ... }
+
+  /** Achievement id → ISO earnedAt (survives device switches). */
+  @Column({ type: 'json', nullable: true })
+  earnedAchievements?: { [achievementId: string]: string };
+
+  /** Local counters used for volume/book badges. */
+  @Column({ type: 'json', nullable: true })
+  achievementStats?: {
+    totalQuizzes?: number;
+    completedBooks?: string[];
+  };
 }

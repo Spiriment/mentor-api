@@ -126,10 +126,69 @@ export class QuizService {
         weeklyData: new Array(7).fill(false),
         monthlyData: {},
         highScores: {},
+        earnedAchievements: {},
+        achievementStats: { totalQuizzes: 0, completedBooks: [] },
       });
       await this.streakRepo.save(streak);
     }
-    return streak;
+    return {
+      ...streak,
+      earnedAchievements: streak.earnedAchievements ?? {},
+      achievementStats: streak.achievementStats ?? {
+        totalQuizzes: 0,
+        completedBooks: [],
+      },
+    };
+  }
+
+  /**
+   * Merge client-earned achievements into the quiz streak row.
+   * Keeps the earliest earnedAt for each id; never removes server awards.
+   */
+  async upsertAchievements(
+    userId: string,
+    payload: {
+      earnedAchievements?: Record<string, string>;
+      achievementStats?: {
+        totalQuizzes?: number;
+        completedBooks?: string[];
+      };
+    }
+  ): Promise<QuizStreak> {
+    const streak = await this.getQuizStreak(userId);
+    const existing = { ...(streak.earnedAchievements ?? {}) };
+    const incoming = payload.earnedAchievements ?? {};
+
+    for (const [id, earnedAt] of Object.entries(incoming)) {
+      if (!id || !earnedAt) continue;
+      if (!existing[id]) {
+        existing[id] = earnedAt;
+      } else if (new Date(earnedAt).getTime() < new Date(existing[id]).getTime()) {
+        existing[id] = earnedAt;
+      }
+    }
+    streak.earnedAchievements = existing;
+
+    const stats = {
+      totalQuizzes: streak.achievementStats?.totalQuizzes ?? 0,
+      completedBooks: [...(streak.achievementStats?.completedBooks ?? [])],
+    };
+    if (typeof payload.achievementStats?.totalQuizzes === 'number') {
+      stats.totalQuizzes = Math.max(
+        stats.totalQuizzes,
+        payload.achievementStats.totalQuizzes
+      );
+    }
+    if (Array.isArray(payload.achievementStats?.completedBooks)) {
+      const set = new Set([
+        ...stats.completedBooks,
+        ...payload.achievementStats.completedBooks,
+      ]);
+      stats.completedBooks = Array.from(set);
+    }
+    streak.achievementStats = stats;
+
+    return this.streakRepo.save(streak);
   }
 
   private async incrementQuizStreak(
@@ -157,6 +216,8 @@ export class QuizService {
           weeklyData: new Array(7).fill(false),
           monthlyData: {},
           highScores: {},
+          earnedAchievements: {},
+          achievementStats: { totalQuizzes: 0, completedBooks: [] },
         });
       }
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireSubscription } from '../middleware/requireSubscription.middleware';
-import { getBooks, getQuestions, submitAttempt, getAttemptHistory, getQuizStreak, submitFeedback, getLeaderboard } from '@/controllers/quiz.controller';
+import { getBooks, getQuestions, submitAttempt, getAttemptHistory, getQuizStreak, upsertQuizAchievements, submitFeedback, getLeaderboard } from '@/controllers/quiz.controller';
 
 const router = Router();
 
@@ -14,6 +14,7 @@ router.post('/attempt', requireSubscription('basic'), submitAttempt);
 router.post('/feedback', requireSubscription('basic'), submitFeedback);
 router.get('/attempts', requireSubscription('basic'), getAttemptHistory);
 router.get('/streak', requireSubscription('basic'), getQuizStreak);
+router.put('/achievements', requireSubscription('basic'), upsertQuizAchievements);
 router.get('/leaderboard', requireSubscription('basic'), getLeaderboard);
 
 export default router;

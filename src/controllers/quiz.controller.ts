@@ -48,6 +48,16 @@ export const getQuizStreak = async (req: Request, res: Response, next: NextFunct
   } catch (err) { next(err); }
 };
 
+export const upsertQuizAchievements = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const streak = await quizService.upsertAchievements(req.user!.id, {
+      earnedAchievements: req.body?.earnedAchievements,
+      achievementStats: req.body?.achievementStats,
+    });
+    res.json({ success: true, data: streak });
+  } catch (err) { next(err); }
+};
+
 export const getLeaderboard = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
