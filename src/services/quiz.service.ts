@@ -100,12 +100,13 @@ export class QuizService {
     return { attempt, streak };
   }
 
-  async getAttemptHistory(userId: string, book?: string, version?: number) {
+  async getAttemptHistory(userId: string, book?: string, version?: number, limit = 50) {
+    const take = Math.min(Math.max(limit || 50, 1), 500);
     const qb = this.attemptRepo
       .createQueryBuilder('a')
       .where('a.userId = :userId', { userId })
       .orderBy('a.completedAt', 'DESC')
-      .limit(50);
+      .limit(take);
 
     if (book) qb.andWhere('a.book = :book', { book });
     if (version) qb.andWhere('a.version = :version', { version });

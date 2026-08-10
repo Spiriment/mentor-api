@@ -31,11 +31,12 @@ export const submitAttempt = async (req: Request, res: Response, next: NextFunct
 export const getAttemptHistory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const { book, version } = req.query;
+    const { book, version, limit } = req.query;
     const history = await quizService.getAttemptHistory(
       userId,
       book as string | undefined,
-      version ? Number(version) : undefined
+      version ? Number(version) : undefined,
+      limit ? Number(limit) : 50
     );
     res.json({ success: true, data: history });
   } catch (err) { next(err); }
