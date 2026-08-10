@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { AnyZodObject, ZodError } from 'zod';
+import { ZodError, ZodTypeAny } from 'zod';
 import { ValidationError } from '../errors';
 
 export const validate = (
-  schema: AnyZodObject,
+  schema: ZodTypeAny,
   source: 'body' | 'query' | 'params' | 'all' = 'all'
 ) => {
   return async (req: Request, _res: Response, next: NextFunction) => {
@@ -45,7 +45,7 @@ export const validate = (
   };
 };
 
-export const createRouteValidator = <T extends AnyZodObject>(schema: T) => {
+export const createRouteValidator = <T extends ZodTypeAny>(schema: T) => {
   return {
     validate: validate(schema),
   };
