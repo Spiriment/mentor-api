@@ -36,12 +36,12 @@ function resolveAssetPath(relativePath: string): string | null {
   return null;
 }
 
-/** Public base for hosted email icons (`/email-icons/...`), if configured. */
+/** Public base for hosted email icons (`/email-icons/...`) — broadcasts only; do not use for transactional mail (api host may block image fetches). */
 export function getEmailIconsBaseUrl(): string {
   const base = (
     process.env.API_PUBLIC_URL ||
     process.env.API_BASE_URL ||
-    process.env.APP_URL ||
+    process.env.EMAIL_ASSETS_BASE_URL ||
     ''
   ).replace(/\/$/, '');
 
