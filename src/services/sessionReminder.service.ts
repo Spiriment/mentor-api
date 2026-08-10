@@ -82,6 +82,12 @@ export class SessionReminderService {
         }
 
         try {
+          const claimed = await this.claimReminderFlag(session.id, 'sent1h');
+          if (!claimed) {
+            logger.debug(`1-hour reminder already claimed for session ${session.id}`);
+            continue;
+          }
+
           // Send reminder to mentor
           if (session.mentor) {
             await this.sendReminderToMentor(session, '1 hour');
@@ -91,11 +97,6 @@ export class SessionReminderService {
           if (session.mentee) {
             await this.sendReminderToMentee(session, '1 hour');
           }
-
-          // Update session reminders field
-          await this.updateSessionReminders(session.id, {
-            sent1h: true,
-          });
 
           logger.info(`1-hour reminder sent for session ${session.id}`);
         } catch (error) {
@@ -168,6 +169,12 @@ export class SessionReminderService {
         }
 
         try {
+          const claimed = await this.claimReminderFlag(session.id, 'sent15min');
+          if (!claimed) {
+            logger.debug(`15-minute reminder already claimed for session ${session.id}`);
+            continue;
+          }
+
           // Send reminder to mentor
           if (session.mentor) {
             await this.sendReminderToMentor(session, '15 minutes');
@@ -177,11 +184,6 @@ export class SessionReminderService {
           if (session.mentee) {
             await this.sendReminderToMentee(session, '15 minutes');
           }
-
-          // Update session reminders field
-          await this.updateSessionReminders(session.id, {
-            sent15min: true,
-          });
 
           logger.info(`15-minute reminder sent for session ${session.id}`);
         } catch (error) {
@@ -257,6 +259,12 @@ export class SessionReminderService {
         }
 
         try {
+          const claimed = await this.claimReminderFlag(session.id, 'sentStartNow');
+          if (!claimed) {
+            logger.debug(`Start reminder already claimed for session ${session.id}`);
+            continue;
+          }
+
           // Send reminder to mentor
           if (session.mentor) {
             await this.sendReminderToMentor(session, 'now');
@@ -266,11 +274,6 @@ export class SessionReminderService {
           if (session.mentee) {
             await this.sendReminderToMentee(session, 'now');
           }
-
-          // Update session reminders field
-          await this.updateSessionReminders(session.id, {
-            sentStartNow: true,
-          });
 
           logger.info(`"Starting now" reminder sent for session ${session.id}`);
         } catch (error) {
@@ -583,14 +586,14 @@ export class SessionReminderService {
             continue;
           }
 
+          const claimed = await this.claimReminderFlag(session.id, 'sent24h');
+          if (!claimed) {
+            continue;
+          }
+
           // Send reminder to both mentor and mentee
           await this.sendReminderToMentor(session, '24 hours');
           await this.sendReminderToMentee(session, '24 hours');
-
-          // Update flag
-          await this.updateSessionReminders(session.id, {
-            sent24h: true,
-          });
         } catch (sessionError) {
           logger.error(
             `Error processing 24-hour reminder for session ${session.id}:`,
@@ -603,37 +606,40 @@ export class SessionReminderService {
     }
   }
 
-  private async updateSessionReminders(
+  /**
+   * Atomically claim a reminder flag before sending.
+   * Prevents duplicate in-app/push rows when cron workers overlap.
+   * Returns false if another worker already claimed (or session missing).
+   */
+  private async claimReminderFlag(
     sessionId: string,
-    reminderUpdate: {
-      sent15min?: boolean;
-      sent1h?: boolean;
-      sent24h?: boolean;
-      sentStartNow?: boolean;
-    }
-  ): Promise<void> {
-    const session = await this.sessionRepository.findOne({
-      where: { id: sessionId },
+    flag: 'sent15min' | 'sent1h' | 'sent24h' | 'sentStartNow'
+  ): Promise<boolean> {
+    return AppDataSource.transaction(async (manager) => {
+      const session = await manager
+        .getRepository(Session)
+        .createQueryBuilder('s')
+        .setLock('pessimistic_write')
+        .where('s.id = :sessionId', { sessionId })
+        .getOne();
+
+      if (!session) {
+        logger.warn(`Session ${sessionId} not found when claiming reminder ${flag}`);
+        return false;
+      }
+
+      if (session.reminders?.[flag]) {
+        return false;
+      }
+
+      await manager.update(Session, sessionId, {
+        reminders: {
+          ...(session.reminders || {}),
+          [flag]: true,
+        },
+      });
+
+      return true;
     });
-
-    if (!session) {
-      logger.warn(`Session ${sessionId} not found when updating reminders`);
-      return;
-    }
-
-    const currentReminders = session.reminders || {};
-    const updatedReminders = {
-      ...currentReminders,
-      ...reminderUpdate,
-    };
-
-    await this.sessionRepository.update(sessionId, {
-      reminders: updatedReminders,
-    });
-
-    logger.debug(
-      `Updated reminders for session ${sessionId}`,
-      updatedReminders
-    );
   }
 }
