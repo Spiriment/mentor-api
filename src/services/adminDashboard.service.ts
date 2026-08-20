@@ -17,6 +17,7 @@ import {
   PAYING_TIERS,
 } from '@/common/constants/subscriptionMetrics';
 import { FamilyPlan } from '@/database/entities/familyPlan.entity';
+import { adminMentorApplicationService } from './adminMentorApplication.service';
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -66,14 +67,17 @@ export class AdminDashboardService {
       )
       .getCount();
 
-    const subscriptionSlice =
-      await adminSubscriptionService.getDashboardSubscriptionSlice(adminRole);
+    const [subscriptionSlice, mentorApplicationFunnel] = await Promise.all([
+      adminSubscriptionService.getDashboardSubscriptionSlice(adminRole),
+      adminMentorApplicationService.getFunnelCounts(),
+    ]);
 
     return {
       users: { mentees, mentors, total: totalUsers, incompleteOnboarding },
       monthlyActiveUsers,
       subscriptions: subscriptionSlice,
       pendingMentorApplications,
+      mentorApplicationFunnel,
       plans: { activeChurchPlans, activeFamilyPlans },
     };
   }

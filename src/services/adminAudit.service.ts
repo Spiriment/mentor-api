@@ -1,5 +1,6 @@
 import { AppDataSource } from '@/config/data-source';
 import { AdminAuditLog } from '@/database/entities/adminAuditLog.entity';
+import { AdminUser } from '@/database/entities/adminUser.entity';
 
 export type AdminAuditInput = {
   adminUserId: string;
@@ -48,7 +49,9 @@ class AdminAuditService {
       .take(limit);
 
     if (params.adminUserId) {
-      qb.andWhere('log.adminUserId = :adminUserId', { adminUserId: params.adminUserId });
+      qb.andWhere('log.adminUserId = :adminUserId', {
+        adminUserId: params.adminUserId,
+      });
     }
 
     if (params.action?.trim()) {
@@ -57,18 +60,56 @@ class AdminAuditService {
     }
 
     if (params.targetType) {
-      qb.andWhere('log.targetType = :targetType', { targetType: params.targetType });
+      qb.andWhere('log.targetType = :targetType', {
+        targetType: params.targetType,
+      });
     }
 
     if (params.dateFrom) {
-      qb.andWhere('log.createdAt >= :dateFrom', { dateFrom: new Date(params.dateFrom) });
+      qb.andWhere('log.createdAt >= :dateFrom', {
+        dateFrom: new Date(params.dateFrom),
+      });
     }
 
     if (params.dateTo) {
-      qb.andWhere('log.createdAt <= :dateTo', { dateTo: new Date(params.dateTo) });
+      qb.andWhere('log.createdAt <= :dateTo', {
+        dateTo: new Date(params.dateTo),
+      });
     }
 
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+
+    const adminIds = [
+      ...new Set(rows.map((r) => r.adminUserId).filter(Boolean)),
+    ];
+    const admins =
+      adminIds.length === 0
+        ? []
+        : await AppDataSource.getRepository(AdminUser)
+            .createQueryBuilder('a')
+            .where('a.id IN (:...ids)', { ids: adminIds })
+            .getMany();
+    const adminById = new Map(admins.map((a) => [a.id, a]));
+
+    const data = rows.map((row) => {
+      const admin = adminById.get(row.adminUserId);
+      const adminName = admin
+        ? [admin.firstName, admin.lastName].filter(Boolean).join(' ').trim() ||
+          admin.email
+        : null;
+      return {
+        id: row.id,
+        adminUserId: row.adminUserId,
+        adminEmail: admin?.email ?? null,
+        adminName,
+        action: row.action,
+        targetType: row.targetType ?? null,
+        targetId: row.targetId ?? null,
+        metadata: row.metadata ?? null,
+        ip: row.ip ?? null,
+        createdAt: row.createdAt,
+      };
+    });
 
     return {
       data,

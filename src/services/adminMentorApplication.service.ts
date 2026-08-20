@@ -369,7 +369,63 @@ export class AdminMentorApplicationService {
       throw new AppError('Unknown template', 404);
     }
     const tpl = mergedTemplates[templateId as keyof typeof mergedTemplates];
-    return { templateId, subject: tpl.subject, body: tpl.body };
+    return {
+      templateId,
+      subject: tpl.subject,
+      body: tpl.body,
+    };
+  }
+
+  /** Point-in-time counts for the mentor application funnel. */
+  async getFunnelCounts() {
+    const mpRepo = AppDataSource.getRepository(MentorProfile);
+
+    const base = () =>
+      mpRepo
+        .createQueryBuilder('mp')
+        .innerJoin('mp.user', 'user')
+        .where('user.role = :role', { role: USER_ROLE.MENTOR });
+
+    const [pending_review, needs_more_info, approved, rejected, draft] =
+      await Promise.all([
+        base()
+          .andWhere('mp.isOnboardingComplete = :ic', { ic: true })
+          .andWhere('mp.isApproved = :fa', { fa: false })
+          .andWhere(
+            '(user.mentorApprovalStatus IS NULL OR user.mentorApprovalStatus = :pen)',
+            { pen: MENTOR_APPROVAL_STATUS.PENDING },
+          )
+          .getCount(),
+        base()
+          .andWhere('mp.isOnboardingComplete = :ic', { ic: true })
+          .andWhere('mp.isApproved = :fa', { fa: false })
+          .andWhere('user.mentorApprovalStatus = :nmi', {
+            nmi: MENTOR_APPROVAL_STATUS.NEEDS_MORE_INFO,
+          })
+          .getCount(),
+        base().andWhere('mp.isApproved = :ap', { ap: true }).getCount(),
+        base()
+          .andWhere('mp.isApproved = :fa', { fa: false })
+          .andWhere('user.mentorApprovalStatus = :rej', {
+            rej: MENTOR_APPROVAL_STATUS.REJECTED,
+          })
+          .getCount(),
+        base().andWhere('mp.isOnboardingComplete = :df', { df: false }).getCount(),
+      ]);
+
+    const submitted = pending_review + needs_more_info + approved + rejected;
+    const approvalRate =
+      submitted > 0 ? Math.round((approved / submitted) * 100) : null;
+
+    return {
+      pending_review,
+      needs_more_info,
+      approved,
+      rejected,
+      draft,
+      submitted,
+      approvalRatePct: approvalRate,
+    };
   }
 }
 
