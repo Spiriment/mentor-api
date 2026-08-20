@@ -23,6 +23,11 @@ router.get(
   requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
   adminSubscriptionController.listPromoCodes,
 );
+router.get(
+  '/promo-codes/:id/redemptions',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  adminSubscriptionController.listPromoCodeRedemptions,
+);
 router.patch(
   '/promo-codes/:id',
   requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),

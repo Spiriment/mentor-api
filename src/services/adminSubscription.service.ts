@@ -525,6 +525,47 @@ export class AdminSubscriptionService {
     return this.serializePromo(saved);
   }
 
+  async listPromoCodeRedemptions(promoCodeId: string, page = 1, limit = 50) {
+    if (!isUuid(promoCodeId)) throw new AppError('Invalid promo code id', 400);
+
+    const promo = await this.promoRepo.findOne({ where: { id: promoCodeId } });
+    if (!promo) throw new AppError('Promo code not found', 404);
+
+    const [rows, total] = await this.redemptionRepo.findAndCount({
+      where: { promoCode: { id: promoCodeId } },
+      relations: ['user'],
+      order: { redeemedAt: 'DESC' },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    return {
+      promoCode: {
+        id: promo.id,
+        code: promo.code,
+        type: promo.type,
+        usedCount: promo.usedCount,
+        usageLimit: promo.usageLimit ?? null,
+      },
+      data: rows.map((r) => ({
+        id: r.id,
+        redeemedAt: r.redeemedAt,
+        completedAt: r.completedAt ?? null,
+        status: r.completedAt ? 'completed' : 'pending',
+        user: r.user
+          ? {
+              id: r.user.id,
+              email: r.user.email,
+              firstName: r.user.firstName ?? null,
+              lastName: r.user.lastName ?? null,
+              role: r.user.role ?? null,
+            }
+          : null,
+      })),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 0 },
+    };
+  }
+
   private generateCode(type: PromoCodeType): string {
     const prefix = type === 'internal_test' ? 'INT' : 'AMB';
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
