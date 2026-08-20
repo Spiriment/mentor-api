@@ -88,6 +88,18 @@ export const authenticateToken = async (
       );
     }
 
+    if (
+      user.accountStatus === 'suspended' ||
+      user.accountStatus === 'deleted' ||
+      user.accountStatus === 'blocked'
+    ) {
+      throw new AppError(
+        'Account is not available',
+        StatusCodes.UNAUTHORIZED,
+        'ACCOUNT_UNAVAILABLE'
+      );
+    }
+
     // Update last active timestamp (async, don't block the request)
     userRepository
       .update(user.id, { lastActiveAt: new Date() })

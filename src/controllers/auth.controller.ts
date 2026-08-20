@@ -776,4 +776,27 @@ export class AuthController {
       next(error);
     }
   };
+
+  /** DELETE /api/auth/account — self-service account deletion */
+  deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        throw new AppError(
+          'User not found',
+          StatusCodes.NOT_FOUND,
+          'USER_NOT_FOUND'
+        );
+      }
+
+      const result = await this.authService.deleteMyAccount(user.id);
+      this.logger.info('Account deleted by user', { userId: user.id });
+      return sendSuccessResponse(res, {
+        ...result,
+        message: 'Your account has been deleted.',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

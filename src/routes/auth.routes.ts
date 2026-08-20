@@ -170,6 +170,9 @@ const createAuthRoutes = (
   router.get('/church', authenticateToken, authController.getChurchPortal);
   router.patch('/church', authenticateToken, authController.updateChurchPortal);
 
+  // Self-service account deletion (Apple / Google store requirement)
+  router.delete('/account', authenticateToken, authController.deleteAccount);
+
   return router;
 };
 

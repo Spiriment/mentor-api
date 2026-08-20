@@ -11,6 +11,7 @@ import {
   UserPayload,
   USER_ROLE,
 } from '@/common';
+import { ACCOUNT_STATUS } from '@/common/constants/options';
 import { calcAge, MIN_USER_AGE } from '@/common/constants/userAge';
 import bcrypt from 'bcryptjs';
 import { addMinutes } from 'date-fns';
@@ -1335,5 +1336,53 @@ export class AuthService {
         401
       );
     }
+  };
+
+  /**
+   * Self-service account deletion (App Store / Play Store requirement).
+   * Soft-deletes: keeps relational history, scrubs PII, blocks login, frees email.
+   * Admin hard-delete remains available for a true wipe.
+   */
+  deleteMyAccount = async (userId: string): Promise<{ success: boolean }> => {
+    const user = await this.UserRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new AppError('User not found', StatusCodes.NOT_FOUND);
+    }
+
+    try {
+      await AppDataSource.getRepository(RefreshToken).delete({ userId });
+    } catch {
+      // ignore if refresh tokens unavailable
+    }
+
+    // Use update so select:false columns (googleId/appleId/password) are cleared too
+    await this.UserRepository.update(userId, {
+      accountStatus: ACCOUNT_STATUS.DELETED,
+      isActive: false,
+      email: `deleted_${userId}@deleted.local`,
+      firstName: null as any,
+      lastName: null as any,
+      middleName: null as any,
+      address: null as any,
+      city: null as any,
+      state: null as any,
+      country: null as any,
+      countryCode: null as any,
+      birthday: null as any,
+      pushToken: null,
+      googleId: null as any,
+      appleId: null as any,
+      otpToken: null as any,
+      otpTokenExpiry: null as any,
+      password: null as any,
+      stripeCustomerId: null,
+      referralCode: null,
+      marketingEmailsOptOut: true,
+      pushNotificationsEnabled: false,
+      notificationPreferences: [],
+    });
+
+    this.logger.info('User self-deleted account', { userId });
+    return { success: true };
   };
 }

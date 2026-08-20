@@ -12,7 +12,14 @@ export class AdminUserController {
         limit: q.limit ? Number(q.limit) : undefined,
         sort: q.sort,
         search: q.search,
-        role: q.role as 'mentee' | 'mentor' | 'inactive' | 'all' | undefined,
+        role: q.role as
+          | 'mentee'
+          | 'mentor'
+          | 'inactive'
+          | 'incomplete'
+          | 'all'
+          | undefined,
+        onboarding: q.onboarding as 'complete' | 'incomplete' | 'all' | undefined,
         country: q.country,
         churchSearch: q.churchSearch,
       });

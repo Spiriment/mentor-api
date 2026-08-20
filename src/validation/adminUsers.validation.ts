@@ -5,7 +5,8 @@ export const adminUserListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   sort: z.string().max(64).optional(),
   search: z.string().max(200).optional(),
-  role: z.enum(['mentee', 'mentor', 'inactive', 'all']).optional(),
+  role: z.enum(['mentee', 'mentor', 'inactive', 'incomplete', 'all']).optional(),
+  onboarding: z.enum(['complete', 'incomplete', 'all']).optional(),
   country: z.string().max(120).optional(),
   churchSearch: z.string().max(200).optional(),
 });

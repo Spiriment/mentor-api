@@ -40,11 +40,12 @@ export class AdminDashboardService {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const [mentees, mentors, totalUsers, activeChurchPlans, activeFamilyPlans, monthlyActiveUsers] =
+    const [mentees, mentors, totalUsers, incompleteOnboarding, activeChurchPlans, activeFamilyPlans, monthlyActiveUsers] =
       await Promise.all([
         userRepo.count({ where: { role: USER_ROLE.MENTEE } }),
         userRepo.count({ where: { role: USER_ROLE.MENTOR } }),
         userRepo.count(),
+        userRepo.count({ where: { isOnboardingComplete: false } }),
         orgRepo.count({ where: { planType: 'church', status: 'active' } }),
         familyPlanRepo.count({ where: { status: 'active' } }),
         // Real MAU: users who made any authenticated request in the last 30 days
@@ -69,7 +70,7 @@ export class AdminDashboardService {
       await adminSubscriptionService.getDashboardSubscriptionSlice(adminRole);
 
     return {
-      users: { mentees, mentors, total: totalUsers },
+      users: { mentees, mentors, total: totalUsers, incompleteOnboarding },
       monthlyActiveUsers,
       subscriptions: subscriptionSlice,
       pendingMentorApplications,

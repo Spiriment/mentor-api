@@ -39,8 +39,13 @@ export const authMiddleware = (jwtService: JwtService) => {
         throw new UnauthorizedError("User not found");
       }
 
-      if (user.accountStatus === ACCOUNT_STATUS.SUSPENDED) {
-        throw new UnauthorizedError("User account is suspended");
+      if (
+        user.accountStatus === ACCOUNT_STATUS.SUSPENDED ||
+        user.accountStatus === ACCOUNT_STATUS.DELETED ||
+        user.accountStatus === ACCOUNT_STATUS.BLOCKED ||
+        !user.isActive
+      ) {
+        throw new UnauthorizedError("User account is not available");
       }
 
       req.user = user;

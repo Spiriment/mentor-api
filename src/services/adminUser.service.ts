@@ -31,7 +31,8 @@ export class AdminUserService {
     limit?: number;
     sort?: string;
     search?: string;
-    role?: 'mentee' | 'mentor' | 'inactive' | 'all';
+    role?: 'mentee' | 'mentor' | 'inactive' | 'incomplete' | 'all';
+    onboarding?: 'complete' | 'incomplete' | 'all';
     country?: string;
     churchSearch?: string;
   }) {
@@ -48,6 +49,19 @@ export class AdminUserService {
       qb.andWhere('user.role = :r', { r: USER_ROLE.MENTOR });
     } else if (roleFilter === 'inactive') {
       qb.andWhere('user.isActive = :ia', { ia: false });
+    } else if (roleFilter === 'incomplete') {
+      qb.andWhere('user.isOnboardingComplete = :ioc', { ioc: false });
+    }
+
+    const onboardingFilter = params.onboarding ?? 'all';
+    if (onboardingFilter === 'incomplete') {
+      qb.andWhere('user.isOnboardingComplete = :onboardingIncomplete', {
+        onboardingIncomplete: false,
+      });
+    } else if (onboardingFilter === 'complete') {
+      qb.andWhere('user.isOnboardingComplete = :onboardingComplete', {
+        onboardingComplete: true,
+      });
     }
 
     if (params.country) {
@@ -102,6 +116,9 @@ export class AdminUserService {
       isOnboardingComplete: u.isOnboardingComplete,
       mentorApprovalStatus: u.mentorApprovalStatus,
       createdAt: u.createdAt,
+      lastOnboardingReminderEmailSentAt:
+        u.lastOnboardingReminderEmailSentAt ?? null,
+      onboardingReminderEmailsSent: u.onboardingReminderEmailsSent ?? null,
     }));
 
     return {
@@ -526,12 +543,28 @@ export class AdminUserService {
     ip?: string
   ) {
     if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
+    const allowed = ['active', 'suspended', 'deleted', 'blocked'] as const;
+    if (!allowed.includes(status as (typeof allowed)[number])) {
+      throw new AppError(
+        'Invalid status. Use active, suspended, deleted, or blocked.',
+        400
+      );
+    }
+
     const repo = AppDataSource.getRepository(User);
     const user = await repo.findOne({ where: { id: userId } });
     if (!user) throw new AppError('User not found', 404);
 
     const oldStatus = user.accountStatus;
     user.accountStatus = status as any;
+
+    // Soft actions keep the row + history. Suspended/deleted/blocked cannot log in.
+    if (status === 'active') {
+      user.isActive = true;
+    } else if (status === 'suspended' || status === 'deleted' || status === 'blocked') {
+      user.isActive = false;
+    }
+
     await repo.save(user);
 
     await adminAuditService.log({
@@ -539,12 +572,17 @@ export class AdminUserService {
       action: 'admin.user.status.update',
       targetType: 'user',
       targetId: userId,
-      metadata: { oldStatus, newStatus: status },
+      metadata: { oldStatus, newStatus: status, soft: status !== 'active' },
       ip: ip ?? null,
     });
 
     return { success: true, accountStatus: status };
   }
+
+  /**
+   * Hard delete — permanently removes the user row (and cascaded relations).
+   * Prefer suspend/deleted status when you need to keep history.
+   */
   async deleteUser(
     userId: string,
     adminUserId: string,
@@ -555,14 +593,15 @@ export class AdminUserService {
     const user = await repo.findOne({ where: { id: userId } });
     if (!user) throw new AppError('User not found', 404);
 
+    const deletedEmail = user.email;
     await repo.remove(user);
 
     await adminAuditService.log({
       adminUserId,
-      action: 'admin.user.delete',
+      action: 'admin.user.delete.hard',
       targetType: 'user',
       targetId: userId,
-      metadata: { deletedEmail: user.email },
+      metadata: { deletedEmail, hardDelete: true },
       ip: ip ?? null,
     });
 
