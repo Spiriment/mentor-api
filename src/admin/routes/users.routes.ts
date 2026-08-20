@@ -61,5 +61,10 @@ router.patch(
   requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
   adminUserController.updateStatus
 );
+router.delete(
+  '/:userId',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  adminUserController.deleteUser
+);
 
 export default router;
