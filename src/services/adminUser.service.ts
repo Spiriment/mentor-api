@@ -3,6 +3,7 @@ import { validate as isUuid } from 'uuid';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserDiscount } from '@/database/entities/userDiscount.entity';
+import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
@@ -11,7 +12,10 @@ import { StudyProgress } from '@/database/entities/studyProgress.entity';
 import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { AppError, USER_ROLE } from '@/common';
 import { adminAuditService } from './adminAudit.service';
-import { adminSubscriptionService } from './adminSubscription.service';
+import {
+  adminSubscriptionService,
+  getEntitlementKind,
+} from './adminSubscription.service';
 import { EmailService } from '@/core/email.service';
 
 let emailSingleton: EmailService | null = null;
@@ -104,22 +108,38 @@ export class AdminUserService {
     const total = await qb.getCount();
     const rows = await qb.skip(skip).take(limit).getMany();
 
-    const data = rows.map((u) => ({
-      id: u.id,
-      email: u.email,
-      firstName: u.firstName,
-      lastName: u.lastName,
-      country: u.country,
-      role: u.role,
-      accountStatus: u.accountStatus,
-      isActive: u.isActive,
-      isOnboardingComplete: u.isOnboardingComplete,
-      mentorApprovalStatus: u.mentorApprovalStatus,
-      createdAt: u.createdAt,
-      lastOnboardingReminderEmailSentAt:
-        u.lastOnboardingReminderEmailSentAt ?? null,
-      onboardingReminderEmailsSent: u.onboardingReminderEmailsSent ?? null,
-    }));
+    const userIds = rows.map((u) => u.id);
+    const subs =
+      userIds.length === 0
+        ? []
+        : await AppDataSource.getRepository(UserSubscription)
+            .createQueryBuilder('s')
+            .where('s.userId IN (:...userIds)', { userIds })
+            .getMany();
+    const subByUserId = new Map(subs.map((s) => [s.userId, s]));
+
+    const data = rows.map((u) => {
+      const sub = subByUserId.get(u.id);
+      return {
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        country: u.country,
+        role: u.role,
+        accountStatus: u.accountStatus,
+        isActive: u.isActive,
+        isOnboardingComplete: u.isOnboardingComplete,
+        mentorApprovalStatus: u.mentorApprovalStatus,
+        createdAt: u.createdAt,
+        lastOnboardingReminderEmailSentAt:
+          u.lastOnboardingReminderEmailSentAt ?? null,
+        onboardingReminderEmailsSent: u.onboardingReminderEmailsSent ?? null,
+        subscriptionTier: sub?.tier ?? null,
+        subscriptionStatus: sub?.status ?? null,
+        entitlementKind: getEntitlementKind(sub ?? null),
+      };
+    });
 
     return {
       data,

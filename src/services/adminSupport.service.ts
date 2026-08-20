@@ -9,9 +9,16 @@ import {
 } from '@/database/entities/supportTicket.entity';
 import { User } from '@/database/entities/user.entity';
 import { AppError } from '@/common';
+import { EmailService } from '@/core/email.service';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
+
+let emailSingleton: EmailService | null = null;
+function supportEmail(): EmailService {
+  if (!emailSingleton) emailSingleton = new EmailService(null);
+  return emailSingleton;
+}
 
 const TYPE_LABELS: Record<SupportTicketType, string> = {
   technical_issue: 'Technical Issue',
@@ -52,6 +59,10 @@ function formatDateTime(value: Date): string {
   });
 }
 
+function ageDays(from: Date, now = new Date()): number {
+  return Math.floor((now.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 function serializeMessage(message: SupportTicketMessage) {
   return {
     id: message.id,
@@ -63,10 +74,9 @@ function serializeMessage(message: SupportTicketMessage) {
   };
 }
 
-function serializeTicket(
-  ticket: SupportTicket,
-  includeMessages = false
-) {
+function serializeTicket(ticket: SupportTicket, includeMessages = false) {
+  const daysOpen = ageDays(ticket.createdAt);
+  const daysSinceUpdate = ageDays(ticket.updatedAt);
   const base = {
     id: ticket.id,
     subject: ticket.subject,
@@ -80,10 +90,14 @@ function serializeTicket(
     priorityKey: ticket.priority,
     status: STATUS_LABELS[ticket.status] ?? ticket.status,
     statusKey: ticket.status,
+    assignedAdminId: ticket.assignedAdminId ?? null,
+    assignedAdminName: ticket.assignedAdminName ?? null,
     createdDate: formatDate(ticket.createdAt),
     lastUpdated: formatDate(ticket.updatedAt),
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
+    ageDays: daysOpen,
+    daysSinceUpdate,
   };
 
   if (includeMessages) {
@@ -91,9 +105,7 @@ function serializeTicket(
       ...base,
       messages: (ticket.messages ?? [])
         .slice()
-        .sort(
-          (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
-        )
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
         .map(serializeMessage),
     };
   }
@@ -136,7 +148,8 @@ export class AdminSupportService {
           sub
             .where('ticket.subject LIKE :term', { term })
             .orWhere('ticket.userName LIKE :term', { term })
-            .orWhere('ticket.userEmail LIKE :term', { term });
+            .orWhere('ticket.userEmail LIKE :term', { term })
+            .orWhere('ticket.assignedAdminName LIKE :term', { term });
         })
       );
     }
@@ -167,6 +180,8 @@ export class AdminSupportService {
     updates: {
       status?: SupportTicketStatus;
       priority?: SupportTicketPriority;
+      assignedAdminId?: string | null;
+      assignedAdminName?: string | null;
     }
   ) {
     const ticket = await this.ticketRepo.findOne({ where: { id } });
@@ -176,6 +191,12 @@ export class AdminSupportService {
 
     if (updates.status) ticket.status = updates.status;
     if (updates.priority) ticket.priority = updates.priority;
+    if (updates.assignedAdminId !== undefined) {
+      ticket.assignedAdminId = updates.assignedAdminId;
+    }
+    if (updates.assignedAdminName !== undefined) {
+      ticket.assignedAdminName = updates.assignedAdminName;
+    }
 
     const saved = await this.ticketRepo.save(ticket);
     return serializeTicket(saved);
@@ -207,6 +228,22 @@ export class AdminSupportService {
       await this.ticketRepo.save(ticket);
     } else {
       await this.ticketRepo.update(ticketId, { updatedAt: new Date() });
+    }
+
+    // Email the user when an admin posts a public reply
+    if (!body.isInternal && ticket.userEmail) {
+      try {
+        await supportEmail().sendNotificationEmail({
+          to: ticket.userEmail,
+          subject: `Re: ${ticket.subject}`,
+          userName: ticket.userName,
+          message: `Support replied to your ticket "${ticket.subject}":\n\n${body.text}`,
+          actionUrl: process.env.FRONTEND_URL || 'https://spiriment.com',
+          actionText: 'Open Spiriment',
+        });
+      } catch {
+        // Don't fail the reply if email fails
+      }
     }
 
     return this.getTicketById(ticketId);

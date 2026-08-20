@@ -2,6 +2,7 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
+import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
 import { subDays } from 'date-fns';
 
 type ReminderDay = 1 | 3 | 7;
@@ -75,7 +76,7 @@ export class OnboardingReminderService {
         ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}`.trim()
         : 'there';
 
-      const appLink = process.env.FRONTEND_URL || 'https://spiriment.com';
+      const appLink = APP_DEEP_LINK_ONBOARDING;
       const hasRole = !!user.role;
 
       const templateMap: Record<ReminderDay, string> = {

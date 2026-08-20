@@ -52,6 +52,13 @@ export class SupportTicket extends BaseEntity {
   @Column({ type: 'varchar', length: 32, default: 'open' })
   status!: SupportTicketStatus;
 
+  @Index()
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  assignedAdminId?: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  assignedAdminName?: string | null;
+
   @OneToMany(() => SupportTicketMessage, (message) => message.ticket)
   messages!: SupportTicketMessage[];
 }

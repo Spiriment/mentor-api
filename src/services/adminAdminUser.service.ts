@@ -19,6 +19,8 @@ export class AdminAdminUserService {
       email: row.email,
       role: row.role,
       isActive: row.isActive,
+      firstName: row.firstName ?? null,
+      lastName: row.lastName ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

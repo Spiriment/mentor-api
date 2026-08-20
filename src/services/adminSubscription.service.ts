@@ -19,6 +19,7 @@ import {
   applyEntitledPaidTierFilters,
   applyMrrFilters,
   applyPayingSubscriberFilters,
+  applyTruePayingFilters,
   ENTITLED_STATUSES,
   PAYING_TIERS,
 } from '@/common/constants/subscriptionMetrics';
@@ -27,6 +28,8 @@ import { CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 const MAX_INTERNAL_TEST_CODES = 3;
 const ADMIN_MANUAL_NOTE = 'Manually granted by admin';
 
+export type EntitlementKind = 'paying' | 'trial' | 'promo' | 'comp' | 'none';
+
 export function isManuallyAssignedSubscription(row: Pick<UserSubscription, 'externalProvider' | 'notes'>): boolean {
   if (row.externalProvider === 'admin') return true;
   return (row.notes ?? '').includes('Manually granted');
@@ -34,13 +37,29 @@ export function isManuallyAssignedSubscription(row: Pick<UserSubscription, 'exte
 
 export function getSubscriptionAssignmentSource(
   row: Pick<UserSubscription, 'externalProvider' | 'notes'>
-): 'admin_manual' | 'promo_comp' | 'stripe' | 'app_store' | 'family_plan' | 'unknown' {
+): 'admin_manual' | 'promo_comp' | 'stripe' | 'app_store' | 'family_plan' | 'church' | 'unknown' {
   if (isManuallyAssignedSubscription(row)) return 'admin_manual';
   if (row.externalProvider === 'internal_test') return 'promo_comp';
   if (row.externalProvider === 'stripe') return 'stripe';
   if (row.externalProvider === 'revenuecat') return 'app_store';
   if (row.externalProvider === 'stripe_family') return 'family_plan';
+  if (row.externalProvider === 'church_central') return 'church';
   return 'unknown';
+}
+
+/** Ops-facing entitlement bucket: Paying / Trial / Promo / Comp / None */
+export function getEntitlementKind(
+  row: Pick<UserSubscription, 'status' | 'tier' | 'externalProvider' | 'notes'> | null | undefined,
+): EntitlementKind {
+  if (!row) return 'none';
+  if (!PAYING_TIERS.includes(row.tier as SubscriptionTier)) return 'none';
+  if (!ENTITLED_STATUSES.includes(row.status as SubscriptionStatus)) return 'none';
+
+  if (row.status === 'trialing') return 'trial';
+  if (isManuallyAssignedSubscription(row)) return 'comp';
+  if (row.externalProvider === 'internal_test') return 'promo';
+  if (row.status === 'active' || row.status === 'past_due') return 'paying';
+  return 'none';
 }
 
 export class AdminSubscriptionService {
@@ -62,6 +81,7 @@ export class AdminSubscriptionService {
       notes: row.notes ?? null,
       isManuallyAssigned: isManuallyAssignedSubscription(row),
       assignmentSource: getSubscriptionAssignmentSource(row),
+      entitlementKind: getEntitlementKind(row),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -114,17 +134,51 @@ export class AdminSubscriptionService {
       }
     }
 
-    const [totalUsers, activeSubscribersRow] = await Promise.all([
-      userRepo.count(),
-      (async () => {
-        const countQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
-        applyPayingSubscriberFilters(countQb, 's');
-        return countQb.getRawOne<{ cnt: string }>();
-      })(),
-    ]);
+    const [totalUsers, activeSubscribersRow, truePayingRow, trialRow, promoRow, compRow] =
+      await Promise.all([
+        userRepo.count(),
+        (async () => {
+          const countQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+          applyPayingSubscriberFilters(countQb, 's');
+          return countQb.getRawOne<{ cnt: string }>();
+        })(),
+        (async () => {
+          const countQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
+          applyTruePayingFilters(countQb, 's');
+          return countQb.getRawOne<{ cnt: string }>();
+        })(),
+        subRepo
+          .createQueryBuilder('s')
+          .select('COUNT(*)', 'cnt')
+          .where('s.status = :st', { st: 'trialing' })
+          .andWhere('s.tier IN (:...tiers)', { tiers: PAYING_TIERS })
+          .getRawOne<{ cnt: string }>(),
+        subRepo
+          .createQueryBuilder('s')
+          .select('COUNT(*)', 'cnt')
+          .where('s.externalProvider = :p', { p: 'internal_test' })
+          .andWhere('s.status IN (:...st)', { st: ENTITLED_STATUSES })
+          .andWhere('s.tier IN (:...tiers)', { tiers: PAYING_TIERS })
+          .getRawOne<{ cnt: string }>(),
+        subRepo
+          .createQueryBuilder('s')
+          .select('COUNT(*)', 'cnt')
+          .where("(s.externalProvider = 'admin' OR s.notes LIKE :manualNote)", {
+            manualNote: '%Manually granted%',
+          })
+          .andWhere('s.status IN (:...st)', { st: ENTITLED_STATUSES })
+          .andWhere('s.tier IN (:...tiers)', { tiers: PAYING_TIERS })
+          .getRawOne<{ cnt: string }>(),
+      ]);
     const activeSubscribers = activeSubscribersRow?.cnt
       ? parseInt(activeSubscribersRow.cnt, 10)
       : 0;
+    const entitlementBreakdown = {
+      paying: truePayingRow?.cnt ? parseInt(truePayingRow.cnt, 10) : 0,
+      trial: trialRow?.cnt ? parseInt(trialRow.cnt, 10) : 0,
+      promo: promoRow?.cnt ? parseInt(promoRow.cnt, 10) : 0,
+      comp: compRow?.cnt ? parseInt(compRow.cnt, 10) : 0,
+    };
 
     const distinctRow = await subRepo
       .createQueryBuilder('s')
@@ -142,6 +196,7 @@ export class AdminSubscriptionService {
       countsByTier,
       totalUsers,
       activeSubscribers,
+      entitlementBreakdown,
       usersWithoutSubscriptionRecord,
     };
 
@@ -225,7 +280,9 @@ export class AdminSubscriptionService {
       pro: full.countsByTier.pro,
       premium: full.countsByTier.premium,
       none: full.countsByTier.none,
+      /** Legacy: active+past_due paid tiers (includes promo/comp). Prefer entitlementBreakdown.paying */
       activeSubscribers: full.activeSubscribers,
+      entitlementBreakdown: full.entitlementBreakdown,
       ...(adminRole === ADMIN_ROLE.SUPER_ADMIN && full.revenue
         ? { totalMrrCents: full.revenue.totalMrrCents }
         : {}),

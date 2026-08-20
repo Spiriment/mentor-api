@@ -11,6 +11,8 @@ export const supportTicketListQuerySchema = z.object({
 export const supportTicketUpdateBodySchema = z.object({
   status: z.enum(['open', 'pending', 'resolved']).optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  assignedAdminId: z.string().uuid().nullable().optional(),
+  assignedAdminName: z.string().max(255).nullable().optional(),
 });
 
 export const supportTicketMessageBodySchema = z.object({

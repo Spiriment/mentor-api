@@ -7,3 +7,7 @@ export const APP_DEEP_LINK_SUCCESS =
 /** Cancel URL for Stripe checkout — never reuse the success deep link. */
 export const APP_DEEP_LINK_CANCEL =
   process.env.APP_DEEP_LINK_CANCEL ?? 'spiriment://subscription/cancel';
+
+/** Resume incomplete onboarding (email CTAs + in-app linking). */
+export const APP_DEEP_LINK_ONBOARDING =
+  process.env.APP_DEEP_LINK_ONBOARDING ?? 'spiriment://onboarding';
