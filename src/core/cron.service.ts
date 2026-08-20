@@ -5,6 +5,7 @@ import { RedisClient } from "@/common";
 import { SessionReminderService } from "@/services/sessionReminder.service";
 import { StreakNotificationService } from "@/services/streakNotification.service";
 import { ReengagementService } from "@/services/reengagement.service";
+import { OnboardingReminderService } from "@/services/onboardingReminder.service";
 import { notificationSchedulerService } from "@/services/notificationScheduler.service";
 import { MonthlySummaryService } from "@/services/monthlySummary.service";
 import { sessionAutoUpdateService } from "@/services/sessionAutoUpdate.service";
@@ -24,6 +25,7 @@ export class CronService {
   private sessionReminderService: SessionReminderService | null = null;
   private streakNotificationService: StreakNotificationService | null = null;
   private reengagementService: ReengagementService | null = null;
+  private onboardingReminderService: OnboardingReminderService | null = null;
   private monthlySummaryService: MonthlySummaryService | null = null;
   private assignmentReminderService: AssignmentReminderService | null = null;
 
@@ -144,6 +146,27 @@ export class CronService {
 
       this.tasks.set("reengagement", reengagementTask);
       logger.info("Re-engagement cron job scheduled (daily at 10 AM UTC)");
+
+      // Incomplete onboarding reminders — day 1 / 3 / 7 after signup
+      this.onboardingReminderService = new OnboardingReminderService(emailService);
+      const onboardingReminderTask = cron.schedule(
+        "30 11 * * *", // 11:30 AM UTC daily
+        async () => {
+          try {
+            await this.onboardingReminderService?.sendOnboardingReminders();
+          } catch (error) {
+            logger.error(
+              "Error in onboarding reminder cron job:",
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        {
+          timezone: "UTC",
+        }
+      );
+      this.tasks.set("onboarding-reminder", onboardingReminderTask);
+      logger.info("Onboarding reminder cron job scheduled (daily at 11:30 AM UTC)");
 
       // Schedule notification processing job - runs every minute
       const notificationProcessingTask = cron.schedule(
@@ -480,6 +503,8 @@ export class CronService {
         return "0 12,20 * * * (Twice daily at 12 PM and 8 PM UTC)";
       case "reengagement":
         return "0 10 * * * (Daily at 10 AM UTC)";
+      case "onboarding-reminder":
+        return "30 11 * * * (Daily at 11:30 AM UTC)";
       case "notification-processing":
         return "* * * * * (Every minute)";
       case "monthly-report":
@@ -599,6 +624,15 @@ export class CronService {
             return true;
           } else {
             logger.error(`Re-engagement service not initialized`);
+            return false;
+          }
+        case "onboarding-reminder":
+          if (this.onboardingReminderService) {
+            await this.onboardingReminderService.sendOnboardingReminders();
+            logger.info(`Force run completed for task: ${taskName}`);
+            return true;
+          } else {
+            logger.error(`Onboarding reminder service not initialized`);
             return false;
           }
         default:

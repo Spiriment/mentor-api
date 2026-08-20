@@ -1,0 +1,48 @@
+<h1
+  style='font-size: 24px; font-weight: 700; color: #3A5A40; margin: 0 0 8px 0;'
+>
+  You're almost there, {{userName}}
+</h1>
+<p style='color: #666; font-size: 15px; margin: 0 0 24px 0;'>
+  Finish setting up your Spiriment account — it only takes a few minutes.
+</p>
+
+<p>
+  Thanks for joining Spiriment. We noticed you started signing up but haven't
+  finished your profile yet.
+</p>
+
+{{#if hasRole}}
+  <div class='info-box'>
+    You're signed up as a <strong>{{role}}</strong>. Complete the remaining
+    steps so we can match you and unlock the full experience.
+  </div>
+{{else}}
+  <div class='info-box'>
+    Choose whether you're joining as a <strong>mentee</strong> or
+    <strong>mentor</strong>, then finish a short setup.
+  </div>
+{{/if}}
+
+<p style='font-weight: 600; color: #3A5A40; margin: 28px 0 12px 0;'>
+  Once you're set up, you can:
+</p>
+<ul style='padding-left: 20px; color: #333; font-size: 15px;'>
+  <li style='margin-bottom: 8px;'>Connect with mentors or mentees</li>
+  <li style='margin-bottom: 8px;'>Build a Bible reading habit</li>
+  <li style='margin-bottom: 8px;'>Grow in faith with guided sessions</li>
+</ul>
+
+<div style='text-align: center; margin: 32px 0 16px 0;'>
+  <a
+    href='{{appLink}}'
+    style='background-color: #3A5A40; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block; font-size: 15px;'
+  >
+    Continue setup
+  </a>
+</div>
+
+<p style='font-size: 14px; color: #666; margin-top: 24px;'>
+  With blessings,<br />
+  <strong>The Spiriment Team</strong>
+</p>

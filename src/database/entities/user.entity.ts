@@ -142,6 +142,17 @@ export class User extends BaseEntity {
     day30?: Date;
   };
 
+  /** Incomplete-onboarding reminder emails (day1 / day3 / day7 after signup). */
+  @Column({ name: 'onboardingReminderEmailsSent', type: 'json', nullable: true })
+  onboardingReminderEmailsSent?: {
+    day1?: Date;
+    day3?: Date;
+    day7?: Date;
+  };
+
+  @Column({ name: 'lastOnboardingReminderEmailSentAt', nullable: true })
+  lastOnboardingReminderEmailSentAt?: Date;
+
   // Notification preferences
   @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
   notificationPreferences?: string[]; // ['messages', 'session_reminders', 'mentorship_requests', 'study_reminders']
