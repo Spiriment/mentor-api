@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccessResponse } from '@/common/helpers';
 import { adminUserService } from '@/services/adminUser.service';
 import { adminSubscriptionService } from '@/services/adminSubscription.service';
+import { adminGdprExportService } from '@/services/adminGdprExport.service';
+import { adminAuditService } from '@/services/adminAudit.service';
 
 export class AdminUserController {
   list = async (req: Request, res: Response, next: NextFunction) => {
@@ -33,6 +35,33 @@ export class AdminUserController {
     try {
       const detail = await adminUserService.getUserDetail(req.params.userId);
       return sendSuccessResponse(res, detail);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  gdprExport = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { buffer, filename, email } = await adminGdprExportService.buildPackage(
+        req.params.userId,
+      );
+
+      await adminAuditService.log({
+        adminUserId: req.admin!.id,
+        action: 'admin.user.gdpr_export',
+        targetType: 'user',
+        targetId: req.params.userId,
+        metadata: { email, filename, bytes: buffer.byteLength },
+        ip: req.ip,
+      });
+
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+      res.setHeader('Content-Length', buffer.byteLength);
+      return res.end(buffer);
     } catch (e) {
       next(e);
     }

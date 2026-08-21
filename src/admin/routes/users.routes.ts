@@ -33,6 +33,7 @@ router.post(
   adminUserController.bulkEmail
 );
 router.get('/:userId', adminUserController.getById);
+router.get('/:userId/gdpr-export', adminUserController.gdprExport);
 router.post(
   '/:userId/send-email',
   uploadEmailAttachment,
