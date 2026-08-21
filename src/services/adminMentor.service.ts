@@ -19,6 +19,7 @@ import { EmailService } from '@/core/email.service';
 import { pushNotificationService } from './pushNotification.service';
 import { adminAuditService } from './adminAudit.service';
 import { adminSubscriptionService } from './adminSubscription.service';
+import { adminSessionService } from './adminSession.service';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -158,7 +159,7 @@ export class AdminMentorService {
       throw new AppError('Mentor profile not found', 404);
     }
 
-    const [sessionsCompleted, sessionsScheduled, recentSessions, menteeRequests, reviewRaw, subRow] =
+    const [sessionsCompleted, sessionsScheduled, recentSessions, menteeRequests, reviewRaw, subRow, outcomes] =
       await Promise.all([
         AppDataSource.getRepository(Session).count({
           where: { mentorId: userId, status: SESSION_STATUS.COMPLETED },
@@ -194,6 +195,7 @@ export class AdminMentorService {
           .where('r.mentorId = :id', { id: userId })
           .getRawOne<{ avgRating: string | null; reviewCount: string; lowRatingCount: string | null }>(),
         adminSubscriptionService.findForUser(userId),
+        adminSessionService.getOutcomeMetrics({ mentorId: userId }),
       ]);
 
     const reviewCount = reviewRaw?.reviewCount ? parseInt(reviewRaw.reviewCount, 10) : 0;
@@ -240,6 +242,13 @@ export class AdminMentorService {
       sessionStats: {
         completed: sessionsCompleted,
         scheduled: sessionsScheduled,
+        noShow: outcomes.allTime.noShow,
+        cancelled: outcomes.allTime.cancelled,
+        completionRatePct: outcomes.allTime.completionRatePct,
+        noShowRatePct: outcomes.allTime.noShowRatePct,
+        completionRate30dPct: outcomes.last30Days.completionRatePct,
+        noShowRate30dPct: outcomes.last30Days.noShowRatePct,
+        decidedOutcomes: outcomes.allTime.decidedOutcomes,
       },
       sessions: serializedSessions,
       mentees: serializedMentees,

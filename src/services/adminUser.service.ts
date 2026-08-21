@@ -17,6 +17,7 @@ import {
   getEntitlementKind,
 } from './adminSubscription.service';
 import { EmailService } from '@/core/email.service';
+import { adminSessionService } from './adminSession.service';
 
 let emailSingleton: EmailService | null = null;
 function adminEmail(): EmailService {
@@ -221,7 +222,10 @@ export class AdminUserService {
     }
 
     const { password: _p, ...safeUser } = user as User & { password?: string };
-    const subscription = await adminSubscriptionService.findForUser(userId);
+    const [subscription, sessionOutcomes] = await Promise.all([
+      adminSubscriptionService.findForUser(userId),
+      adminSessionService.getOutcomeMetrics({ menteeId: userId }),
+    ]);
 
     const serializedSessions = sessions.map((s) => ({
       id: s.id,
@@ -252,6 +256,17 @@ export class AdminUserService {
           }
         : null,
       sessions: serializedSessions,
+      sessionStats: {
+        completed: sessionOutcomes.allTime.completed,
+        noShow: sessionOutcomes.allTime.noShow,
+        cancelled: sessionOutcomes.allTime.cancelled,
+        scheduled: sessionOutcomes.allTime.scheduled,
+        completionRatePct: sessionOutcomes.allTime.completionRatePct,
+        noShowRatePct: sessionOutcomes.allTime.noShowRatePct,
+        completionRate30dPct: sessionOutcomes.last30Days.completionRatePct,
+        noShowRate30dPct: sessionOutcomes.last30Days.noShowRatePct,
+        decidedOutcomes: sessionOutcomes.allTime.decidedOutcomes,
+      },
       bibleProgress,
       studyProgress,
       discounts: discounts.map((d) => this.serializeDiscount(d)),

@@ -18,6 +18,7 @@ import {
 } from '@/common/constants/subscriptionMetrics';
 import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { adminMentorApplicationService } from './adminMentorApplication.service';
+import { adminSessionService } from './adminSession.service';
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -139,6 +140,9 @@ export class AdminDashboardService {
       sessionsLastMonth,
       dailyActiveUsers,
       dailyActiveUsersYesterday,
+      sessionOutcomes,
+      topNoShowMentors,
+      topNoShowMentees,
     ] = await Promise.all([
       userRepo.find({ select: ['id', 'role', 'createdAt'] }),
       sessionRepo.find({ select: ['id', 'scheduledAt'] }),
@@ -193,6 +197,9 @@ export class AdminDashboardService {
           todayStart,
         })
         .getCount(),
+      adminSessionService.getOutcomeMetrics(),
+      adminSessionService.getTopNoShowRates({ role: 'mentor', limit: 5 }),
+      adminSessionService.getTopNoShowRates({ role: 'mentee', limit: 5 }),
     ]);
 
     let monthlyRevenueCents: number | null = null;
@@ -297,6 +304,10 @@ export class AdminDashboardService {
       inactiveUsers30d,
       nonActiveUsers,
       totalUsers,
+      sessionCompletionRatePct: sessionOutcomes.allTime.completionRatePct,
+      sessionNoShowRatePct: sessionOutcomes.allTime.noShowRatePct,
+      sessionCompletionRate30dPct: sessionOutcomes.last30Days.completionRatePct,
+      sessionNoShowRate30dPct: sessionOutcomes.last30Days.noShowRatePct,
     };
 
     let subscriptionGrowth: Array<{ month: string; revenue: number }> = [];
@@ -317,6 +328,9 @@ export class AdminDashboardService {
       mauData,
       subscriptionGrowth,
       subscriptionGrowthCurrency: 'EUR' as const,
+      sessionOutcomes,
+      topNoShowMentors,
+      topNoShowMentees,
     };
   }
 }

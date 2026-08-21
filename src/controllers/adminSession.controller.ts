@@ -22,9 +22,32 @@ export class AdminSessionController {
     }
   };
 
+  metrics = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const q = req.query as Record<string, string | undefined>;
+      const [outcomes, topMentors, topMentees] = await Promise.all([
+        adminSessionService.getOutcomeMetrics({
+          mentorId: q.mentorId,
+          menteeId: q.menteeId,
+        }),
+        adminSessionService.getTopNoShowRates({ role: 'mentor', limit: 5 }),
+        adminSessionService.getTopNoShowRates({ role: 'mentee', limit: 5 }),
+      ]);
+      return sendSuccessResponse(res, {
+        outcomes,
+        topNoShowMentors: topMentors,
+        topNoShowMentees: topMentees,
+      });
+    } catch (e) {
+      next(e);
+    }
+  };
+
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const detail = await adminSessionService.getSessionById(req.params.sessionId);
+      const detail = await adminSessionService.getSessionById(
+        req.params.sessionId,
+      );
       return sendSuccessResponse(res, detail);
     } catch (e) {
       next(e);
@@ -35,7 +58,7 @@ export class AdminSessionController {
     try {
       const result = await adminSessionService.updateSessionStatus(
         req.params.sessionId,
-        req.body.status as SESSION_STATUS
+        req.body.status as SESSION_STATUS,
       );
       return sendSuccessResponse(res, result);
     } catch (e) {
