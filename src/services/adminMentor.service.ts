@@ -20,6 +20,7 @@ import { pushNotificationService } from './pushNotification.service';
 import { adminAuditService } from './adminAudit.service';
 import { adminSubscriptionService } from './adminSubscription.service';
 import { adminSessionService } from './adminSession.service';
+import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -367,7 +368,7 @@ export class AdminMentorService {
           firstName: user.firstName || '',
           subject: title,
           message,
-          actionUrl: '/',
+          actionUrl: APP_DEEP_LINK_ONBOARDING,
           actionText: 'Open Spiriment',
         });
       } catch (e) {

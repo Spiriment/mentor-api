@@ -1,55 +1,41 @@
 <style>
-  .notification-type { 
-    display: inline-block; 
-    background-color: #e9ecef; 
-    color: #495057; 
-    padding: 4px 8px; 
-    border-radius: 4px; 
-    font-size: 12px; 
-    font-weight: bold; 
-    text-transform: uppercase; 
-    margin-bottom: 15px; 
-  } 
-  .priority-high { 
-    background-color: #dc3545; 
-    color: white; 
-  } 
-  .priority-medium { 
-    background-color: #ffc107; 
-    color: #212529; 
-  } 
-  .priority-low { 
-    background-color: #28a745; 
-    color: white; 
-  } 
-  .priority-urgent { 
-    background-color: #6f42c1; 
-    color: white; 
-  } 
-  .action-button {
+  .notification-type {
     display: inline-block;
-    background-color: #3A5A40;
-    color: #ffffff;
-    padding: 12px 24px;
-    text-decoration: none;
-    border-radius: 5px;
+    background-color: #e9ecef;
+    color: #495057;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 15px;
+  }
+  .priority-high {
+    background-color: #dc3545;
+    color: white;
+  }
+  .priority-medium {
+    background-color: #ffc107;
+    color: #212529;
+  }
+  .priority-low {
+    background-color: #28a745;
+    color: white;
+  }
+  .priority-urgent {
+    background-color: #6f42c1;
+    color: white;
+  }
+  .notification-content h2 {
+    color: #333;
+    margin-top: 0;
+    font-size: 20px;
     font-weight: 600;
-    margin: 20px 0;
-    transition: background-color 0.3s ease;
   }
-  .action-button:hover {
-    background-color: #162419;
-  }
-  .notification-content h2 { 
-    color: #333; 
-    margin-top: 0; 
-    font-size: 20px; 
-    font-weight: 600; 
-  } 
-  .notification-content p { 
-    margin-bottom: 15px; 
-    font-size: 16px; 
-    line-height: 1.6; 
+  .notification-content p {
+    margin-bottom: 15px;
+    font-size: 16px;
+    line-height: 1.6;
   }
 </style>
 
@@ -71,9 +57,18 @@
   <p>{{message}}</p>
 
   {{#if actionUrl}}
-    <p>
-      <a href="{{#if appUrl}}{{appUrl}}{{/if}}{{actionUrl}}" class="action-button">
-        {{#if actionText}}{{actionText}}{{else}}View Details{{/if}}
+    <p style="text-align: center; margin: 28px 0 16px 0;">
+      {{!--
+        Inline styles required: baseLayout `.content a` is green (#3A5A40), which made
+        white-on-green button text invisible when only class styles applied.
+        Use a full absolute URL or deep link in actionUrl (do not prefix APP_URL).
+      --}}
+      <a
+        href="{{actionUrl}}"
+        class="button"
+        style="background-color: #3A5A40; color: #ffffff !important; padding: 14px 28px; text-decoration: none !important; border-radius: 8px; font-weight: 600; display: inline-block; font-size: 15px;"
+      >
+        {{#if actionText}}{{actionText}}{{else}}Open Spiriment{{/if}}
       </a>
     </p>
   {{/if}}

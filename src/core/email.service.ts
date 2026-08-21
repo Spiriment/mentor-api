@@ -10,6 +10,7 @@ import { QueueService } from './queue.service';
 import { EmailJobData } from '../queue/types';
 import { withDefaultEmailAttachments } from '../common/emailAttachments';
 import { getEmailTemplateIconContext } from '../common/emailSocialIcons';
+import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
 
 dotenv.config();
 
@@ -412,9 +413,9 @@ export class EmailService {
         title: props.subject,
         userName: props.firstName || 'there',
         message: props.message,
-        actionUrl: props.actionUrl,
+        // Full deep link or https URL — never APP_URL + relative path
+        actionUrl: props.actionUrl || APP_DEEP_LINK_ONBOARDING,
         actionText: props.actionText || 'Open Spiriment',
-        appUrl: Config.appUrl || '',
       },
       attachments: props.attachments,
     });
