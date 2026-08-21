@@ -1,12 +1,13 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { Like, ILike } from 'typeorm';
+import { In, ILike } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { jwt } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
 import { ChurchPortalUser } from '@/church-portal/entities/churchPortalUser.entity';
 import { User } from '@/database/entities/user.entity';
+import { OrgPlan } from '@/database/entities/orgPlan.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ConflictError, NotFoundError } from '@/common/errors';
@@ -19,6 +20,20 @@ import type {
 } from '@/validation/adminChurchPortals.validation';
 
 const INVITE_TOKEN_EXPIRY_HOURS = 48;
+/** Portal admin login older than this is considered stale (ops health). */
+export const CHURCH_PORTAL_LOGIN_STALE_DAYS = 14;
+const SEAT_NEAR_FULL_PCT = 80;
+
+type PortalHealth = {
+  usedSeats: number | null;
+  totalSeats: number | null;
+  seatUsagePct: number | null;
+  seatsNearFull: boolean;
+  seatsFull: boolean;
+  lastPortalLoginAt: string | null;
+  portalLoginStale: boolean;
+  hasPortalAdmins: boolean;
+};
 
 export class AdminChurchPortalService {
   constructor(private readonly emailService: EmailService) {}
@@ -37,20 +52,10 @@ export class AdminChurchPortalService {
       skip: (query.page - 1) * query.limit,
     });
 
-    // Attach member counts
-    const userRepo = AppDataSource.getRepository(User);
-    const withCounts = await Promise.all(
-      portals.map(async (p) => {
-        const [mentors, mentees] = await Promise.all([
-          userRepo.count({ where: { churchPortalId: p.id, role: USER_ROLE.MENTOR } }),
-          userRepo.count({ where: { churchPortalId: p.id, role: USER_ROLE.MENTEE } }),
-        ]);
-        return { ...p, mentorCount: mentors, menteeCount: mentees };
-      })
-    );
+    const enriched = await this.attachPortalHealth(portals);
 
     return {
-      data: withCounts,
+      data: enriched,
       meta: { total, page: query.page, limit: query.limit, totalPages: Math.ceil(total / query.limit) },
     };
   }
@@ -60,13 +65,120 @@ export class AdminChurchPortalService {
     const portal = await repo.findOne({ where: { id: portalId } });
     if (!portal) throw new NotFoundError('Church portal not found');
 
+    const [enriched] = await this.attachPortalHealth([portal]);
+    return enriched;
+  }
+
+  /**
+   * Attach member counts + seats (from linked org plan) + last portal-admin login.
+   */
+  private async attachPortalHealth(portals: ChurchPortal[]) {
+    if (portals.length === 0) return [];
+
+    const portalIds = portals.map((p) => p.id);
+    const planIds = [
+      ...new Set(portals.map((p) => p.orgPlanId).filter((id): id is string => !!id)),
+    ];
+
     const userRepo = AppDataSource.getRepository(User);
-    const [mentors, mentees] = await Promise.all([
-      userRepo.count({ where: { churchPortalId: portalId, role: USER_ROLE.MENTOR } }),
-      userRepo.count({ where: { churchPortalId: portalId, role: USER_ROLE.MENTEE } }),
+    const portalUserRepo = AppDataSource.getRepository(ChurchPortalUser);
+    const planRepo = AppDataSource.getRepository(OrgPlan);
+
+    const [mentorRows, menteeRows, loginRows, plans] = await Promise.all([
+      userRepo
+        .createQueryBuilder('u')
+        .select('u.churchPortalId', 'portalId')
+        .addSelect('COUNT(*)', 'count')
+        .where('u.churchPortalId IN (:...portalIds)', { portalIds })
+        .andWhere('u.role = :role', { role: USER_ROLE.MENTOR })
+        .groupBy('u.churchPortalId')
+        .getRawMany<{ portalId: string; count: string }>(),
+      userRepo
+        .createQueryBuilder('u')
+        .select('u.churchPortalId', 'portalId')
+        .addSelect('COUNT(*)', 'count')
+        .where('u.churchPortalId IN (:...portalIds)', { portalIds })
+        .andWhere('u.role = :role', { role: USER_ROLE.MENTEE })
+        .groupBy('u.churchPortalId')
+        .getRawMany<{ portalId: string; count: string }>(),
+      portalUserRepo
+        .createQueryBuilder('pu')
+        .select('pu.churchPortalId', 'portalId')
+        .addSelect('MAX(pu.lastLoginAt)', 'lastLoginAt')
+        .addSelect('COUNT(*)', 'adminCount')
+        .where('pu.churchPortalId IN (:...portalIds)', { portalIds })
+        .andWhere('pu.isActive = :active', { active: true })
+        .groupBy('pu.churchPortalId')
+        .getRawMany<{ portalId: string; lastLoginAt: Date | string | null; adminCount: string }>(),
+      planIds.length
+        ? planRepo.find({
+            where: { id: In(planIds) },
+            select: ['id', 'usedSeats', 'totalSeats'],
+          })
+        : Promise.resolve([] as OrgPlan[]),
     ]);
 
-    return { ...portal, mentorCount: mentors, menteeCount: mentees };
+    const mentorsByPortal = new Map(mentorRows.map((r) => [r.portalId, Number(r.count)]));
+    const menteesByPortal = new Map(menteeRows.map((r) => [r.portalId, Number(r.count)]));
+    const loginByPortal = new Map(
+      loginRows.map((r) => [
+        r.portalId,
+        {
+          lastLoginAt: r.lastLoginAt ? new Date(r.lastLoginAt) : null,
+          adminCount: Number(r.adminCount),
+        },
+      ]),
+    );
+    const planById = new Map(plans.map((p) => [p.id, p]));
+
+    const staleMs = CHURCH_PORTAL_LOGIN_STALE_DAYS * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    return portals.map((p) => {
+      const plan = p.orgPlanId ? planById.get(p.orgPlanId) : undefined;
+      const login = loginByPortal.get(p.id);
+      const lastLogin = login?.lastLoginAt ?? null;
+      const hasPortalAdmins = (login?.adminCount ?? 0) > 0;
+
+      let usedSeats: number | null = null;
+      let totalSeats: number | null = null;
+      let seatUsagePct: number | null = null;
+      let seatsNearFull = false;
+      let seatsFull = false;
+
+      if (plan && plan.totalSeats > 0) {
+        usedSeats = plan.usedSeats;
+        totalSeats = plan.totalSeats;
+        seatUsagePct = Math.round((plan.usedSeats / plan.totalSeats) * 100);
+        seatsFull = plan.usedSeats >= plan.totalSeats;
+        seatsNearFull = !seatsFull && seatUsagePct >= SEAT_NEAR_FULL_PCT;
+      } else if (plan) {
+        usedSeats = plan.usedSeats;
+        totalSeats = plan.totalSeats;
+      }
+
+      const portalLoginStale =
+        hasPortalAdmins &&
+        (!lastLogin || now - lastLogin.getTime() > staleMs);
+
+      const health: PortalHealth = {
+        usedSeats,
+        totalSeats,
+        seatUsagePct,
+        seatsNearFull,
+        seatsFull,
+        lastPortalLoginAt: lastLogin ? lastLogin.toISOString() : null,
+        portalLoginStale,
+        hasPortalAdmins,
+      };
+
+      return {
+        ...p,
+        mentorCount: mentorsByPortal.get(p.id) ?? 0,
+        menteeCount: menteesByPortal.get(p.id) ?? 0,
+        ...health,
+      };
+    });
   }
 
   async createPortal(data: CreateChurchPortalInput) {
