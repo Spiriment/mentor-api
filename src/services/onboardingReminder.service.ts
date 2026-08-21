@@ -3,6 +3,7 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
+import { pushNotificationService } from './pushNotification.service';
 import { subDays } from 'date-fns';
 
 type ReminderDay = 1 | 3 | 7;
@@ -10,6 +11,7 @@ type ReminderDay = 1 | 3 | 7;
 /**
  * Email users who signed up but never finished onboarding.
  * Sequence: ~1 day, ~3 days, ~7 days after account creation, then stop.
+ * Optional: one push ~1 day after the day-7 email if they still have a push token.
  */
 export class OnboardingReminderService {
   private userRepository = AppDataSource.getRepository(User);
@@ -24,6 +26,7 @@ export class OnboardingReminderService {
         this.sendReminderForDay(now, 3),
         this.sendReminderForDay(now, 7),
       ]);
+      await this.sendPostSequencePush(now);
       logger.info('Onboarding reminder job completed');
     } catch (error) {
       logger.error(
@@ -70,6 +73,50 @@ export class OnboardingReminderService {
     }
   }
 
+  /**
+   * Optional push after the email sequence: day-7 email sent ≥1 day ago,
+   * still incomplete, has push token, not yet pushed for this campaign.
+   */
+  private async sendPostSequencePush(now: Date): Promise<void> {
+    try {
+      const day7SentBefore = subDays(now, 1);
+
+      const users = await this.userRepository
+        .createQueryBuilder('user')
+        .where('user.isOnboardingComplete = :complete', { complete: false })
+        .andWhere('(user.accountStatus IS NULL OR user.accountStatus = :active)', {
+          active: 'active',
+        })
+        .andWhere('user.pushToken IS NOT NULL')
+        .andWhere('user.pushToken != :empty', { empty: '' })
+        .andWhere('user.pushNotificationsEnabled = :enabled', { enabled: true })
+        .andWhere('user.onboardingReminderPushSentAt IS NULL')
+        .andWhere(
+          `JSON_EXTRACT(user.onboardingReminderEmailsSent, '$.day7') IS NOT NULL`,
+        )
+        .andWhere('user.lastOnboardingReminderEmailSentAt <= :day7SentBefore', {
+          day7SentBefore,
+        })
+        .getMany();
+
+      logger.info(
+        `Found ${users.length} users for post-sequence onboarding push`,
+      );
+
+      for (const user of users) {
+        await this.sendReminderPush(user);
+        await this.userRepository.update(user.id, {
+          onboardingReminderPushSentAt: new Date(),
+        });
+      }
+    } catch (error) {
+      logger.error(
+        'Error in sendPostSequencePush:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+
   private async sendReminderEmail(user: User, days: ReminderDay): Promise<void> {
     try {
       const userName = user.firstName
@@ -108,6 +155,40 @@ export class OnboardingReminderService {
     } catch (error) {
       logger.error(
         `Error sending day ${days} onboarding reminder to ${user.email}:`,
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+
+  private async sendReminderPush(user: User): Promise<void> {
+    try {
+      if (!user.pushToken || user.pushNotificationsEnabled === false) {
+        return;
+      }
+
+      const firstName = user.firstName?.trim();
+      const title = firstName
+        ? `${firstName}, finish your Spiriment setup`
+        : 'Finish your Spiriment setup';
+      const body =
+        'Your profile is almost ready — tap to pick up where you left off.';
+
+      await pushNotificationService.sendToUser({
+        userId: user.id,
+        pushToken: user.pushToken,
+        title,
+        body,
+        data: {
+          type: 'onboarding_reminder',
+          deepLink: APP_DEEP_LINK_ONBOARDING,
+        },
+        channelId: 'default',
+      });
+
+      logger.info(`Onboarding reminder push sent to user ${user.id}`);
+    } catch (error) {
+      logger.error(
+        `Error sending onboarding reminder push to user ${user.id}:`,
         error instanceof Error ? error : new Error(String(error)),
       );
     }

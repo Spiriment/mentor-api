@@ -153,6 +153,10 @@ export class User extends BaseEntity {
   @Column({ name: 'lastOnboardingReminderEmailSentAt', nullable: true })
   lastOnboardingReminderEmailSentAt?: Date;
 
+  /** One-time push after the day-7 onboarding reminder email (optional; only if push token exists). */
+  @Column({ name: 'onboardingReminderPushSentAt', nullable: true })
+  onboardingReminderPushSentAt?: Date | null;
+
   // Notification preferences
   @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
   notificationPreferences?: string[]; // ['messages', 'session_reminders', 'mentorship_requests', 'study_reminders']
