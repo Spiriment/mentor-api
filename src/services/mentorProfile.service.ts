@@ -108,11 +108,17 @@ export class MentorProfileService {
         case 'menteeCalling':
           profile.menteeCalling = data.menteeCalling;
           break;
+        case 'spiritualExpertise':
+          profile.spiritualExpertise = data.spiritualExpertise;
+          break;
         case 'videoIntroduction':
           profile.videoIntroduction = data.videoIntroduction;
           break;
         case 'profileImage':
           profile.profileImage = data.profileImage;
+          break;
+        case 'availability':
+          // Marker step after availability onboarding — no profile column
           break;
         default:
           throw new Error(`Unknown onboarding step: ${step}`);

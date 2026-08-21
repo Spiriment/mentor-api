@@ -83,6 +83,11 @@ export class MenteeProfileService {
         case 'christianExperience':
           profile.christianExperience = data.christianExperience;
           break;
+        case 'churchAffiliation':
+          profile.churchDenomination =
+            data.churchDenomination != null ? String(data.churchDenomination) : '';
+          profile.churchName = data.churchName != null ? String(data.churchName) : '';
+          break;
         case 'bibleTopics':
           profile.bibleTopics = data.bibleTopics;
           break;
