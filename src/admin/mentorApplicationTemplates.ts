@@ -13,27 +13,27 @@ export const MENTOR_APPLICATION_TEMPLATES: Record<
 > = {
   mentor_application_approved_v1: {
     subject: 'Your Spiriment mentor application has been approved',
-    body:
-      'Congratulations — your mentor application has been approved. Open the Spiriment app to finish any remaining profile steps and start receiving session requests.',
+    body: 'Congratulations — your mentor application has been approved. Open the Spiriment app to finish any remaining profile steps and start receiving session requests.',
   },
   mentor_application_rejected_v1: {
     subject: 'Update on your Spiriment mentor application',
-    body:
-      'Thank you for applying to mentor on Spiriment. We are unable to approve your application at this time. If you have questions, please contact support.',
+    body: 'Thank you for applying to mentor on Spiriment. We are unable to approve your application at this time. If you have questions, please contact support.',
   },
   mentor_application_needs_more_info_v1: {
     subject: 'More information needed for your mentor application',
-    body:
-      'We need a bit more information before we can continue reviewing your mentor application. Open the Spiriment app to read the request, update your profile or intro video, then tap Resubmit for review.',
+    body: 'We need a bit more information before we can continue reviewing your mentor application. Open the Spiriment app to read the request, update your profile or intro video, then tap Resubmit for review.',
   },
 };
 
 export function resolveMentorApplicationTemplate(
   templateId: string | undefined,
   action: 'approve' | 'reject' | 'needs_more_info',
-  dynamicTemplates?: Record<string, { subject: string; body: string }>
+  dynamicTemplates?: Record<string, { subject: string; body: string }>,
 ): { subject: string; body: string } {
-  const mergedTemplates = { ...MENTOR_APPLICATION_TEMPLATES, ...dynamicTemplates };
+  const mergedTemplates = {
+    ...MENTOR_APPLICATION_TEMPLATES,
+    ...dynamicTemplates,
+  };
 
   const byAction: Record<typeof action, MentorApplicationTemplateId> = {
     approve: 'mentor_application_approved_v1',
@@ -41,11 +41,11 @@ export function resolveMentorApplicationTemplate(
     needs_more_info: 'mentor_application_needs_more_info_v1',
   };
 
-  if (
-    templateId &&
-    Object.keys(mergedTemplates).includes(templateId)
-  ) {
-    return mergedTemplates[templateId as MentorApplicationTemplateId] || mergedTemplates[byAction[action]];
+  if (templateId && Object.keys(mergedTemplates).includes(templateId)) {
+    return (
+      mergedTemplates[templateId as MentorApplicationTemplateId] ||
+      mergedTemplates[byAction[action]]
+    );
   }
 
   return mergedTemplates[byAction[action]];
