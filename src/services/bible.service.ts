@@ -11,19 +11,24 @@ export type BibleLanguage = 'eng' | 'deu' | 'nld' | 'spa' | 'fra' | 'ita';
 // English Bible translations (Dam IDs from Bible Brain API)
 export type BibleTranslation = 'KJV' | 'NIV' | 'NKJV' | 'NLT' | 'ESV' | 'NASB' | 'CSB' | 'WEB' | 'ASV';
 
-// Mapping of translation codes to Bible Brain Dam IDs
-// Note: These fileset IDs may change or not be available for all books
-// The system will fall back to alternative sources if these fail
-const TRANSLATION_DAM_IDS: Record<BibleTranslation, string> = {
-  KJV: 'ENGKJVN2ET', // King James Version (was incorrectly set to ESV)
-  NIV: 'ENGNIVN2ET', // New International Version  
-  NKJV: 'ENGNKJN2ET', // New King James Version
-  NLT: 'ENGNLTN2ET', // New Living Translation
-  ESV: 'ENGESVN2DA', // English Standard Version
-  NASB: 'ENGNASN2ET', // New American Standard Bible
-  CSB: 'ENGCSBN2ET', // Christian Standard Bible
-  WEB: 'ENGWEBN2ET', // World English Bible
-  ASV: 'ENGASV', // American Standard Version (fallback)
+// Mapping of translation codes to Bible Brain Dam IDs.
+// Bible Brain splits each translation's text fileset into separate Old
+// Testament (`O_ET`) and New Testament (`N_ET`) IDs — a single combined ID
+// per translation (the old `*N2ET`/`*N2DA` scheme) no longer exists on their
+// API and returns 404 for every request. Pick ot/nt based on the book.
+// CSB and NIV currently have no text fileset on Bible Brain at all (video/
+// audio only — likely licensing) and are commented out; requesting either
+// will fall through to the bible-api.com fallback (English public-domain
+// translations only, so NIV/CSB still won't resolve there either).
+const TRANSLATION_DAM_IDS: Partial<Record<BibleTranslation, { ot: string; nt: string }>> = {
+  KJV: { ot: 'ENGKJVO_ET', nt: 'ENGKJVN_ET' }, // King James Version
+  NKJV: { ot: 'ENGNKJO_ET', nt: 'ENGNKJN_ET' }, // New King James Version
+  NLT: { ot: 'ENGNLTO_ET', nt: 'ENGNLTN_ET' }, // New Living Translation
+  ESV: { ot: 'ENGESVO_ET', nt: 'ENGESVN_ET' }, // English Standard Version
+  NASB: { ot: 'ENGNASO_ET', nt: 'ENGNASN_ET' }, // New American Standard Bible
+  WEB: { ot: 'ENGWEBO_ET', nt: 'ENGWEBN_ET' }, // World English Bible
+  // NIV: no text fileset currently available on Bible Brain (video-only).
+  // CSB: no text fileset currently available on Bible Brain (video/audio only).
 };
 
 // Translation names for display
@@ -184,6 +189,10 @@ const BOOK_CODE_TO_ID: Record<string, number> = {
   JUD: 65,
   REV: 66,
 };
+
+/** Books 1 (Genesis) through 39 (Malachi) are Old Testament; 40+ are New Testament. */
+const isOldTestament = (bookCode: string): boolean =>
+  (BOOK_CODE_TO_ID[bookCode] ?? 40) <= 39;
 
 export class BibleService {
   private cache: Map<string, CacheEntry<any>> = new Map();
@@ -1378,8 +1387,12 @@ export class BibleService {
     chapter: number,
     translation: BibleTranslation
   ) {
-    const damId = TRANSLATION_DAM_IDS[translation];
     const bookCode = BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
+    const testament = isOldTestament(bookCode) ? 'ot' : 'nt';
+    const damId = TRANSLATION_DAM_IDS[translation]?.[testament];
+    if (!damId) {
+      throw new Error(`No text fileset available for ${translation}`);
+    }
 
     // Try the requested translation first
     try {
@@ -1436,8 +1449,9 @@ export class BibleService {
         
         try {
           console.log(`Trying fallback translation: ${fallback} for ${book} ${chapter}`);
-          const fallbackDamId = TRANSLATION_DAM_IDS[fallback];
-          
+          const fallbackDamId = TRANSLATION_DAM_IDS[fallback]?.[testament];
+          if (!fallbackDamId) continue;
+
           const versesResponse = await axios.get(
             `${this.bibleBrainBaseUrl}/api/bibles/filesets/${fallbackDamId}/${bookCode}/${chapter}`,
             {
@@ -1576,14 +1590,16 @@ export class BibleService {
   }
 
   /**
-   * Get available English Bible translations
+   * Get available English Bible translations — only those with a working
+   * text fileset on Bible Brain (e.g. NIV/CSB currently have none).
    */
-  getAvailableTranslations(): Array<{ code: BibleTranslation; name: string; damId: string }> {
-    return Object.entries(TRANSLATION_NAMES).map(([code, name]) => ({
-      code: code as BibleTranslation,
-      name,
-      damId: TRANSLATION_DAM_IDS[code as BibleTranslation],
-    }));
+  getAvailableTranslations(): Array<{ code: BibleTranslation; name: string }> {
+    return Object.entries(TRANSLATION_NAMES)
+      .filter(([code]) => !!TRANSLATION_DAM_IDS[code as BibleTranslation])
+      .map(([code, name]) => ({
+        code: code as BibleTranslation,
+        name,
+      }));
   }
 
   /**
