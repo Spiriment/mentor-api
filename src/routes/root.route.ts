@@ -32,6 +32,7 @@ import { SystemConfigService } from '@/core/systemConfig.service';
 import { Config } from '@/config';
 import { EncryptionServiceImpl } from '@/common';
 import { createChurchPortalRouter } from '@/church-portal/router';
+import { openAppHandler } from '@/controllers/openApp.controller';
 import subscriptionRoutes from './subscription.routes';
 import revenueCatWebhookRoutes from './revenueCatWebhook.routes';
 import familyPlanRoutes from './familyPlan.routes';
@@ -103,6 +104,9 @@ const createRootRoutes = () => {
     const statusCode = healthCheck.status === 'ok' ? 200 : 503;
     res.status(statusCode).json(healthCheck);
   });
+
+  /** Public smart link for email CTAs — opens spiriment:// with store fallback. */
+  rootRouter.get('/open-app', openAppHandler);
 
   rootRouter.use('/api/auth', (req, res, next) => {
     const services = initializeServices();

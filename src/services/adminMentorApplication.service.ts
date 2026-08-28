@@ -13,7 +13,7 @@ import {
 } from '@/admin/mentorApplicationTemplates';
 import { adminAuditService } from './adminAudit.service';
 import { adminSpirimentSettingsService } from './adminSpirimentSettings.service';
-import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
+import { APP_EMAIL_OPEN_ONBOARDING } from '@/common/constants/appEmailLinks';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -324,7 +324,7 @@ export class AdminMentorApplicationService {
           firstName: user.firstName || '',
           subject: emailSubject,
           message: emailBody,
-          actionUrl: APP_DEEP_LINK_ONBOARDING,
+          actionUrl: APP_EMAIL_OPEN_ONBOARDING,
           actionText: 'Open Spiriment',
         });
       } catch (e) {

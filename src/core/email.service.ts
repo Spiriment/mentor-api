@@ -10,7 +10,20 @@ import { QueueService } from './queue.service';
 import { EmailJobData } from '../queue/types';
 import { withDefaultEmailAttachments } from '../common/emailAttachments';
 import { getEmailTemplateIconContext } from '../common/emailSocialIcons';
-import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
+import {
+  APP_EMAIL_OPEN_BROWSE_MENTORS,
+  APP_EMAIL_OPEN_CHAT,
+  APP_EMAIL_OPEN_GROUP_SESSIONS,
+  APP_EMAIL_OPEN_HOME,
+  APP_EMAIL_OPEN_MENTORS,
+  APP_EMAIL_OPEN_NOTIFICATIONS,
+  APP_EMAIL_OPEN_ONBOARDING,
+  APP_EMAIL_OPEN_PROFILE,
+  APP_EMAIL_OPEN_REPORTS,
+  APP_EMAIL_OPEN_SCHEDULE,
+  APP_EMAIL_OPEN_SESSIONS,
+  buildEmailOpenUrl,
+} from '@/common/constants/appEmailLinks';
 
 dotenv.config();
 
@@ -106,10 +119,15 @@ export class EmailService {
     handlebars.registerHelper('eq', function (a, b) {
       return a === b;
     });
-    
-    // Helper to increment numbers (for assignment numbering)
+
     handlebars.registerHelper('inc', function (value) {
       return parseInt(value) + 1;
+    });
+
+    /** Email CTA: {{openAppUrl "profile"}} or {{openAppUrl pathVariable}} */
+    handlebars.registerHelper('openAppUrl', (path: unknown) => {
+      const p = path != null && String(path).trim() ? String(path) : 'onboarding';
+      return buildEmailOpenUrl(p);
     });
   }
 
@@ -413,8 +431,8 @@ export class EmailService {
         title: props.subject,
         userName: props.firstName || 'there',
         message: props.message,
-        // Full deep link or https URL — never APP_URL + relative path
-        actionUrl: props.actionUrl || APP_DEEP_LINK_ONBOARDING,
+        // HTTPS smart link for email clients — not spiriment://
+        actionUrl: props.actionUrl || APP_EMAIL_OPEN_ONBOARDING,
         actionText: props.actionText || 'Open Spiriment',
       },
       attachments: props.attachments,
@@ -577,7 +595,7 @@ export class EmailService {
         duration,
         description,
         sessionType,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -602,7 +620,7 @@ export class EmailService {
         scheduledTime,
         duration,
         sessionType,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -625,7 +643,7 @@ export class EmailService {
         mentorName,
         scheduledTime,
         reason,
-        appUrl: appUrl || 'spiriment://mentors',
+        appUrl: appUrl || APP_EMAIL_OPEN_MENTORS,
       },
     });
   }
@@ -659,7 +677,7 @@ export class EmailService {
         description,
         sessionType,
         location,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -690,7 +708,7 @@ export class EmailService {
         reason,
         message,
         sessionType,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -719,7 +737,7 @@ export class EmailService {
         duration,
         sessionType,
         location,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -748,7 +766,7 @@ export class EmailService {
         sessionType,
         location,
         reason,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -772,7 +790,7 @@ export class EmailService {
         sessionDate,
         assignments,
         assignmentCount: assignments.length,
-        appUrl: appUrl || 'spiriment://sessions',
+        appUrl: appUrl || APP_EMAIL_OPEN_SESSIONS,
       },
     });
   }
@@ -807,9 +825,13 @@ export class EmailService {
         duration: props.duration,
         groupSessionId: props.groupSessionId,
         participantId: props.participantId,
-        acceptUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=true`,
-        declineUrl: `spiriment://group-sessions/${props.groupSessionId}/respond?accept=false`,
-        appUrl: 'spiriment://group-sessions',
+        acceptUrl: buildEmailOpenUrl(
+          `group-sessions/${props.groupSessionId}/respond?accept=true`,
+        ),
+        declineUrl: buildEmailOpenUrl(
+          `group-sessions/${props.groupSessionId}/respond?accept=false`,
+        ),
+        appUrl: APP_EMAIL_OPEN_GROUP_SESSIONS,
       },
     });
   }
@@ -819,6 +841,7 @@ export class EmailService {
     mentorName: string;
     menteeName: string;
     sessionTitle: string;
+    groupSessionId: string;
   }): Promise<void> {
     await this.sendEmailWithTemplate({
       to: props.to,
@@ -829,7 +852,8 @@ export class EmailService {
         mentorName: props.mentorName,
         menteeName: props.menteeName,
         sessionTitle: props.sessionTitle,
-        appUrl: 'spiriment://group-sessions',
+        groupSessionId: props.groupSessionId,
+        appUrl: buildEmailOpenUrl(`group-sessions/${props.groupSessionId}`),
       },
     });
   }
@@ -839,6 +863,7 @@ export class EmailService {
     mentorName: string;
     menteeName: string;
     sessionTitle: string;
+    groupSessionId: string;
     declineReason?: string;
   }): Promise<void> {
     await this.sendEmailWithTemplate({
@@ -851,7 +876,8 @@ export class EmailService {
         menteeName: props.menteeName,
         sessionTitle: props.sessionTitle,
         declineReason: props.declineReason,
-        appUrl: 'spiriment://group-sessions',
+        groupSessionId: props.groupSessionId,
+        appUrl: buildEmailOpenUrl(`group-sessions/${props.groupSessionId}`),
       },
     });
   }
@@ -864,6 +890,7 @@ export class EmailService {
     duration: number;
     mentorName: string;
     timeUntilSession: string;
+    groupSessionId: string;
   }): Promise<void> {
     const { format } = await import('date-fns');
     const scheduledTime = format(props.scheduledAt, "EEEE, MMMM d, yyyy 'at' h:mm a");
@@ -880,7 +907,8 @@ export class EmailService {
         duration: props.duration,
         mentorName: props.mentorName,
         timeUntilSession: props.timeUntilSession,
-        appUrl: 'spiriment://group-sessions',
+        groupSessionId: props.groupSessionId,
+        appUrl: buildEmailOpenUrl(`group-sessions/${props.groupSessionId}`),
       },
     });
   }
@@ -902,7 +930,7 @@ export class EmailService {
         mentorName: props.mentorName,
         sessionTitle: props.sessionTitle,
         cancellationReason: props.cancellationReason,
-        appUrl: 'spiriment://sessions',
+        appUrl: APP_EMAIL_OPEN_SCHEDULE,
       },
     });
   }
@@ -954,6 +982,7 @@ export class EmailService {
       templateData: {
         title: 'Assignment Reminder',
         ...props,
+        sessionOpenUrl: buildEmailOpenUrl(`sessions/${props.sessionId}/notes`),
         currentYear: new Date().getFullYear(),
       },
     });
@@ -972,6 +1001,9 @@ export class EmailService {
       partialName: 'missed-session',
       templateData: {
         ...props,
+        rescheduleOpenUrl: buildEmailOpenUrl(
+          `sessions/reschedule/${props.sessionId}`,
+        ),
         currentYear: new Date().getFullYear(),
       },
     });

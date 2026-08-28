@@ -6,6 +6,7 @@ import { pushNotificationService } from './pushNotification.service';
 import { LessThan, IsNull } from 'typeorm';
 import { subDays } from 'date-fns';
 import { USER_ROLE } from '@/common/constants';
+import { APP_EMAIL_OPEN_HOME } from '@/common/constants/appEmailLinks';
 
 export class ReengagementService {
   private userRepository = AppDataSource.getRepository(User);
@@ -147,7 +148,7 @@ export class ReengagementService {
           ? 'mentees and fellow mentors'
           : 'mentor and fellow mentees';
 
-      const appLink = process.env.FRONTEND_URL || 'https://spiriment.com';
+      const appLink = APP_EMAIL_OPEN_HOME;
 
       const templateMap = {
         3: 'reengagement-day3',

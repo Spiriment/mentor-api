@@ -3,6 +3,7 @@ import { User } from '@/database/entities/user.entity';
 import { logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { APP_DEEP_LINK_ONBOARDING } from '@/common/constants/appDeepLinks';
+import { APP_EMAIL_OPEN_ONBOARDING } from '@/common/constants/appEmailLinks';
 import { pushNotificationService } from './pushNotification.service';
 import { subDays } from 'date-fns';
 
@@ -123,7 +124,7 @@ export class OnboardingReminderService {
         ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}`.trim()
         : 'there';
 
-      const appLink = APP_DEEP_LINK_ONBOARDING;
+      const appLink = APP_EMAIL_OPEN_ONBOARDING;
       const hasRole = !!user.role;
 
       const templateMap: Record<ReminderDay, string> = {

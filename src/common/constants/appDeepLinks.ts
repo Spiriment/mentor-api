@@ -8,6 +8,6 @@ export const APP_DEEP_LINK_SUCCESS =
 export const APP_DEEP_LINK_CANCEL =
   process.env.APP_DEEP_LINK_CANCEL ?? 'spiriment://subscription/cancel';
 
-/** Resume incomplete onboarding (email CTAs + in-app linking). */
+/** Resume incomplete onboarding (in-app, push, Stripe — not email). */
 export const APP_DEEP_LINK_ONBOARDING =
   process.env.APP_DEEP_LINK_ONBOARDING ?? 'spiriment://onboarding';

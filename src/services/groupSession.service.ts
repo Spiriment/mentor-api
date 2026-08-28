@@ -373,6 +373,7 @@ export class GroupSessionService {
           mentorName: formatUserName(mentor),
           menteeName: formatUserName(mentee),
           sessionTitle: participant.groupSession.title,
+          groupSessionId: participant.groupSession.id,
         });
 
         await notificationService.createNotification({
@@ -393,6 +394,7 @@ export class GroupSessionService {
           mentorName: formatUserName(mentor),
           menteeName: formatUserName(mentee),
           sessionTitle: participant.groupSession.title,
+          groupSessionId: participant.groupSession.id,
           declineReason: data.declineReason,
         });
 

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { EmailService } from '../src/core/email.service';
 import { getEmailService } from '../src/services/emailHelper';
+import { APP_EMAIL_OPEN_HOME } from '../src/common/constants/appEmailLinks';
 
 const TEST_EMAIL = 'taiyeogunwumi93@gmail.com';
 
@@ -44,7 +45,7 @@ async function sendTestEmails() {
       templateData: {
         userName: 'Taiye',
         roleSpecific: 'mentees and fellow mentors', // or 'mentor and fellow mentees' for mentees
-        appLink: process.env.FRONTEND_URL || 'https://spiriment.com',
+        appLink: APP_EMAIL_OPEN_HOME,
       },
     });
     console.log('✅ Day 3 Reengagement email sent!\n');
@@ -59,7 +60,7 @@ async function sendTestEmails() {
       templateData: {
         userName: 'Taiye',
         roleSpecific: 'mentees and fellow mentors',
-        appLink: process.env.FRONTEND_URL || 'https://spiriment.com',
+        appLink: APP_EMAIL_OPEN_HOME,
       },
     });
     console.log('✅ Day 7 Reengagement email sent!\n');
@@ -74,7 +75,7 @@ async function sendTestEmails() {
       templateData: {
         userName: 'Taiye',
         roleSpecific: 'mentees and fellow mentors',
-        appLink: process.env.FRONTEND_URL || 'https://spiriment.com',
+        appLink: APP_EMAIL_OPEN_HOME,
       },
     });
     console.log('✅ Day 30 Reengagement email sent!\n');
