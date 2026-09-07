@@ -69,6 +69,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     type,
     app_user_id,
     product_id,
+    new_product_id,
     expiration_at_ms,
     price,
     price_in_purchased_currency,
@@ -114,11 +115,15 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       case 'INITIAL_PURCHASE':
       case 'RENEWAL':
       case 'PRODUCT_CHANGE': {
-        const tier = tierFromProductId(product_id);
+        // PRODUCT_CHANGE carries the destination product in new_product_id;
+        // product_id is the product the subscriber is switching away from.
+        const effectiveProductId =
+          type === 'PRODUCT_CHANGE' && new_product_id ? new_product_id : product_id;
+        const tier = tierFromProductId(effectiveProductId);
         if (!tier) {
           logger.warn('RevenueCat webhook: unknown product, will retry', {
             eventId,
-            product_id,
+            product_id: effectiveProductId,
           });
           await failWebhook('Unknown product — will retry');
           return;
@@ -128,8 +133,12 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           status: 'active',
           externalProvider: 'revenuecat',
           externalRef: rcExternalRef,
-          mrrCents: mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency }),
-          billingInterval: inferBillingIntervalFromProductId(product_id),
+          mrrCents: mrrCentsFromRcEvent({
+            product_id: effectiveProductId,
+            price,
+            price_in_purchased_currency,
+          }),
+          billingInterval: inferBillingIntervalFromProductId(effectiveProductId),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
         });
         break;
