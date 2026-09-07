@@ -248,6 +248,16 @@ export class SubscriptionService {
       );
     }
     if (provider === 'stripe_family') {
+      const membership = await familyPlanService.findMostRecentMemberByUserId(userId);
+      if (membership?.removedAt) {
+        const until = sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : null;
+        throw new AppError(
+          until
+            ? `You've been removed from the family plan, but you keep access until ${until}. You can subscribe on your own after that.`
+            : "You've been removed from the family plan. Your access will continue until the current billing period ends, after which you can subscribe on your own.",
+          StatusCodes.CONFLICT,
+        );
+      }
       throw new AppError(
         'Your subscription is managed through a family plan.',
         StatusCodes.CONFLICT,
@@ -449,7 +459,10 @@ export class SubscriptionService {
     }
     if (data.notes !== undefined) {
       sub.notes = data.notes ?? null;
-    } else if (['basic', 'pro', 'premium'].includes(data.tier) && data.status === 'active') {
+    } else if (
+      ['basic', 'pro', 'premium'].includes(data.tier) &&
+      (data.status === 'active' || data.status === 'trialing')
+    ) {
       sub.notes = null;
     }
 

@@ -362,6 +362,16 @@ export class FamilyPlanService {
     return this.memberRepo.findOne({ where: { userId, removedAt: IsNull() } });
   }
 
+  /** Most recent membership row for this user, including removed ones — used to
+   * distinguish "still on a family plan" from "removed, but riding out a
+   * deferred Stripe cancellation" when deciding whether to block checkout. */
+  async findMostRecentMemberByUserId(userId: string): Promise<FamilyMember | null> {
+    return this.memberRepo.findOne({
+      where: { userId },
+      order: { removedAt: 'DESC', createdAt: 'DESC' },
+    });
+  }
+
   async ensureMemberFromCheckout(params: {
     planId: string;
     memberUserId: string;

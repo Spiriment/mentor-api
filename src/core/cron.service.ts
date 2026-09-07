@@ -367,26 +367,6 @@ export class CronService {
       this.tasks.set("mrr-snapshot", mrrSnapshotTask);
       logger.info("MRR snapshot cron job scheduled (daily 00:15 UTC)");
 
-      const churchPendingPruneTask = cron.schedule(
-        "30 0 * * *",
-        async () => {
-          try {
-            const pruned = await adminOrgPlanService.pruneExpiredPendingChurchCheckouts();
-            if (pruned > 0) {
-              logger.info(`Pruned ${pruned} expired pending church checkout reservations`);
-            }
-          } catch (err) {
-            logger.error(
-              "Error in church pending checkout prune cron",
-              err instanceof Error ? err : new Error(String(err)),
-            );
-          }
-        },
-        { timezone: "UTC" },
-      );
-      this.tasks.set("church-pending-prune", churchPendingPruneTask);
-      logger.info("Church pending checkout prune cron scheduled (daily 00:30 UTC)");
-
       const webhookPruneTask = cron.schedule(
         "45 0 * * *",
         async () => {
@@ -521,8 +501,6 @@ export class CronService {
         return "0 11 * * * (Daily at 11 AM UTC)";
       case "mrr-snapshot":
         return "15 0 * * * (Daily at 00:15 UTC)";
-      case "church-pending-prune":
-        return "30 0 * * * (Daily at 00:30 UTC)";
       case "webhook-idempotency-prune":
         return "45 0 * * * (Daily at 00:45 UTC — retains 90 days)";
       case "broadcast-schedule":

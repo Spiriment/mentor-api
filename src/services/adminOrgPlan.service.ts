@@ -30,39 +30,6 @@ import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
 const subscriptionService = new SubscriptionService(new EmailService(null));
 
 const CHURCH_PLAN_TYPE: OrgPlanType = 'church';
-/** Match Stripe checkout session max age so pending reservations survive slow payers. */
-const CHURCH_PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-type PendingChurchAssignment = {
-  userId: string;
-  tier: string;
-  createdAt: string;
-};
-
-function parsePendingChurchAssignments(
-  metadata: Record<string, unknown> | null | undefined,
-): PendingChurchAssignment[] {
-  const raw = metadata?.pendingAssignments;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (entry): entry is PendingChurchAssignment =>
-      !!entry &&
-      typeof entry === 'object' &&
-      typeof (entry as PendingChurchAssignment).userId === 'string' &&
-      typeof (entry as PendingChurchAssignment).createdAt === 'string',
-  );
-}
-
-function pruneExpiredPendingChurchAssignments(
-  pending: PendingChurchAssignment[],
-): PendingChurchAssignment[] {
-  const cutoff = Date.now() - CHURCH_PENDING_TTL_MS;
-  return pending.filter((entry) => new Date(entry.createdAt).getTime() > cutoff);
-}
-
-function reservedChurchSeats(plan: OrgPlan): number {
-  return plan.usedSeats + pruneExpiredPendingChurchAssignments(parsePendingChurchAssignments(plan.metadata)).length;
-}
 
 export class AdminOrgPlanService {
   private serialize(p: OrgPlan) {
@@ -245,26 +212,6 @@ export class AdminOrgPlanService {
     return plan;
   }
 
-  /** Remove expired pending church checkout reservations from all active plans. */
-  async pruneExpiredPendingChurchCheckouts(): Promise<number> {
-    const planRepo = AppDataSource.getRepository(OrgPlan);
-    const plans = await planRepo.find({
-      where: { planType: CHURCH_PLAN_TYPE, status: 'active' },
-    });
-
-    let pruned = 0;
-    for (const plan of plans) {
-      const before = parsePendingChurchAssignments(plan.metadata);
-      const after = pruneExpiredPendingChurchAssignments(before);
-      if (after.length < before.length) {
-        pruned += before.length - after.length;
-        plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: after };
-        await planRepo.save(plan);
-      }
-    }
-    return pruned;
-  }
-
   async getMembers(planId: string) {
     await this.ensureChurchPlan(planId);
     const users = await AppDataSource.getRepository(User).find({
@@ -373,28 +320,6 @@ export class AdminOrgPlanService {
 
   // ─── Member assignment ────────────────────────────────────────────────────────
 
-  async releasePendingChurchCheckout(planId: string, userId: string): Promise<void> {
-    await this.releasePendingChurchAssignment(planId, userId);
-  }
-
-  private async releasePendingChurchAssignment(planId: string, userId: string): Promise<void> {
-    await AppDataSource.transaction(async (manager) => {
-      const planRepo = manager.getRepository(OrgPlan);
-      const plan = await planRepo.findOne({
-        where: { id: planId, planType: 'church' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!plan) return;
-
-      const pending = pruneExpiredPendingChurchAssignments(
-        parsePendingChurchAssignments(plan.metadata),
-      ).filter((entry) => entry.userId !== userId);
-
-      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pending };
-      await planRepo.save(plan);
-    });
-  }
-
   async assignMember(
     planId: string,
     userId: string,
@@ -420,11 +345,7 @@ export class AdminOrgPlanService {
       });
       if (!plan) throw new AppError('Plan not found or inactive', 404);
 
-      const pending = pruneExpiredPendingChurchAssignments(
-        parsePendingChurchAssignments(plan.metadata),
-      ).filter((entry) => entry.userId !== userId);
-
-      if (plan.usedSeats + pending.length >= plan.totalSeats) {
+      if (plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Plan has no available seats', 409);
       }
 
@@ -435,7 +356,6 @@ export class AdminOrgPlanService {
 
       plan.metadata = {
         ...(plan.metadata ?? {}),
-        pendingAssignments: pending,
         memberTiers,
       };
       plan.usedSeats += 1;
@@ -889,20 +809,10 @@ export class AdminOrgPlanService {
         throw new AppError('Church plan not found or inactive', 404);
       }
 
-      const pending = pruneExpiredPendingChurchAssignments(
-        parsePendingChurchAssignments(plan.metadata),
-      );
-      const hadPending = pending.some((entry) => entry.userId === userId);
-      const pendingAfterRemoval = pending.filter((entry) => entry.userId !== userId);
-
-      if (!hadPending && plan.usedSeats >= plan.totalSeats) {
+      if (plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Church plan has no available seats', 409);
       }
-      if (hadPending && plan.usedSeats + pending.length > plan.totalSeats) {
-        throw new AppError('Church plan seat reservation is invalid', 409);
-      }
 
-      plan.metadata = { ...(plan.metadata ?? {}), pendingAssignments: pendingAfterRemoval };
       user.orgPlanId = orgPlanId;
       plan.usedSeats += 1;
       await userRepo.save(user);
