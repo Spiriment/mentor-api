@@ -176,6 +176,38 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
         break;
       }
 
+      case 'UNCANCELLATION': {
+        const current = await subscriptionService.getSubscriptionForUser(user.id);
+        const tier =
+          current.tier !== 'none' && current.tier !== 'free'
+            ? (current.tier as SubscriptionTier)
+            : tierFromProductId(product_id);
+
+        if (!tier) {
+          logger.warn('RevenueCat webhook: UNCANCELLATION with unknown tier', { eventId, product_id });
+          await failWebhook('Unknown product — will retry');
+          return;
+        }
+
+        await subscriptionService.upsertSubscription(user.id, {
+          tier,
+          status: 'active',
+          externalProvider: 'revenuecat',
+          externalRef: rcExternalRef ?? current.externalRef,
+          mrrCents: product_id
+            ? mrrCentsFromRcEvent({ product_id, price, price_in_purchased_currency })
+            : undefined,
+          billingInterval: product_id ? inferBillingIntervalFromProductId(product_id) : undefined,
+          expiresAt: expiration_at_ms
+            ? new Date(expiration_at_ms)
+            : current.expiresAt
+              ? new Date(current.expiresAt as string | Date)
+              : null,
+          notes: null,
+        });
+        break;
+      }
+
       case 'EXPIRATION': {
         const applied = await subscriptionService.upsertSubscription(user.id, {
           tier: 'free',
