@@ -218,24 +218,15 @@ export class AdminSubscriptionService {
     mrrQb.andWhere('s.mrrCents IS NOT NULL');
     const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
 
+    // applyMrrFilters already excludes admin/internal_test/church_central rows, so any
+    // remaining unknown-MRR row here is a genuine paying-provider subscriber (stripe,
+    // stripe_family, or revenuecat) whose mrrCents just hasn't been backfilled yet.
     const unknownMrrQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
     applyMrrFilters(unknownMrrQb, 's');
     unknownMrrQb.andWhere('s.mrrCents IS NULL');
     const unknownMrrRow = await unknownMrrQb.getRawOne<{ cnt: string }>();
     const mrrUnknownSubscriberCount = unknownMrrRow?.cnt
       ? parseInt(unknownMrrRow.cnt, 10)
-      : 0;
-
-    const manualUnknownMrrQb = subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
-    applyMrrFilters(manualUnknownMrrQb, 's');
-    manualUnknownMrrQb
-      .andWhere('s.mrrCents IS NULL')
-      .andWhere("(s.externalProvider = 'admin' OR s.notes LIKE :manualNote)", {
-        manualNote: '%Manually granted%',
-      });
-    const manualUnknownMrrRow = await manualUnknownMrrQb.getRawOne<{ cnt: string }>();
-    const manualAssignmentUnknownMrrCount = manualUnknownMrrRow?.cnt
-      ? parseInt(manualUnknownMrrRow.cnt, 10)
       : 0;
 
     const totalMrrCents = mrrRow?.sum ? parseInt(mrrRow.sum, 10) : 0;
@@ -255,21 +246,14 @@ export class AdminSubscriptionService {
         currency: 'EUR',
         history: revenueHistory,
         mrrUnknownSubscriberCount,
-        manualAssignmentUnknownMrrCount,
       },
       activePlans: { church: activeChurchPlans, family: activeFamilyPlans },
       revenueNote:
         mrrUnknownSubscriberCount > 0
-          ? manualAssignmentUnknownMrrCount > 0
-            ? `${manualAssignmentUnknownMrrCount} manually assigned by admin (excluded from MRR).${
-                mrrUnknownSubscriberCount > manualAssignmentUnknownMrrCount
-                  ? ` ${mrrUnknownSubscriberCount - manualAssignmentUnknownMrrCount} other subscriber(s) also have unknown MRR.`
-                  : ''
-              }`
-            : `${mrrUnknownSubscriberCount} paying subscriber(s) have unknown MRR and are excluded from the total.`
+          ? `${mrrUnknownSubscriberCount} paying subscriber(s) have unknown MRR and are excluded from the total.`
           : null,
       metricsNote:
-        'Tier counts include trialing users. MRR and paying subscribers count active and past_due paid tiers only.',
+        'Tier counts include trialing users, church-plan members, and admin/promo comps. MRR and paying subscribers exclude church billing, admin comps, and internal promo codes, and count active/past_due paid tiers only.',
     };
   }
 
