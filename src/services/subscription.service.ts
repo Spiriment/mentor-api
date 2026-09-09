@@ -15,13 +15,18 @@ import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr'
 import { logger } from '@/config/int-services';
 import { familyPlanService } from './familyPlan.service';
 import { shouldIgnoreCrossProviderUpdate } from '@/common/subscription/crossProviderGuard';
+import {
+  TRIAL_EXPIRED_NOTE,
+  CANCEL_AT_PERIOD_END_NOTE,
+  TRIAL_PREEMPTED_NOTE,
+} from '@/common/constants/subscriptionNotes';
+
+export { TRIAL_EXPIRED_NOTE, CANCEL_AT_PERIOD_END_NOTE, TRIAL_PREEMPTED_NOTE };
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
 const TRIAL_DAYS = 7;
 const GRACE_PERIOD_DAYS = 1;
-export const TRIAL_EXPIRED_NOTE = 'trial_expired_unpaid';
-export const CANCEL_AT_PERIOD_END_NOTE = 'cancel_at_period_end';
 
 const TIER_DISPLAY: Record<SubscriptionTier, string> = {
   free: 'Free',
@@ -65,7 +70,9 @@ export class SubscriptionService {
 
   async startTrialForUser(userId: string) {
     const existing = await this.subRepo.findOne({ where: { user: { id: userId } } });
-    if (existing) {
+    const hasUnusedPreemptedTrial =
+      existing?.notes === TRIAL_PREEMPTED_NOTE && TIER_RANK[existing.tier] === 0;
+    if (existing && !hasUnusedPreemptedTrial) {
       if (existing.status === 'trialing') {
         throw new AppError('You are already on a free trial', StatusCodes.CONFLICT);
       }
@@ -73,6 +80,19 @@ export class SubscriptionService {
         'Free trial is not available for this account',
         StatusCodes.CONFLICT,
       );
+    }
+
+    if (existing) {
+      existing.tier = 'premium';
+      existing.status = 'trialing';
+      existing.currency = 'EUR';
+      existing.expiresAt = addDays(new Date(), TRIAL_DAYS);
+      existing.mrrCents = null;
+      existing.externalProvider = null;
+      existing.externalRef = null;
+      existing.notes = null;
+      await this.subRepo.save(existing);
+      return this.getSubscriptionForUser(userId);
     }
 
     const sub = this.subRepo.create({

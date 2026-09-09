@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { IsNull, In } from 'typeorm';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { TIER_ANNUAL_PRICE_EUR, TIER_PRICE_EUR } from '@/common/constants/subscriptionPricing';
+import { TRIAL_PREEMPTED_NOTE } from '@/common/constants/subscriptionNotes';
 
 const TIER_LABELS: Record<string, string> = {
   basic: 'Basic',
@@ -477,6 +478,10 @@ export class FamilyPlanService {
     if (!sub) {
       sub = this.subRepo.create({ user: { id: memberUserId } as User, currency: 'EUR' });
     }
+    // A trial started while this member's invite checkout was already in flight is about to be
+    // silently replaced by the paid family seat. Mark it so startTrialForUser knows this user
+    // never actually got to use a trial and can start one later (e.g. if they leave the plan).
+    const preemptingUnusedTrial = sub.status === 'trialing';
     const previousStatus = sub.status;
     sub.tier = member.tier;
     sub.status = status === 'past_due' ? 'past_due' : 'active';
@@ -485,6 +490,7 @@ export class FamilyPlanService {
     if (options?.mrrCents !== undefined) sub.mrrCents = options.mrrCents;
     if (options?.billingInterval !== undefined) sub.billingInterval = options.billingInterval;
     if (options?.expiresAt !== undefined) sub.expiresAt = options.expiresAt;
+    if (preemptingUnusedTrial) sub.notes = TRIAL_PREEMPTED_NOTE;
     if (status === 'past_due' && previousStatus !== 'past_due') {
       sub.pastDueAt = new Date();
     } else if (status === 'active') {
@@ -518,7 +524,9 @@ export class FamilyPlanService {
     sub.expiresAt = null;
     sub.pastDueAt = null;
     sub.billingInterval = null;
-    sub.notes = null;
+    // Preserve the preempted-trial marker (if present) so the member can still start the
+    // trial they never got to use once they're off the family plan — see syncMemberSubscription.
+    if (sub.notes !== TRIAL_PREEMPTED_NOTE) sub.notes = null;
     await this.subRepo.save(sub);
 
     if (wasPaidTier) {
