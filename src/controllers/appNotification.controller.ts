@@ -21,18 +21,21 @@ export class AppNotificationController {
       }
 
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
       const unreadOnly = req.query.unreadOnly === 'true';
 
       const notifications = await this.notificationService.getUserNotifications(
         user.id,
         limit,
-        unreadOnly
+        unreadOnly,
+        offset
       );
 
       logger.info('Notifications fetched successfully', {
         userId: user.id,
         count: notifications.length,
         unreadOnly,
+        offset,
       });
 
       return sendSuccessResponse(res, {

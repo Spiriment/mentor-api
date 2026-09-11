@@ -64,14 +64,16 @@ export class AppNotificationService {
   async getUserNotifications(
     userId: string,
     limit: number = 50,
-    unreadOnly: boolean = false
+    unreadOnly: boolean = false,
+    offset: number = 0
   ): Promise<AppNotification[]> {
     try {
       const queryBuilder = this.notificationRepository
         .createQueryBuilder('notification')
         .where('notification.userId = :userId', { userId })
         .orderBy('notification.createdAt', 'DESC')
-        .limit(limit);
+        .skip(offset)
+        .take(limit);
 
       if (unreadOnly) {
         queryBuilder.andWhere('notification.isRead = :isRead', { isRead: false });
