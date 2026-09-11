@@ -13,7 +13,6 @@ export class MrrSnapshotService {
   private get repo() {
     return AppDataSource.getRepository(MrrSnapshot);
   }
-
   private get subRepo() {
     return AppDataSource.getRepository(UserSubscription);
   }
@@ -23,7 +22,6 @@ export class MrrSnapshotService {
     applyMrrFilters(mrrQb, 's');
     mrrQb.andWhere('s.mrrCents IS NOT NULL');
     const mrrRow = await mrrQb.getRawOne<{ sum: string }>();
-
     const countQb = this.subRepo.createQueryBuilder('s').select('COUNT(*)', 'cnt');
     applyPayingSubscriberFilters(countQb, 's');
     const countRow = await countQb.getRawOne<{ cnt: string }>();
