@@ -6,6 +6,7 @@ import { QuizStreak } from '@/database/entities/quizStreak.entity';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { AppError } from '@/common';
 import { logger } from '@/config/int-services';
 import { v4 as uuidv4 } from 'uuid';
@@ -28,6 +29,7 @@ export class QuizService {
   private userRepo = AppDataSource.getRepository(User);
   private menteeProfileRepo = AppDataSource.getRepository(MenteeProfile);
   private mentorProfileRepo = AppDataSource.getRepository(MentorProfile);
+  private mentorshipRequestRepo = AppDataSource.getRepository(MentorshipRequest);
 
   // ─── Books ───────────────────────────────────────────────────────────────
 
@@ -426,15 +428,26 @@ export class QuizService {
 
   async getLeaderboard(
     userId: string,
-    period: 'week' | 'alltime'
+    period: 'week' | 'alltime',
+    scope: 'global' | 'mentees' = 'global'
   ): Promise<{ userId: string; name: string; profileImage: string | null; xp: number; isCurrentUser: boolean }[]> {
-    // Global XP leaderboard across ALL books and versions.
+    // Global XP leaderboard across ALL books and versions, optionally scoped to a
+    // mentor's own accepted mentees.
     // Best score per (userId, book, version) only — prevents farming by replaying same quiz.
     //
     // Version multipliers:
     //   1 → 1.0x  |  2 → 1.5x  |  3 → 2.0x  |  4 → 3.0x
 
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+
+    let scopedUserIds: string[] | null = null;
+    if (scope === 'mentees') {
+      const acceptedRequests = await this.mentorshipRequestRepo.find({
+        where: { mentorId: userId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
+      });
+      scopedUserIds = acceptedRequests.map((r) => r.menteeId);
+      if (scopedUserIds.length === 0) return [];
+    }
 
     // Inner subquery: best score per (userId, book, version), optionally filtered by week
     const innerQb = this.attemptRepo
@@ -449,6 +462,10 @@ export class QuizService {
 
     if (period === 'week') {
       innerQb.andWhere('a.completedAt >= :weekStart', { weekStart });
+    }
+
+    if (scopedUserIds) {
+      innerQb.andWhere('a.userId IN (:...scopedUserIds)', { scopedUserIds });
     }
 
     const innerSql = innerQb.getQuery();

@@ -63,8 +63,10 @@ export const getLeaderboard = async (req: Request, res: Response, next: NextFunc
   try {
     const userId = req.user!.id;
     const period = req.query.period === 'alltime' ? 'alltime' : 'week';
+    // "mentees" scope is only meaningful for mentors — mentees have no mentees of their own.
+    const scope = req.query.scope === 'mentees' && req.user!.role === 'mentor' ? 'mentees' : 'global';
     // Returns { userId, name, profileImage, xp, isCurrentUser }[]
-    const leaderboard = await quizService.getLeaderboard(userId, period);
+    const leaderboard = await quizService.getLeaderboard(userId, period, scope);
     res.json({ success: true, data: leaderboard });
   } catch (err) { next(err); }
 };
