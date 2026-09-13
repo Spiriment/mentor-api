@@ -43,8 +43,11 @@ export class BibleController {
       }
 
       // Validate and normalize language code
-      const language: BibleLanguage =
-        lang === 'deu' || lang === 'nld' ? (lang as BibleLanguage) : 'eng';
+      const language: BibleLanguage = this.bible
+        .getAvailableLanguages()
+        .includes(lang as BibleLanguage)
+        ? (lang as BibleLanguage)
+        : 'eng';
 
       const data = await this.bible.getChapter(book, chapterNum, language, translation as any);
       return sendSuccessResponse(res, data);
@@ -63,9 +66,12 @@ export class BibleController {
       }
       
       // Validate and normalize language code
-      const language: BibleLanguage = 
-        lang === 'deu' || lang === 'nld' ? (lang as BibleLanguage) : 'eng';
-      
+      const language: BibleLanguage = this.bible
+        .getAvailableLanguages()
+        .includes(lang as BibleLanguage)
+        ? (lang as BibleLanguage)
+        : 'eng';
+
       const data = await this.bible.getPassage(reference, language);
       return sendSuccessResponse(res, data);
     } catch (err) {
