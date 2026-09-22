@@ -9,9 +9,9 @@ Ongoing tool for rich HTML email campaigns: launch announcements, product update
 
 ## Sender identity
 
-| Field | Default |
-|-------|---------|
-| **From** | `SMTP_FROM` env — use **`info@spiriment.com`** (live mailbox) |
+| Field        | Default                                                                |
+| ------------ | ---------------------------------------------------------------------- |
+| **From**     | `SMTP_FROM` env — use **`info@spiriment.com`** (live mailbox)          |
 | **Reply-To** | **`info@spiriment.com`** per campaign default (editable in compose UI) |
 
 Use the same **`info@spiriment.com`** mailbox for SMTP auth (`SMTP_USER`) and **`SMTP_FROM`** so From and Reply-To match your live inbox.
@@ -24,9 +24,9 @@ Use the same **`info@spiriment.com`** mailbox for SMTP auth (`SMTP_USER`) and **
 
 ### Excel format
 
-| email | firstName |
-|-------|-----------|
-| user@example.com | Jane |
+| email            | firstName |
+| ---------------- | --------- |
+| user@example.com | Jane      |
 
 Header row required. Column names are case-insensitive (`email`, `e-mail`, `first name`, etc.).
 
@@ -72,22 +72,22 @@ Tables:
 
 ## API reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/broadcasts` | List campaigns |
-| POST | `/broadcasts` | Create draft |
-| GET | `/broadcasts/:id` | Get campaign |
-| PUT | `/broadcasts/:id` | Update draft/scheduled |
-| DELETE | `/broadcasts/:id` | Delete draft/cancelled |
-| POST | `/broadcasts/:id/preview-audience` | Count recipients |
-| POST | `/broadcasts/:id/import-excel` | multipart `broadcastExcel` |
-| POST | `/broadcasts/:id/send` | Start send (202) |
-| POST | `/broadcasts/:id/schedule` | `{ scheduledAt: ISO string }` |
-| POST | `/broadcasts/:id/cancel` | Cancel scheduled/sending |
-| POST | `/broadcasts/:id/duplicate` | Clone as new draft |
-| POST | `/broadcasts/:id/save-as-template` | `{ templateName }` |
-| GET | `/broadcasts/:id/recipients` | Paginated delivery log |
-| POST | `/broadcasts/upload-image` | TinyMCE image upload |
+| Method | Path                               | Description                   |
+| ------ | ---------------------------------- | ----------------------------- |
+| GET    | `/broadcasts`                      | List campaigns                |
+| POST   | `/broadcasts`                      | Create draft                  |
+| GET    | `/broadcasts/:id`                  | Get campaign                  |
+| PUT    | `/broadcasts/:id`                  | Update draft/scheduled        |
+| DELETE | `/broadcasts/:id`                  | Delete draft/cancelled        |
+| POST   | `/broadcasts/:id/preview-audience` | Count recipients              |
+| POST   | `/broadcasts/:id/import-excel`     | multipart `broadcastExcel`    |
+| POST   | `/broadcasts/:id/send`             | Start send (202)              |
+| POST   | `/broadcasts/:id/schedule`         | `{ scheduledAt: ISO string }` |
+| POST   | `/broadcasts/:id/cancel`           | Cancel scheduled/sending      |
+| POST   | `/broadcasts/:id/duplicate`        | Clone as new draft            |
+| POST   | `/broadcasts/:id/save-as-template` | `{ templateName }`            |
+| GET    | `/broadcasts/:id/recipients`       | Paginated delivery log        |
+| POST   | `/broadcasts/upload-image`         | TinyMCE image upload          |
 
 ## Launch checklist (ops)
 
@@ -105,12 +105,12 @@ The plain-text broadcast on **Users** page (`POST /api/admin/users/broadcast-ema
 
 ## Troubleshooting
 
-| Issue | Check |
-|-------|--------|
-| 0 recipients | Verified-email filter; Excel empty; all users opted out |
+| Issue              | Check                                                                 |
+| ------------------ | --------------------------------------------------------------------- |
+| 0 recipients       | Verified-email filter; Excel empty; all users opted out               |
 | Stuck on `sending` | API logs; SMTP limits; restart won't duplicate if status is `sending` |
-| Images broken | Cloudinary upload; `/broadcasts/upload-image` auth |
-| Unsubscribe 400 | `JWT_SECRET` must match token generation |
+| Images broken      | Cloudinary upload; `/broadcasts/upload-image` auth                    |
+| Unsubscribe 400    | `JWT_SECRET` must match token generation                              |
 
 ## Files (dev map)
 
