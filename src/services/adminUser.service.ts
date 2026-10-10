@@ -10,7 +10,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { BibleProgress } from '@/database/entities/bibleProgress.entity';
 import { StudyProgress } from '@/database/entities/studyProgress.entity';
 import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
-import { RefreshToken } from '@/database/entities/refreshToken.entity';
+import { RefreshToken } from '@/database/entities';
 import { AppError, USER_ROLE } from '@/common';
 import { adminAuditService } from './adminAudit.service';
 import {
