@@ -24,6 +24,11 @@ import {
 export { TRIAL_EXPIRED_NOTE, CANCEL_AT_PERIOD_END_NOTE, TRIAL_PREEMPTED_NOTE };
 
 const TIER_RANK: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 1, pro: 2, premium: 3 };
+
+function canUserStartFreeTrial(sub: UserSubscription | null | undefined): boolean {
+  if (!sub) return true;
+  return sub.notes === TRIAL_PREEMPTED_NOTE && TIER_RANK[sub.tier] === 0;
+}
 const SESSIONS_PER_MONTH: Record<SubscriptionTier, number> = { free: 0, none: 0, basic: 0, pro: 1, premium: 4 };
 const TRIAL_DAYS = 7;
 const GRACE_PERIOD_DAYS = 1;
@@ -70,8 +75,7 @@ export class SubscriptionService {
 
   async startTrialForUser(userId: string) {
     const existing = await this.subRepo.findOne({ where: { user: { id: userId } } });
-    const hasUnusedPreemptedTrial =
-      existing?.notes === TRIAL_PREEMPTED_NOTE && TIER_RANK[existing.tier] === 0;
+    const hasUnusedPreemptedTrial = canUserStartFreeTrial(existing);
     if (existing && !hasUnusedPreemptedTrial) {
       if (existing.status === 'trialing') {
         throw new AppError('You are already on a free trial', StatusCodes.CONFLICT);
@@ -129,7 +133,7 @@ export class SubscriptionService {
       isTrialing: sub?.status === 'trialing',
       trialEndsAt: sub?.status === 'trialing' ? sub.expiresAt : null,
       shouldShowTrialExpiredPrompt: sub?.notes === TRIAL_EXPIRED_NOTE,
-      canStartTrial: !sub,
+      canStartTrial: canUserStartFreeTrial(sub),
       sessionsUsed,
       sessionsAllowed,
       sessionsRemaining: Math.max(0, sessionsAllowed - sessionsUsed),
