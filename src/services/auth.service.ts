@@ -82,6 +82,23 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  /** Block sign-in and token refresh for suspended / deleted / blocked accounts. */
+  private assertCanSignIn(user: {
+    isActive: boolean;
+    accountStatus?: string | null;
+  }): void {
+    if (!user.isActive) {
+      throw new AppError('Account is inactive', 401);
+    }
+    if (
+      user.accountStatus === ACCOUNT_STATUS.SUSPENDED ||
+      user.accountStatus === ACCOUNT_STATUS.DELETED ||
+      user.accountStatus === ACCOUNT_STATUS.BLOCKED
+    ) {
+      throw new AppError('Account is not available', 401);
+    }
+  }
+
   private generateEmailVerificationToken(): string {
     return generateOTP(6).toString();
   }
@@ -282,6 +299,7 @@ export class AuthService {
         role: true,
         password: true,
         isActive: true,
+        accountStatus: true,
         isEmailVerified: true,
         isOnboardingComplete: true,
         otpToken: true,
@@ -296,12 +314,7 @@ export class AuthService {
       throw new AppError('Invalid email or password', 401);
     }
 
-    if (!User.isActive) {
-      this.logger.warn('Login attempt for inactive User', {
-        email: data.email,
-      });
-      throw new AppError('Account is inactive', 401);
-    }
+    this.assertCanSignIn(User);
 
     const isValidPassword = await bcrypt.compare(
       data.password,
@@ -466,12 +479,7 @@ export class AuthService {
       throw new AppError('User not found', 401);
     }
 
-    if (!User.isActive) {
-      this.logger.warn('Token refresh attempt for inactive User', {
-        userId: decoded.userId,
-      });
-      throw new AppError('Account is inactive', 401);
-    }
+    this.assertCanSignIn(User);
 
     this.logger.info('Token refreshed successfully', { email: User.email });
     return this.generateTokens(User);
@@ -983,6 +991,7 @@ export class AuthService {
         lastName: true,
         role: true,
         isActive: true,
+        accountStatus: true,
         isEmailVerified: true,
         isOnboardingComplete: true,
         otpToken: true,
@@ -994,9 +1003,7 @@ export class AuthService {
       throw new AppError('User not found', StatusCodes.NOT_FOUND);
     }
 
-    if (!User.isActive) {
-      throw new AppError('Account is inactive', StatusCodes.FORBIDDEN);
-    }
+    this.assertCanSignIn(User);
 
     if (!User.isEmailVerified) {
       throw new AppError('Email not verified', StatusCodes.BAD_REQUEST);
@@ -1090,6 +1097,7 @@ export class AuthService {
           lastName: true,
           role: true,
           isActive: true,
+          accountStatus: true,
           isEmailVerified: true,
           isOnboardingComplete: true,
           mentorApprovalStatus: true,
@@ -1107,6 +1115,7 @@ export class AuthService {
             lastName: true,
             role: true,
             isActive: true,
+            accountStatus: true,
             isEmailVerified: true,
             isOnboardingComplete: true,
             mentorApprovalStatus: true,
@@ -1115,10 +1124,7 @@ export class AuthService {
       }
 
       if (user) {
-        // Existing user — update Google-provided fields
-        if (!user.isActive) {
-          throw new AppError('Account is inactive', 401);
-        }
+        this.assertCanSignIn(user);
 
         const updateData: any = { googleId }; // Always persist googleId
 
@@ -1230,6 +1236,7 @@ export class AuthService {
           lastName: true,
           role: true,
           isActive: true,
+          accountStatus: true,
           isEmailVerified: true,
           isOnboardingComplete: true,
           mentorApprovalStatus: true,
@@ -1247,6 +1254,7 @@ export class AuthService {
             lastName: true,
             role: true,
             isActive: true,
+            accountStatus: true,
             isEmailVerified: true,
             isOnboardingComplete: true,
             mentorApprovalStatus: true,
@@ -1255,9 +1263,7 @@ export class AuthService {
       }
 
       if (user) {
-        if (!user.isActive) {
-          throw new AppError('Account is inactive', 401);
-        }
+        this.assertCanSignIn(user);
 
         const updateData: any = { appleId };
         if (!user.isEmailVerified && email) {
