@@ -194,6 +194,55 @@ const BOOK_CODE_TO_ID: Record<string, number> = {
 const isOldTestament = (bookCode: string): boolean =>
   (BOOK_CODE_TO_ID[bookCode] ?? 40) <= 39;
 
+type FormattedBibleVerse = {
+  book_id: string;
+  book_name: string;
+  chapter: number;
+  verse: number;
+  text: string;
+};
+
+/** Normalize Bible Brain API v4 verse rows (uses verse_start + verse_text). */
+function formatBibleBrainVerses(
+  verses: any[],
+  bookCode: string,
+  book: string,
+  chapter: number
+): FormattedBibleVerse[] {
+  const formatted = verses
+    .map((verse: any) => {
+      const verseNum =
+        verse.verse_id ||
+        verse.verse ||
+        verse.verse_num ||
+        verse.id ||
+        (verse.verse_start != null
+          ? parseInt(String(verse.verse_start), 10)
+          : null) ||
+        0;
+
+      const verseText =
+        verse.verse_text ||
+        verse.text ||
+        verse.content ||
+        verse.scripture_text ||
+        verse.scripture ||
+        '';
+
+      return {
+        book_id: bookCode,
+        book_name: book,
+        chapter,
+        verse: verseNum,
+        text: verseText,
+      };
+    })
+    .filter((v) => v.verse > 0 && v.text);
+
+  formatted.sort((a, b) => a.verse - b.verse);
+  return formatted;
+}
+
 export class BibleService {
   private cache: Map<string, CacheEntry<any>> = new Map();
   private maxEntries: number;
@@ -1214,40 +1263,12 @@ export class BibleService {
         );
       }
 
-      // Format response similar to bible-api.com format for consistency
-      // Bible Brain API v4 may return verse data in different formats
-      const formattedVerses = verses
-        .map((verse: any) => {
-          // Try multiple possible field names for verse number
-          const verseNum =
-            verse.verse_id ||
-            verse.verse ||
-            verse.verse_num ||
-            verse.id ||
-            (verse.verse_start ? parseInt(verse.verse_start) : null) ||
-            0;
-
-          // Try multiple possible field names for verse text
-          const verseText =
-            verse.verse_text ||
-            verse.text ||
-            verse.content ||
-            verse.scripture_text ||
-            verse.scripture ||
-            '';
-
-          return {
-            book_id: bookId,
-            book_name: book,
-            chapter: chapter,
-            verse: verseNum,
-            text: verseText,
-          };
-        })
-        .filter((v: any) => v.verse > 0 && v.text); // Filter out invalid verses
-
-      // Sort verses by verse number
-      formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+      const formattedVerses = formatBibleBrainVerses(
+        verses,
+        bookId,
+        book,
+        chapter
+      );
 
       return {
         reference: `${book} ${chapter}`,
@@ -1417,17 +1438,18 @@ export class BibleService {
         throw new Error(`No verses found for ${book} ${chapter} in ${translation}`);
       }
 
-      const formattedVerses = verses
-        .map((verse: any) => ({
-          book_id: bookCode,
-          book_name: book,
-          chapter: chapter,
-          verse: verse.verse_id || verse.verse || verse.verse_num || 0,
-          text: verse.verse_text || verse.text || '',
-        }))
-        .filter((v: any) => v.verse > 0 && v.text);
+      const formattedVerses = formatBibleBrainVerses(
+        verses,
+        bookCode,
+        book,
+        chapter
+      );
 
-      formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+      if (formattedVerses.length === 0) {
+        throw new Error(
+          `No parseable verses for ${book} ${chapter} in ${translation}`
+        );
+      }
 
       return {
         reference: `${book} ${chapter}`,
@@ -1470,17 +1492,12 @@ export class BibleService {
           }
 
           if (verses && verses.length > 0) {
-            const formattedVerses = verses
-              .map((verse: any) => ({
-                book_id: bookCode,
-                book_name: book,
-                chapter: chapter,
-                verse: verse.verse_id || verse.verse || verse.verse_num || 0,
-                text: verse.verse_text || verse.text || '',
-              }))
-              .filter((v: any) => v.verse > 0 && v.text);
-
-            formattedVerses.sort((a: any, b: any) => a.verse - b.verse);
+            const formattedVerses = formatBibleBrainVerses(
+              verses,
+              bookCode,
+              book,
+              chapter
+            );
 
             if (formattedVerses.length > 0) {
               console.log(`Successfully fetched ${book} ${chapter} using fallback: ${fallback}`);
