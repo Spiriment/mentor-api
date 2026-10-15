@@ -19,6 +19,7 @@ import {
 } from './adminSubscription.service';
 import { EmailService } from '@/core/email.service';
 import { adminSessionService } from './adminSession.service';
+import { adminQuizService } from './adminQuiz.service';
 
 let emailSingleton: EmailService | null = null;
 function adminEmail(): EmailService {
@@ -224,9 +225,10 @@ export class AdminUserService {
     }
 
     const { password: _p, ...safeUser } = user as User & { password?: string };
-    const [subscription, sessionOutcomes] = await Promise.all([
+    const [subscription, sessionOutcomes, quiz] = await Promise.all([
       adminSubscriptionService.findForUser(userId),
       adminSessionService.getOutcomeMetrics({ menteeId: userId }),
+      adminQuizService.getUserQuizActivity(userId),
     ]);
 
     const serializedSessions = sessions.map((s) => ({
@@ -284,6 +286,7 @@ export class AdminUserService {
         lastStreakDate: user.lastStreakDate,
         monthlyStreakData: user.monthlyStreakData,
       },
+      quiz,
     };
   }
 

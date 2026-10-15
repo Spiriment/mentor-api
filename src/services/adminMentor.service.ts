@@ -20,6 +20,7 @@ import { pushNotificationService } from './pushNotification.service';
 import { adminAuditService } from './adminAudit.service';
 import { adminSubscriptionService } from './adminSubscription.service';
 import { adminSessionService } from './adminSession.service';
+import { adminQuizService } from './adminQuiz.service';
 import { APP_EMAIL_OPEN_ONBOARDING } from '@/common/constants/appEmailLinks';
 
 const DEFAULT_PAGE = 1;
@@ -161,7 +162,7 @@ export class AdminMentorService {
       throw new AppError('Mentor profile not found', 404);
     }
 
-    const [sessionsCompleted, sessionsScheduled, recentSessions, menteeRequests, reviewRaw, subRow, outcomes] =
+    const [sessionsCompleted, sessionsScheduled, recentSessions, menteeRequests, reviewRaw, subRow, outcomes, quiz] =
       await Promise.all([
         AppDataSource.getRepository(Session).count({
           where: { mentorId: userId, status: SESSION_STATUS.COMPLETED },
@@ -198,6 +199,7 @@ export class AdminMentorService {
           .getRawOne<{ avgRating: string | null; reviewCount: string; lowRatingCount: string | null }>(),
         adminSubscriptionService.findForUser(userId),
         adminSessionService.getOutcomeMetrics({ mentorId: userId }),
+        adminQuizService.getUserQuizActivity(userId),
       ]);
 
     const reviewCount = reviewRaw?.reviewCount ? parseInt(reviewRaw.reviewCount, 10) : 0;
@@ -279,6 +281,7 @@ export class AdminMentorService {
         lastStreakDate: user.lastStreakDate,
         monthlyStreakData: user.monthlyStreakData,
       },
+      quiz,
     };
   }
 

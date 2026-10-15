@@ -264,6 +264,67 @@ export class AdminQuizService {
       recentAttempts,
     };
   }
+
+  /** Quiz attempts + streak for a single user (admin user/mentor detail). */
+  async getUserQuizActivity(userId: string, attemptLimit = 100) {
+    const attemptRepo = AppDataSource.getRepository(QuizAttempt);
+    const streakRepo = AppDataSource.getRepository(QuizStreak);
+    const limit = Math.min(Math.max(attemptLimit, 1), 200);
+
+    const [totalAttempts, attempts, streak, avgScoreRaw] = await Promise.all([
+      attemptRepo.count({ where: { userId } }),
+      attemptRepo.find({
+        where: { userId },
+        order: { completedAt: 'DESC' },
+        take: limit,
+      }),
+      streakRepo.findOne({ where: { userId } }),
+      attemptRepo
+        .createQueryBuilder('a')
+        .select('AVG(a.score * 100.0 / NULLIF(a.total, 0))', 'avg')
+        .where('a.userId = :userId', { userId })
+        .getRawOne<{ avg: string | null }>(),
+    ]);
+
+    const avgScorePctAllTime =
+      avgScoreRaw?.avg != null ? Math.round(parseFloat(avgScoreRaw.avg)) : null;
+
+    const highScoreCount = streak?.highScores
+      ? Object.keys(streak.highScores).length
+      : 0;
+
+    return {
+      stats: {
+        totalAttempts,
+        avgScorePctAllTime,
+        returnedAttempts: attempts.length,
+      },
+      streak: streak
+        ? {
+            currentStreak: streak.currentStreak,
+            longestStreak: streak.longestStreak,
+            lastQuizDate: streak.lastQuizDate ?? null,
+            totalQuizzes: streak.achievementStats?.totalQuizzes ?? totalAttempts,
+            completedBooksCount: streak.achievementStats?.completedBooks?.length ?? 0,
+            completedBooks: streak.achievementStats?.completedBooks ?? [],
+            highScoreEntries: highScoreCount,
+            earnedAchievementsCount: streak.earnedAchievements
+              ? Object.keys(streak.earnedAchievements).length
+              : 0,
+          }
+        : null,
+      attempts: attempts.map((a) => ({
+        id: a.id,
+        book: a.book,
+        version: a.version,
+        score: a.score,
+        total: a.total,
+        scorePct: a.total > 0 ? Math.round((a.score / a.total) * 100) : 0,
+        completedAt: a.completedAt,
+        helpful: a.helpful ?? null,
+      })),
+    };
+  }
 }
 
 export const adminQuizService = new AdminQuizService();
