@@ -272,6 +272,13 @@ export class AdminMentorService {
         version: profile.agreementVersion ?? null,
         eSignature: profile.eSignature ?? null,
       },
+      activity: {
+        lastActiveAt: user.lastActiveAt,
+        currentStreak: user.currentStreak,
+        longestStreak: user.longestStreak,
+        lastStreakDate: user.lastStreakDate,
+        monthlyStreakData: user.monthlyStreakData,
+      },
     };
   }
 
