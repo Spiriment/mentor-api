@@ -1,5 +1,13 @@
 import { AppDataSource } from '@/config/data-source';
-import { Session } from '@/database/entities/session.entity';
+import { QuizAttempt } from '@/database/entities/quizAttempt.entity';
+import { QuizStreak } from '@/database/entities/quizStreak.entity';
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 // Static quiz catalog — 66 Bible books, each with version(s) and question counts.
 // Update this if new quiz content is added to the app's bibleQuiz.ts.
@@ -89,9 +97,172 @@ export class AdminQuizService {
   }
 
   async getQuizStats() {
-    // Future: join with any quiz_attempt entity if one is added.
-    // For now return catalog + zero-fill for attempt stats.
-    return this.getCatalog();
+    const [catalog, summary] = await Promise.all([
+      Promise.resolve(this.getCatalog()),
+      this.getSummaryMetrics(),
+    ]);
+    return { ...catalog, activity: summary };
+  }
+
+  /** Headline quiz metrics for admin dashboard summary. */
+  async getSummaryMetrics() {
+    const attemptRepo = AppDataSource.getRepository(QuizAttempt);
+    const streakRepo = AppDataSource.getRepository(QuizStreak);
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [
+      totalAttempts,
+      attemptsLast30Days,
+      uniquePlayersLast30Days,
+      avgScoreRaw,
+      activeStreaks,
+    ] = await Promise.all([
+      attemptRepo.count(),
+      attemptRepo
+        .createQueryBuilder('a')
+        .where('a.completedAt >= :since', { since: thirtyDaysAgo })
+        .getCount(),
+      attemptRepo
+        .createQueryBuilder('a')
+        .select('COUNT(DISTINCT a.userId)', 'count')
+        .where('a.completedAt >= :since', { since: thirtyDaysAgo })
+        .getRawOne<{ count: string }>(),
+      attemptRepo
+        .createQueryBuilder('a')
+        .select('AVG(a.score * 100.0 / NULLIF(a.total, 0))', 'avg')
+        .where('a.completedAt >= :since', { since: thirtyDaysAgo })
+        .getRawOne<{ avg: string | null }>(),
+      streakRepo
+        .createQueryBuilder('s')
+        .where('s.currentStreak > 0')
+        .getCount(),
+    ]);
+
+    const avgScorePctLast30Days =
+      avgScoreRaw?.avg != null ? Math.round(parseFloat(avgScoreRaw.avg)) : null;
+
+    return {
+      totalAttempts,
+      attemptsLast30Days,
+      uniquePlayersLast30Days: uniquePlayersLast30Days?.count
+        ? parseInt(uniquePlayersLast30Days.count, 10)
+        : 0,
+      avgScorePctLast30Days,
+      activeStreaks,
+    };
+  }
+
+  /** Charts and recent activity for admin dashboard analytics. */
+  async getAnalyticsMetrics() {
+    const attemptRepo = AppDataSource.getRepository(QuizAttempt);
+    const now = new Date();
+
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const sixMonthsAgo = new Date(now);
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const recentMonthBuckets: { key: string; label: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      recentMonthBuckets.push({ key: monthKey(d), label: MONTH_NAMES[d.getMonth()] });
+    }
+
+    const [dailyRaw, monthlyRaw, topBooksRaw, recentRows] = await Promise.all([
+      attemptRepo
+        .createQueryBuilder('a')
+        .select(`DATE_FORMAT(a.completedAt, '%Y-%m-%d')`, 'day')
+        .addSelect('COUNT(a.id)', 'attempts')
+        .where('a.completedAt >= :sevenDaysAgo', { sevenDaysAgo })
+        .groupBy(`DATE_FORMAT(a.completedAt, '%Y-%m-%d')`)
+        .getRawMany<{ day: string; attempts: string }>(),
+      attemptRepo
+        .createQueryBuilder('a')
+        .select(`DATE_FORMAT(a.completedAt, '%Y-%m')`, 'month')
+        .addSelect('COUNT(a.id)', 'attempts')
+        .where('a.completedAt >= :sixMonthsAgo', { sixMonthsAgo })
+        .groupBy(`DATE_FORMAT(a.completedAt, '%Y-%m')`)
+        .orderBy(`DATE_FORMAT(a.completedAt, '%Y-%m')`, 'ASC')
+        .getRawMany<{ month: string; attempts: string }>(),
+      attemptRepo
+        .createQueryBuilder('a')
+        .select('a.book', 'book')
+        .addSelect('COUNT(a.id)', 'attempts')
+        .where('a.completedAt >= :thirtyDaysAgo', { thirtyDaysAgo })
+        .groupBy('a.book')
+        .orderBy('attempts', 'DESC')
+        .limit(5)
+        .getRawMany<{ book: string; attempts: string }>(),
+      attemptRepo.find({
+        relations: ['user'],
+        order: { completedAt: 'DESC' },
+        take: 8,
+      }),
+    ]);
+
+    const dailyByKey: Record<string, { day: string; attempts: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      dailyByKey[key] = { day: DAY_NAMES[d.getDay()], attempts: 0 };
+    }
+    for (const row of dailyRaw) {
+      if (dailyByKey[row.day]) {
+        dailyByKey[row.day].attempts = parseInt(row.attempts, 10);
+      }
+    }
+    const attemptsDaily = Object.values(dailyByKey);
+
+    const monthlyMap: Record<string, number> = {};
+    for (const bucket of recentMonthBuckets) monthlyMap[bucket.key] = 0;
+    for (const row of monthlyRaw) {
+      if (monthlyMap[row.month] !== undefined) {
+        monthlyMap[row.month] = parseInt(row.attempts, 10);
+      }
+    }
+    const attemptsMonthly = recentMonthBuckets.map(({ key, label }) => ({
+      month: label,
+      attempts: monthlyMap[key],
+    }));
+
+    const topBooksLast30Days = topBooksRaw.map((r) => ({
+      book: r.book,
+      attempts: parseInt(r.attempts, 10),
+    }));
+
+    const recentAttempts = recentRows.map((a) => {
+      const u = a.user;
+      return {
+        id: a.id,
+        userId: a.userId,
+        userRole: u?.role ?? null,
+        firstName: u?.firstName ?? null,
+        lastName: u?.lastName ?? null,
+        email: u?.email ?? null,
+        book: a.book,
+        version: a.version,
+        score: a.score,
+        total: a.total,
+        completedAt: a.completedAt,
+      };
+    });
+
+    return {
+      attemptsDaily,
+      attemptsMonthly,
+      topBooksLast30Days,
+      recentAttempts,
+    };
   }
 }
 

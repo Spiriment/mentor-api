@@ -19,6 +19,7 @@ import {
 import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { adminMentorApplicationService } from './adminMentorApplication.service';
 import { adminSessionService } from './adminSession.service';
+import { adminQuizService } from './adminQuiz.service';
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -68,9 +69,10 @@ export class AdminDashboardService {
       )
       .getCount();
 
-    const [subscriptionSlice, mentorApplicationFunnel] = await Promise.all([
+    const [subscriptionSlice, mentorApplicationFunnel, quizzes] = await Promise.all([
       adminSubscriptionService.getDashboardSubscriptionSlice(adminRole),
       adminMentorApplicationService.getFunnelCounts(),
+      adminQuizService.getSummaryMetrics(),
     ]);
 
     return {
@@ -80,6 +82,7 @@ export class AdminDashboardService {
       pendingMentorApplications,
       mentorApplicationFunnel,
       plans: { activeChurchPlans, activeFamilyPlans },
+      quizzes,
     };
   }
 
@@ -143,6 +146,7 @@ export class AdminDashboardService {
       sessionOutcomes,
       topNoShowMentors,
       topNoShowMentees,
+      quizAnalytics,
     ] = await Promise.all([
       userRepo.find({ select: ['id', 'role', 'createdAt'] }),
       sessionRepo.find({ select: ['id', 'scheduledAt'] }),
@@ -200,6 +204,7 @@ export class AdminDashboardService {
       adminSessionService.getOutcomeMetrics(),
       adminSessionService.getTopNoShowRates({ role: 'mentor', limit: 5 }),
       adminSessionService.getTopNoShowRates({ role: 'mentee', limit: 5 }),
+      adminQuizService.getAnalyticsMetrics(),
     ]);
 
     let monthlyRevenueCents: number | null = null;
@@ -331,6 +336,7 @@ export class AdminDashboardService {
       sessionOutcomes,
       topNoShowMentors,
       topNoShowMentees,
+      quizzes: quizAnalytics,
     };
   }
 }
