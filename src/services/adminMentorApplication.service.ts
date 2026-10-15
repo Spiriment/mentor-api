@@ -158,8 +158,9 @@ export class AdminMentorApplicationService {
   }
 
   private parseSort(sort?: string): { field: string; direction: 'ASC' | 'DESC' } {
-    const direction: 'ASC' | 'DESC' = sort?.startsWith('-') ? 'DESC' : 'ASC';
-    const key = sort?.replace(/^-/, '') || 'updatedAt';
+    const effectiveSort = sort ?? '-updatedAt';
+    const direction: 'ASC' | 'DESC' = effectiveSort.startsWith('-') ? 'DESC' : 'ASC';
+    const key = effectiveSort.replace(/^-/, '') || 'updatedAt';
     const map: Record<string, string> = {
       createdAt: 'mp.createdAt',
       updatedAt: 'mp.updatedAt',

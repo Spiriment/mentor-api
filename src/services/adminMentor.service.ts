@@ -133,15 +133,16 @@ export class AdminMentorService {
   }
 
   private parseSort(sort?: string): { field: string; direction: 'ASC' | 'DESC' } {
-    const direction: 'ASC' | 'DESC' = sort?.startsWith('-') ? 'DESC' : 'ASC';
-    const key = sort?.replace(/^-/, '') || 'approvedAt';
+    const effectiveSort = sort ?? '-createdAt';
+    const direction: 'ASC' | 'DESC' = effectiveSort.startsWith('-') ? 'DESC' : 'ASC';
+    const key = effectiveSort.replace(/^-/, '') || 'createdAt';
     const map: Record<string, string> = {
-      createdAt: 'mp.createdAt',
+      createdAt: 'user.createdAt',
       updatedAt: 'mp.updatedAt',
       approvedAt: 'mp.approvedAt',
       email: 'user.email',
     };
-    return { field: map[key] || 'mp.approvedAt', direction };
+    return { field: map[key] || 'user.createdAt', direction };
   }
 
   async getMentorDetail(userId: string) {

@@ -155,8 +155,9 @@ export class AdminUserService {
   }
 
   private parseSort(sort?: string): { field: string; direction: 'ASC' | 'DESC' } {
-    const direction: 'ASC' | 'DESC' = sort?.startsWith('-') ? 'DESC' : 'ASC';
-    const key = sort?.replace(/^-/, '') || 'createdAt';
+    const effectiveSort = sort ?? '-createdAt';
+    const direction: 'ASC' | 'DESC' = effectiveSort.startsWith('-') ? 'DESC' : 'ASC';
+    const key = effectiveSort.replace(/^-/, '') || 'createdAt';
     const map: Record<string, string> = {
       createdAt: 'user.createdAt',
       updatedAt: 'user.updatedAt',
