@@ -123,7 +123,9 @@ export class StreakService {
           typeof user.lastStreakDate === 'string'
             ? user.lastStreakDate
             : user.lastStreakDate.toISOString().split('T')[0];
-        lastStreakDate = startOfDay(toZonedTime(parseISO(lastDateString), userTimezone));
+        // The 'date' column already holds the calendar day in the user's timezone —
+        // shifting it through toZonedTime again moves it a day back for UTC-negative zones.
+        lastStreakDate = parseISO(lastDateString);
       }
 
       const lastStreakString = lastStreakDate
@@ -355,13 +357,14 @@ export class StreakService {
           const lDate = user.lastStreakDate as any;
           const lastDateString =
             lDate instanceof Date
-              ? format(toZonedTime(lDate, userTimezone), 'yyyy-MM-dd')
+              ? lDate.toISOString().split('T')[0]
               : typeof lDate === 'string'
                 ? lDate.split('T')[0]
                 : null;
 
           if (lastDateString) {
-            const lastStreakDateParsed = startOfDay(toZonedTime(parseISO(lastDateString), userTimezone));
+            // Calendar date already in user's timezone — see incrementStreak
+            const lastStreakDateParsed = parseISO(lastDateString);
             const daysDiff = differenceInCalendarDays(todayInUserTz, lastStreakDateParsed);
 
             let needsUpdate = false;
