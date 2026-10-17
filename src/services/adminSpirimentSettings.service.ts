@@ -1,6 +1,12 @@
 import { AppDataSource } from '@/config/data-source';
 import { SpirimentSettings } from '@/database/entities/spirimentSettings.entity';
 import { AppError } from '@/common';
+import {
+  type AppPlatform,
+  type PlatformRelease,
+  parseAppReleaseConfig,
+  validateAppReleaseConfig,
+} from '@/common/appRelease';
 import { adminAuditService } from './adminAudit.service';
 import { MENTOR_APPLICATION_TEMPLATES } from '@/admin/mentorApplicationTemplates';
 
@@ -38,6 +44,7 @@ export class AdminSpirimentSettingsService {
       maintenanceMode?: boolean;
       features?: Record<string, boolean>;
       emailTemplates?: Record<string, { subject: string; body: string }>;
+      appRelease?: Partial<Record<AppPlatform, Partial<PlatformRelease>>>;
     },
     adminUserId: string,
     ip?: string
@@ -80,6 +87,17 @@ export class AdminSpirimentSettingsService {
           : {};
       // Delete existing global ID to let it recreate but let's actually just merge templates
       data.emailTemplates = { ...prevTpls, ...patch.emailTemplates };
+    }
+
+    if (patch.appRelease !== undefined) {
+      const current = parseAppReleaseConfig(data.appRelease);
+      const next = {
+        ios: { ...current.ios, ...patch.appRelease.ios },
+        android: { ...current.android, ...patch.appRelease.android },
+      };
+      const invalid = validateAppReleaseConfig(parseAppReleaseConfig(next));
+      if (invalid) throw new AppError(invalid, 400);
+      data.appRelease = next;
     }
 
     row.data = data;

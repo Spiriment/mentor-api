@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AppDataSource } from '../config/data-source';
 import { User } from '../database/entities/user.entity';
 import { Logger } from '../common';
+import { isValidVersion, normalizePlatform } from '../common/appRelease';
 import { notificationSchedulerService } from '../services/notificationScheduler.service';
 
 export class PushTokenController {
@@ -19,6 +20,9 @@ export class PushTokenController {
     try {
       const userId = (req as any).user?.id;
       const { pushToken } = req.body;
+      // Sent by app builds from 1.0.5; older builds send only the token (left as null)
+      const pushPlatform = normalizePlatform(req.body?.platform);
+      const appVersion = isValidVersion(req.body?.appVersion) ? req.body.appVersion.trim() : null;
 
       if (!userId) {
         return res.status(401).json({
@@ -35,7 +39,11 @@ export class PushTokenController {
       }
 
       // Update user's push token
-      await this.userRepository.update(userId, { pushToken });
+      await this.userRepository.update(userId, {
+        pushToken,
+        ...(pushPlatform && { pushPlatform }),
+        ...(appVersion && { appVersion }),
+      });
 
 
       this.logger.info(`Push token updated for user ${userId}`);

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { appReleaseService } from '@/services/appRelease.service';
 import { logger, jwt } from '../config/int-services';
 import path from 'path';
 import { QueueBoard, QueueManager } from '../queue';
@@ -107,6 +108,15 @@ const createRootRoutes = () => {
 
   /** Public smart link for email CTAs — opens spiriment:// with store fallback. */
   rootRouter.get('/open-app', openAppHandler);
+
+  /** Public (no auth — must work before login): latest/minimum app versions + store links. */
+  rootRouter.get('/api/app/version', async (_req, res, next) => {
+    try {
+      res.json({ success: true, data: await appReleaseService.getPublicVersionInfo() });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   rootRouter.use('/api/auth', (req, res, next) => {
     const services = initializeServices();

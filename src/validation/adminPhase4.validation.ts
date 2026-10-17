@@ -40,8 +40,31 @@ export const adminOrgPlanPatchBodySchema = z
   })
   .strict();
 
+const appVersionString = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d+){0,3}$/, 'Use a version like 1.0.5');
+
+const platformReleaseSchema = z
+  .object({
+    latestVersion: appVersionString.nullable().optional(),
+    minimumVersion: appVersionString.nullable().optional(),
+  })
+  .strict();
+
+export const adminAppUpdateNotifyBodySchema = z
+  .object({
+    platforms: z.array(z.enum(['ios', 'android'])).min(1),
+    dryRun: z.boolean().default(true),
+  })
+  .strict();
+
 export const adminSpirimentSettingsPatchSchema = z
   .object({
+    appRelease: z
+      .object({ ios: platformReleaseSchema.optional(), android: platformReleaseSchema.optional() })
+      .strict()
+      .optional(),
     supportEmail: z.string().email().max(255).optional(),
     publicAppName: z.string().min(1).max(120).optional(),
     maintenanceMode: z.boolean().optional(),

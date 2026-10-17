@@ -127,6 +127,14 @@ export class User extends BaseEntity {
   @Column({ name: 'pushToken', type: 'varchar', length: 255, nullable: true })
   pushToken?: string | null;
 
+  /** Platform of the device that registered pushToken — targets "update available" pushes. */
+  @Column({ name: 'pushPlatform', type: 'varchar', length: 10, nullable: true })
+  pushPlatform?: string | null;
+
+  /** Native app version last reported with the push token. Null = a build before 1.0.5. */
+  @Column({ name: 'appVersion', type: 'varchar', length: 20, nullable: true })
+  appVersion?: string | null;
+
   // Track last activity for re-engagement emails
   @Column({ name: 'lastActiveAt', nullable: true })
   lastActiveAt?: Date;
