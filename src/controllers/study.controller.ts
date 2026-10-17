@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { AppDataSource } from '@/config/data-source';
 import { StudyService } from '@/services/study.service';
+import {
+  sanitizeIncomingProgress,
+  type StudyProgressIntent,
+} from '@/common/study/mergeStudyProgress';
 import { authenticateToken } from '../middleware/auth.middleware';
 
 const studyService = new StudyService(AppDataSource);
@@ -29,10 +33,17 @@ studyRoutes.put(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user?.id as string;
-      const updated = await studyService.upsertProgress({
-        ...req.body,
-        userId,
-      });
+      const incoming = sanitizeIncomingProgress(req.body ?? {});
+      if (!incoming) {
+        res.status(400).json({ error: 'pathId is required' });
+        return;
+      }
+      // Sent by current app builds; absent from older builds (treated as legacy saves)
+      const intent: StudyProgressIntent | undefined =
+        req.body?.intent === 'start_path' || req.body?.intent === 'update'
+          ? req.body.intent
+          : undefined;
+      const updated = await studyService.upsertProgress(userId, incoming, intent);
       res.json({ data: updated });
     } catch (error) {
       next(error);

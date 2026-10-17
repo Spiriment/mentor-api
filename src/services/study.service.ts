@@ -2,6 +2,11 @@ import { DataSource, Repository, Between, LessThanOrEqual, MoreThanOrEqual } fro
 import { StudyProgress } from '@/database/entities/studyProgress.entity';
 import { StudySession } from '@/database/entities/studySession.entity';
 import { StudyReflection } from '@/database/entities/studyReflection.entity';
+import {
+  mergeStudyProgress,
+  type StudyProgressFields,
+  type StudyProgressIntent,
+} from '@/common/study/mergeStudyProgress';
 
 export class StudyService {
   private progressRepo: Repository<StudyProgress>;
@@ -32,27 +37,45 @@ export class StudyService {
     return null;
   }
 
+  /**
+   * Merge a client's progress save into the stored row (see mergeStudyProgress for rules).
+   * Runs under a row lock so concurrent saves from two devices serialize instead of one
+   * overwriting the other.
+   */
   async upsertProgress(
-    progress: Partial<StudyProgress> & { userId: string }
+    userId: string,
+    incoming: StudyProgressFields,
+    intent: StudyProgressIntent | undefined,
   ): Promise<StudyProgress> {
-    const existing = await this.getProgress(progress.userId);
-    
-    // If lastStudiedAt is not explicitly provided in the update,
-    // set it to the current time (any progress update means the user has studied)
-    const updateData: Partial<StudyProgress> = {
-      ...progress,
-    };
-    
-    // Always update lastStudiedAt when progress is updated, unless explicitly provided
-    if (!updateData.lastStudiedAt) {
-      updateData.lastStudiedAt = new Date();
-    }
-    
-    if (existing) {
-      const merged = this.progressRepo.merge(existing, updateData);
-      return this.progressRepo.save(merged);
-    }
-    return this.progressRepo.save(this.progressRepo.create(updateData));
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(StudyProgress);
+      const existing = await repo.findOne({
+        where: { userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      const merged = mergeStudyProgress(
+        existing
+          ? {
+              pathId: existing.pathId,
+              currentBookIndex: existing.currentBookIndex ?? 0,
+              currentChapterIndex: existing.currentChapterIndex ?? 0,
+              completedChapters: existing.completedChapters ?? [],
+              completedPathIds: existing.completedPathIds ?? [],
+              currentDay: existing.currentDay ?? 0,
+              totalDays: existing.totalDays ?? 0,
+              lastStudiedAt: existing.lastStudiedAt ?? undefined,
+            }
+          : null,
+        incoming,
+        intent,
+      );
+
+      if (existing) {
+        return repo.save(repo.merge(existing, merged));
+      }
+      return repo.save(repo.create({ ...merged, userId }));
+    });
   }
 
   async addSession(
