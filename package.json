@@ -9,6 +9,8 @@
     "build:main": "cross-env NODE_ENV=production tsc -p tsconfig.json && tsc-alias && npm run copy-assets",
     "copy-assets": "cp -r src/mails dist/ && cp -r src/database/seeds/*.json dist/database/seeds/ 2>/dev/null || true",
     "start": "node -r tsconfig-paths/register dist/index.js",
+    "repair:streaks": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/repairStreaksAfterOutage.js",
+    "repair:streaks:apply": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/repairStreaksAfterOutage.js --apply",
     "start:dev": "cross-env NODE_ENV=development ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate -d src/config/data-source.ts",
@@ -46,7 +48,7 @@
     "db:delete-user:prod": "cross-env NODE_ENV=production ts-node -r tsconfig-paths/register scripts/delete-user.ts",
     "admin:create-user": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/create-admin-user.ts",
     "upload:email-icons": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register scripts/upload-email-icons.ts",
-    "test": "cross-env NODE_ENV=development node -r ts-node/register -r tsconfig-paths/register --test src/common/subscription/crossProviderGuard.test.ts src/common/subscription/stripePaymentFailedResolver.test.ts src/common/subscription/revenueCatEventId.test.ts src/common/constants/subscriptionMrr.test.ts src/common/study/mergeStudyProgress.test.ts src/common/appRelease.test.ts src/common/callHealth.test.ts src/common/adminAlerts.test.ts src/common/videoUploadAttempt.test.ts src/common/redactSensitive.test.ts"
+    "test": "cross-env NODE_ENV=development node -r ts-node/register -r tsconfig-paths/register --test src/common/subscription/crossProviderGuard.test.ts src/common/subscription/stripePaymentFailedResolver.test.ts src/common/subscription/revenueCatEventId.test.ts src/common/constants/subscriptionMrr.test.ts src/common/study/mergeStudyProgress.test.ts src/common/appRelease.test.ts src/common/callHealth.test.ts src/common/adminAlerts.test.ts src/common/videoUploadAttempt.test.ts src/common/redactSensitive.test.ts src/common/streakRepair.test.ts"
   },
   "dependencies": {
     "@bull-board/api": "^6.10.0",
