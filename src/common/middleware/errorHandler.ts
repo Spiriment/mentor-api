@@ -1,13 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import { AppError, ValidationError } from "../errors";
 import { Logger } from "../logger";
+import { redactSensitive } from "../redactSensitive";
 
 export const errorHandler = (logger: Logger) => {
   return (error: Error, _req: Request, res: Response, _next: NextFunction) => {
     logger.error("Error occurred:", error, {
       requestPath: _req.path,
       requestMethod: _req.method,
-      requestBody: _req.body,
+      // Never log raw bodies — failed logins would write passwords/tokens to log files
+      requestBody: redactSensitive(_req.body),
     });
 
     // Handle payload too large error specifically
