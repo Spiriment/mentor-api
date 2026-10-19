@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { UploadController } from '../controllers/upload.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { videoUploadAttemptController } from '../controllers/videoUploadAttempt.controller';
 import {
   uploadProfileImage,
   uploadVideoIntroduction,
@@ -26,6 +27,13 @@ router.post(
   uploadVideoIntroduction,
   handleUploadError,
   uploadController.uploadVideoIntroduction
+);
+
+// App reports each intro-video upload attempt (success or failure) for admin visibility
+router.post(
+  '/video-introduction/attempts',
+  authenticateToken,
+  videoUploadAttemptController.record
 );
 
 // Signed params for uploading a video introduction directly to Cloudinary

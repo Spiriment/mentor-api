@@ -1411,12 +1411,16 @@ export class BibleService {
     const bookCode = BOOK_NAME_MAP[book] || book.toUpperCase().substring(0, 3);
     const testament = isOldTestament(bookCode) ? 'ot' : 'nt';
     const damId = TRANSLATION_DAM_IDS[translation]?.[testament];
-    if (!damId) {
-      throw new Error(`No text fileset available for ${translation}`);
-    }
 
     // Try the requested translation first
     try {
+      // No Bible Brain text for this translation (NIV, CSB). Older app builds still
+      // request NIV — fall into the ESV/KJV/WEB fallbacks below rather than straight
+      // to bible-api.com's limited public-domain text.
+      if (!damId) {
+        throw new Error(`No text fileset available for ${translation}`);
+      }
+
       const versesResponse = await axios.get(
         `${this.bibleBrainBaseUrl}/api/bibles/filesets/${damId}/${bookCode}/${chapter}`,
         {

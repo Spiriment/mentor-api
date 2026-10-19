@@ -23,6 +23,7 @@ export * from './adminUser.entity';
 export * from './adminAuditLog.entity';
 export * from './adminAlert.entity';
 export * from './adminPushSubscription.entity';
+export * from './videoUploadAttempt.entity';
 export * from './menteeProfile.entity';
 export * from './mentorProfile.entity';
 
