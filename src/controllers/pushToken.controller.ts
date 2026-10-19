@@ -13,6 +13,34 @@ export class PushTokenController {
   });
 
   /**
+   * Record the platform + native app version the user is running.
+   * POST /api/users/app-info — called on every launch, independent of notification
+   * permission (the push-token save only happens when notifications are allowed, so it
+   * alone would make 1.0.5+ users without notifications look like old builds).
+   */
+  saveAppInfo = async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: { message: 'Unauthorized' } });
+    }
+    const pushPlatform = normalizePlatform(req.body?.platform);
+    const appVersion = isValidVersion(req.body?.appVersion) ? req.body.appVersion.trim() : null;
+    if (!pushPlatform || !appVersion) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'platform (ios|android) and appVersion are required' },
+      });
+    }
+    try {
+      await this.userRepository.update(userId, { pushPlatform, appVersion });
+      return res.json({ success: true, data: { pushPlatform, appVersion } });
+    } catch (error) {
+      this.logger.error('Failed to save app info', error as Error);
+      return res.status(500).json({ success: false, error: { message: 'Failed to save app info' } });
+    }
+  };
+
+  /**
    * Save or update user's push token
    * POST /api/users/push-token
    */

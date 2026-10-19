@@ -46,12 +46,15 @@ export class AppReleaseService {
     return parseAppReleaseConfig(settings.data.appRelease);
   }
 
-  /** Public payload for the app's launch-time update check. */
+  /** Public payload for the app's launch/foreground check (versions + maintenance mode). */
   async getPublicVersionInfo() {
-    const config = await this.getConfig();
+    const settings = await adminSpirimentSettingsService.getGlobal();
+    const config = parseAppReleaseConfig(settings.data.appRelease);
     return {
       ios: { ...config.ios, storeUrl: APP_STORE_URLS.ios },
       android: { ...config.android, storeUrl: APP_STORE_URLS.android },
+      // Admin Settings → General → Maintenance mode; the app shows a "back soon" screen
+      maintenanceMode: settings.data.maintenanceMode === true,
     };
   }
 

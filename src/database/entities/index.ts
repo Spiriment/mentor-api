@@ -21,6 +21,8 @@ export * from './promoCode.entity';
 export * from './promoCodeRedemption.entity';
 export * from './adminUser.entity';
 export * from './adminAuditLog.entity';
+export * from './adminAlert.entity';
+export * from './adminPushSubscription.entity';
 export * from './menteeProfile.entity';
 export * from './mentorProfile.entity';
 

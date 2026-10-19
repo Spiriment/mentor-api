@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { pushTokenController } from '../controllers/pushToken.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
 import { appReleaseService } from '@/services/appRelease.service';
 import { logger, jwt } from '../config/int-services';
 import path from 'path';
@@ -184,6 +186,7 @@ const createRootRoutes = () => {
 
   // Push token routes
   rootRouter.use('/api/users/push-token', pushTokenRoutes);
+  rootRouter.post('/api/users/app-info', authenticateToken, pushTokenController.saveAppInfo);
 
 
   // Stream video call routes

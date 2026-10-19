@@ -7,6 +7,7 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
+import { adminAlertService } from '@/services/adminAlert.service';
 import {
   inferBillingIntervalFromProductId,
   mrrCentsFromRcEvent,
@@ -238,6 +239,22 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
 
       default:
         break;
+    }
+
+    // Alert admins only after the event was processed (a retried/failed webhook doesn't alert)
+    const rcAlert: Record<string, string> = {
+      INITIAL_PURCHASE: 'New subscription',
+      CANCELLATION: 'Subscription cancelled',
+      BILLING_ISSUE: 'Subscription payment failed',
+    };
+    if (rcAlert[type]) {
+      const who = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+      const plan = tierFromProductId(product_id) ?? 'unknown plan';
+      void adminAlertService.notify('subscription', {
+        title: rcAlert[type],
+        body: `${who} · ${plan} (App Store)`,
+        link: '/subscriptions',
+      });
     }
 
     res.json({ received: true });

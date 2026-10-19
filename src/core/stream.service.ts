@@ -1,6 +1,7 @@
 import { Config } from '@/common';
 import { Logger } from '@/common/logger';
 import { StreamClient } from '@stream-io/node-sdk';
+import { summarizeCallSession, type CallSessionHealth } from '@/common/callHealth';
 
 export class StreamService {
   private logger: Logger;
@@ -52,6 +53,49 @@ export class StreamService {
    */
   getApiKey(): string {
     return Config.stream.apiKey;
+  }
+
+  /**
+   * Per-call-session health (who joined, from which platform, whether their audio/video
+   * actually reached the call, connection quality) for the admin Sessions page.
+   * Each Stream "call session" is one stretch of the call; rejoining after everyone left
+   * starts a new one. Newest first.
+   */
+  async getCallHealth(
+    callId: string,
+    roles: { mentorId?: string; menteeId?: string },
+  ): Promise<CallSessionHealth[]> {
+    const stats = await this.client.video.queryCallStats({
+      filter_conditions: { call_cid: `default:${callId}` },
+      sort: [{ field: 'created_at', direction: -1 }],
+      limit: 10,
+    });
+    const results: CallSessionHealth[] = [];
+    for (const report of stats.reports ?? []) {
+      const ps = await this.client.video.queryCallSessionParticipantStats({
+        call_type: 'default',
+        call_id: callId,
+        session: report.call_session_id,
+        limit: 25,
+      });
+      results.push(
+        summarizeCallSession(
+          {
+            sessionId: report.call_session_id,
+            startedAt: report.first_stats_time,
+            // The summary has no end time; derive it from start + duration
+            endedAt: report.first_stats_time
+              ? new Date(new Date(report.first_stats_time).getTime() + report.call_duration_seconds * 1000)
+              : undefined,
+            durationSeconds: report.call_duration_seconds,
+            qualityScore: report.quality_score,
+            participants: (ps.participants ?? []) as any,
+          },
+          roles,
+        ),
+      );
+    }
+    return results;
   }
 
   /**

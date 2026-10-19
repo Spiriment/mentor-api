@@ -25,6 +25,10 @@ export class AdminUser extends BaseEntity {
   @Column({ default: true })
   isActive!: boolean;
 
+  /** Per-event channel choices, see AdminNotificationPreferences in common/adminAlerts.ts */
+  @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
+  notificationPreferences?: Record<string, Record<string, boolean>> | null;
+
   @Column({ name: 'firstName', type: 'varchar', length: 120, nullable: true })
   firstName?: string | null;
 

@@ -6,6 +6,7 @@ const router = Router();
 router.get('/metrics', adminSessionController.metrics);
 router.get('/', adminSessionController.list);
 router.get('/:sessionId', adminSessionController.getById);
+router.get('/:sessionId/call-health', adminSessionController.callHealth);
 router.patch('/:sessionId/status', adminSessionController.patchStatus);
 
 export default router;

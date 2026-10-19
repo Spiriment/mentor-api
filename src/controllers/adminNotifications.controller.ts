@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { AppDataSource } from '@/config/data-source';
 import { ContactMessage, ContactStatus } from '@/database/entities/contactMessage.entity';
 import { User } from '@/database/entities/user.entity';
+import { AdminAlert } from '@/database/entities/adminAlert.entity';
+import { IsNull } from 'typeorm';
 
 export const adminNotificationsController = {
   async getSummary(req: Request, res: Response) {
@@ -48,7 +50,23 @@ export const adminNotificationsController = {
         link: `/applications`,
       }));
 
-      const notifications = [...mentorNotifications, ...contactNotifications]
+      // This admin's own alerts (tickets, subscriptions — per their notification preferences)
+      const [alerts, unreadAlerts] = await AppDataSource.getRepository(AdminAlert).findAndCount({
+        where: { adminUserId: (req as any).admin?.id, readAt: IsNull() },
+        order: { createdAt: 'DESC' },
+        take: 15,
+      });
+      const alertNotifications = alerts.map((a) => ({
+        id: a.id,
+        type: a.type as 'support_ticket' | 'subscription',
+        title: a.title,
+        body: a.body,
+        createdAt: a.createdAt,
+        link: a.link ?? '/',
+        alert: true as const,
+      }));
+
+      const notifications = [...alertNotifications, ...mentorNotifications, ...contactNotifications]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 15);
 
@@ -60,7 +78,8 @@ export const adminNotificationsController = {
             unreadContacts: unreadContacts[1],
             pendingApplications: pendingMentors.length,
             newUsersThisWeek: newUsers,
-            total: unreadContacts[1] + pendingMentors.length,
+            unreadAlerts,
+            total: unreadContacts[1] + pendingMentors.length + unreadAlerts,
           },
         },
       });

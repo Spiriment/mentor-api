@@ -33,7 +33,12 @@ router.post(
   adminUserController.bulkEmail
 );
 router.get('/:userId', adminUserController.getById);
-router.get('/:userId/gdpr-export', adminUserController.gdprExport);
+// A user's complete data package — super admin only (matrix: "Export Reports"; was open to support)
+router.get(
+  '/:userId/gdpr-export',
+  requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
+  adminUserController.gdprExport
+);
 router.post(
   '/:userId/send-email',
   uploadEmailAttachment,

@@ -9,6 +9,7 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { UserSubscription, SubscriptionTier, SubscriptionStatus } from '@/database/entities/userSubscription.entity';
 import { logger } from '@/config/int-services';
+import { adminAlertService } from '@/services/adminAlert.service';
 import {
   inferBillingIntervalFromStripeInterval,
   mrrCentsFromStripeInvoice,
@@ -170,6 +171,22 @@ async function syncFamilyMemberFromStripeWebhook(params: {
   );
 }
 
+/** Fire-and-forget admin alert (never delays or fails the webhook response). */
+function alertSubscriptionEvent(title: string, userId: string, detail: string) {
+  void (async () => {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'firstName', 'lastName', 'email'],
+    });
+    const who = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'A user';
+    await adminAlertService.notify('subscription', {
+      title,
+      body: `${who} · ${detail}`,
+      link: '/subscriptions',
+    });
+  })().catch((err) => logger.error('Stripe admin alert failed', err));
+}
+
 export const handleStripeWebhook = async (req: Request, res: Response): Promise<void> => {
   const sig = req.headers['stripe-signature'] as string;
 
@@ -307,6 +324,10 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           if (promoCodeId && event.type === 'customer.subscription.created') {
             await subscriptionService.completePromoRedemption(userId, promoCodeId);
           }
+
+          if (event.type === 'customer.subscription.created' && status === 'active') {
+            alertSubscriptionEvent('New subscription', userId, `${tier ?? 'unknown plan'} (Stripe)`);
+          }
         }
 
         break;
@@ -341,6 +362,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             expiresAt: null,
           });
           await releaseChurchMembershipIfNeeded(userId);
+          alertSubscriptionEvent('Subscription ended', userId, 'Stripe');
         }
 
         break;
@@ -380,6 +402,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
         if (resolution.kind === 'user') {
           await subscriptionService.markPastDue(resolution.userId);
+          alertSubscriptionEvent('Subscription payment failed', resolution.userId, 'Stripe');
         } else {
           logger.warn('invoice.payment_failed could not resolve user', {
             subscriptionId,

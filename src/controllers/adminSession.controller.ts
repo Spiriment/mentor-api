@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccessResponse } from '@/common/helpers';
 import { adminSessionService } from '@/services/adminSession.service';
-import { SESSION_STATUS } from '@/database/entities/session.entity';
+import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
+import { AppDataSource } from '@/config/data-source';
+import { StreamService } from '@/core/stream.service';
+
+const callHealthStream = new StreamService();
 
 export class AdminSessionController {
   list = async (req: Request, res: Response, next: NextFunction) => {
@@ -38,6 +42,28 @@ export class AdminSessionController {
         topNoShowMentors: topMentors,
         topNoShowMentees: topMentees,
       });
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  /** Stream call stats for this session — diagnose "no video", dropped calls, poor quality. */
+  callHealth = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const session = await AppDataSource.getRepository(Session).findOne({
+        where: { id: req.params.sessionId },
+        select: ['id', 'mentorId', 'menteeId'],
+      });
+      if (!session) {
+        return res.status(404).json({ success: false, error: { message: 'Session not found' } });
+      }
+      // Same id the app joins with (generateStreamCallId in mentor-app/src/utils/callUtils.ts)
+      const callId = session.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const calls = await callHealthStream.getCallHealth(callId, {
+        mentorId: session.mentorId,
+        menteeId: session.menteeId,
+      });
+      return sendSuccessResponse(res, { callId, calls });
     } catch (e) {
       next(e);
     }

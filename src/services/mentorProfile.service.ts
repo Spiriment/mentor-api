@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { adminAlertService } from './adminAlert.service';
 import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
@@ -213,6 +214,16 @@ export class MentorProfileService {
         this.logger.info(
           `Completed mentor onboarding for user ${userId}; awaiting admin approval`
         );
+
+        const applicant =
+          [completedProfile.user?.firstName, completedProfile.user?.lastName].filter(Boolean).join(' ') ||
+          completedProfile.user?.email ||
+          'A mentor';
+        void adminAlertService.notify('mentor_application', {
+          title: 'New mentor application',
+          body: `${applicant} submitted a mentor application and is waiting for review.`,
+          link: '/applications',
+        });
 
         try {
           const notificationService = getAppNotificationService();
@@ -577,6 +588,11 @@ export class MentorProfileService {
     });
 
     this.logger.info(`Mentor application resubmitted for review by user ${userId}`);
+    void adminAlertService.notify('mentor_application', {
+      title: 'Mentor application resubmitted',
+      body: `${[user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'A mentor'} added the requested information and is waiting for review.`,
+      link: '/applications',
+    });
     return (await this.getProfile(userId)) as MentorProfile;
   }
 

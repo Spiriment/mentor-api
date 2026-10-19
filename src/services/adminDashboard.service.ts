@@ -75,9 +75,27 @@ export class AdminDashboardService {
       adminQuizService.getSummaryMetrics(),
     ]);
 
+    // Which app builds active users run — tells you when it's safe to raise the minimum
+    // version (Settings → App updates). Null version = a build before 1.0.5, which never
+    // reported it.
+    const versionRows: { platform: string | null; version: string | null; count: string }[] =
+      await userRepo
+        .createQueryBuilder('user')
+        .select('user.pushPlatform', 'platform')
+        .addSelect('user.appVersion', 'version')
+        .addSelect('COUNT(*)', 'count')
+        .where('user.lastActiveAt >= :thirtyDaysAgo', { thirtyDaysAgo })
+        .groupBy('user.pushPlatform')
+        .addGroupBy('user.appVersion')
+        .getRawMany();
+    const appVersions = versionRows
+      .map((r) => ({ platform: r.platform, version: r.version, count: Number(r.count) }))
+      .sort((a, b) => b.count - a.count);
+
     return {
       users: { mentees, mentors, total: totalUsers, incompleteOnboarding },
       monthlyActiveUsers,
+      appVersions,
       subscriptions: subscriptionSlice,
       pendingMentorApplications,
       mentorApplicationFunnel,

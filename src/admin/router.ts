@@ -1,3 +1,5 @@
+import { ADMIN_ROLE } from '@/common/constants/adminRoles';
+import { requireAdminRole } from './middleware/requireAdminRole.middleware';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { jwt } from '@/config/int-services';
@@ -97,8 +99,10 @@ export function createAdminRouter(): Router {
     adminAuditLogController.list
   );
 
+  // Pushes to every user — super admin only, like Broadcasts (was open to any admin role)
   protectedAdmin.post(
     '/broadcast-push',
+    requireAdminRole(ADMIN_ROLE.SUPER_ADMIN),
     adminController.broadcastPushNotification
   );
 
