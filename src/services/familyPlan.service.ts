@@ -95,7 +95,11 @@ export class FamilyPlanService {
       tier: parentTier,
       ageDiscountPercent: 0,
       isParent: true,
-      stripeSubscriptionId: parentSub?.externalRef ?? null,
+      // Only a Stripe subscription can be managed here (App Store / church plans can't)
+      stripeSubscriptionId:
+        parentSub?.externalProvider === 'stripe' && parentSub.externalRef?.startsWith('sub_')
+          ? parentSub.externalRef
+          : null,
     });
     await this.memberRepo.save(parentMember);
 
@@ -123,7 +127,7 @@ export class FamilyPlanService {
     // Accept either a UUID or an email address
     const isEmail = memberUserId.includes('@');
     const memberUser = await this.userRepo.findOne({
-      where: isEmail ? { email: memberUserId } : { id: memberUserId },
+      where: isEmail ? { email: memberUserId.trim().toLowerCase() } : { id: memberUserId },
     });
     if (!memberUser) throw new AppError('No account found with that email. Ask them to sign up first.', 404);
 
@@ -135,14 +139,23 @@ export class FamilyPlanService {
       throw new AppError('This user is already part of a family plan', 409);
     }
 
+    // Only a plan someone pays for (or is given) blocks joining. The app's own free trial has no
+    // provider and is replaced by the family seat (see syncMemberSubscription); blocking it meant
+    // anyone who signed up in the last 7 days couldn't be added.
     const memberSub = await this.subRepo.findOne({ where: { user: { id: memberUser.id } } });
     if (
-      memberSub &&
+      memberSub?.externalProvider &&
       ['active', 'past_due', 'trialing'].includes(memberSub.status) &&
       ['basic', 'pro', 'premium'].includes(memberSub.tier)
     ) {
+      const via =
+        memberSub.externalProvider === 'revenuecat'
+          ? ' through the App Store'
+          : memberSub.externalProvider === 'church_central'
+            ? ' through their church'
+            : '';
       throw new AppError(
-        'This user already has an active subscription. They must cancel it before joining a family plan.',
+        `This person already has a ${memberSub.tier} plan${via}. It has to end before they can join a family plan.`,
         409,
       );
     }
@@ -207,13 +220,41 @@ export class FamilyPlanService {
     memberUserId: string,
     newTier: SubscriptionTier,
     interval: 'monthly' | 'annual' = 'monthly',
-  ): Promise<{ checkoutUrl: string; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
+  ): Promise<{ checkoutUrl: string | null; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new AppError('Family plan not found', 404);
     if (plan.parentUserId !== parentUser.id) throw new AppError('Only the plan owner can change tiers', 403);
 
-    const member = await this.memberRepo.findOne({ where: { familyPlanId: planId, userId: memberUserId } });
+    const member = await this.memberRepo.findOne({
+      where: { familyPlanId: planId, userId: memberUserId, removedAt: IsNull() },
+    });
     if (!member) throw new AppError('Member not found in this plan', 404);
+    // Already paying: change the existing subscription in place (Stripe prorates). A new
+    // checkout here used to start a second subscription and cancel the old one without credit,
+    // so the parent paid twice for the overlap.
+    if (member.stripeSubscriptionId?.startsWith('sub_')) {
+      await stripeService.changeSubscriptionPrice(member.stripeSubscriptionId, newTier as 'basic' | 'pro' | 'premium', interval);
+      member.tier = newTier;
+      await this.memberRepo.save(member);
+      await this.subRepo.update({ userId: memberUserId }, { tier: newTier, billingInterval: interval });
+      return {
+        checkoutUrl: null,
+        effectivePriceEur: effectivePrice(newTier, member.ageDiscountPercent, interval),
+        billingInterval: interval,
+      };
+    }
+
+    if (member.isParent) {
+      const ownSub = await this.subRepo.findOne({ where: { userId: memberUserId } });
+      if (ownSub?.externalProvider && ownSub.externalProvider !== 'stripe' && ['active', 'past_due'].includes(ownSub.status)) {
+        throw new AppError(
+          ownSub.externalProvider === 'revenuecat'
+            ? 'Your own plan is billed by the App Store. Change it in the App Store.'
+            : 'Your own plan is managed elsewhere and can\'t be changed here.',
+          409,
+        );
+      }
+    }
 
     let couponId: string | undefined;
     if (member.ageDiscountPercent > 0) {
@@ -271,21 +312,31 @@ export class FamilyPlanService {
     const memberList = members.map((m) => {
       const sub = subByUserId.get(m.userId);
       const billingInterval = sub?.billingInterval ?? 'monthly';
-      const billedPriceEur = effectivePrice(m.tier, m.ageDiscountPercent, billingInterval);
-      const monthlyPriceEur = monthlyEquivalentPrice(m.tier, m.ageDiscountPercent, billingInterval);
+      // The parent is listed with their own plan. It only counts towards the family total when
+      // it is a Stripe subscription on this card; a trial, Free or an App Store plan costs the
+      // family nothing here (it used to be priced as Basic/Premium regardless).
+      const parentPaysHere =
+        !m.isParent ||
+        (sub?.externalProvider === 'stripe' &&
+          ['active', 'past_due'].includes(sub.status) &&
+          ['basic', 'pro', 'premium'].includes(sub.tier));
+      const tier: SubscriptionTier = m.isParent ? (sub?.tier ?? 'free') : m.tier;
+      const billedPriceEur = parentPaysHere ? effectivePrice(tier, m.ageDiscountPercent, billingInterval) : 0;
+      const monthlyPriceEur = parentPaysHere ? monthlyEquivalentPrice(tier, m.ageDiscountPercent, billingInterval) : 0;
       const base = {
         id: m.id,
         userId: m.userId,
         firstName: m.user?.firstName ?? '',
         lastName: m.user?.lastName ?? '',
         email: m.user?.email ?? '',
-        tier: m.tier,
+        tier,
         ageDiscountPercent: m.ageDiscountPercent,
         billingInterval,
         billedPriceEur,
         monthlyPriceEur,
         isParent: m.isParent,
-        paymentStatus: m.stripeSubscriptionId ? 'active' as const : 'pending' as const,
+        // The parent's own plan is never "awaiting payment" here
+        paymentStatus: m.isParent || m.stripeSubscriptionId ? ('active' as const) : ('pending' as const),
         ...(isOwner
           ? {
               activity: {
@@ -569,7 +620,7 @@ export class FamilyPlanService {
     memberUserId: string,
     newTier: SubscriptionTier,
     interval: 'monthly' | 'annual' = 'monthly',
-  ): Promise<{ checkoutUrl: string; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
+  ): Promise<{ checkoutUrl: string | null; effectivePriceEur: number; billingInterval: 'monthly' | 'annual' }> {
     const plan = await this.planRepo.findOne({
       where: { id: planId },
       relations: ['parent'],
@@ -586,13 +637,17 @@ export class FamilyPlanService {
 
     const members = await this.memberRepo.find({ where: { familyPlanId: planId } });
     for (const member of members) {
-      if (member.stripeSubscriptionId) {
-        await stripeService.cancelSubscription(member.stripeSubscriptionId).catch(() => {});
-      }
+      // The parent's own subscription is theirs, not the family's: leave it running
       if (!member.isParent) {
+        if (member.stripeSubscriptionId) {
+          await stripeService.cancelSubscription(member.stripeSubscriptionId).catch(() => {});
+        }
         await this.downgradeMemberSubscription(member.userId, member.stripeSubscriptionId);
       }
     }
+    // Free everyone to create or join another family plan (membership rows were left behind,
+    // so "already part of a family plan" blocked them forever)
+    if (members.length) await this.memberRepo.remove(members);
 
     plan.status = 'inactive';
     await this.planRepo.save(plan);

@@ -1051,6 +1051,14 @@ export class AdminOrgPlanService {
   }
 
   async generateFamilyInvoice(planId: string, adminUserId: string, ip?: string) {
+    // Family members each have their own Stripe subscription charged to the parent's card, so
+    // an extra invoice for the same members billed the parent twice. Disabled on purpose.
+    if (planId) {
+      throw new AppError(
+        "Family plans are billed by each member's own subscription on the parent's card; a separate invoice would charge them twice.",
+        410,
+      );
+    }
     if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
 
     const plan = await this.familyPlanRepo.findOne({

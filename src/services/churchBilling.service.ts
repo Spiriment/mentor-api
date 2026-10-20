@@ -10,6 +10,7 @@ import {
   TIER_PRICE_EUR,
   applyDiscount,
   getChurchDiscountPercentForMemberCount,
+  CHURCH_PORTAL_MONTHLY_FEE_EUR,
 } from '@/common/constants/subscriptionPricing';
 import {
   isAutoInvoiceDue,
@@ -114,6 +115,7 @@ export class ChurchBillingService {
       seatCap: plan.totalSeats > 0 ? plan.totalSeats : null,
       coveredCount: rows.filter((r) => r.covered).length,
       discountPercent,
+      portalFeeEur: CHURCH_PORTAL_MONTHLY_FEE_EUR,
       tierPrices: TIER_PRICE_EUR,
       billingEmail: typeof plan.metadata?.billingEmail === 'string' ? plan.metadata.billingEmail : null,
       invoiceRecipient: recipient?.email ?? null,

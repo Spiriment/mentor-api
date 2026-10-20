@@ -79,6 +79,31 @@ class StripeService {
     return session.url!;
   }
 
+  /**
+   * Move an existing subscription to another tier/interval in place. Stripe prorates: the
+   * unused part of the old price is credited and the new price charged for the rest of the
+   * period (no second subscription, no paying twice). Discounts on it are kept.
+   */
+  async changeSubscriptionPrice(
+    subscriptionId: string,
+    tier: 'basic' | 'pro' | 'premium',
+    interval: 'monthly' | 'annual',
+  ): Promise<void> {
+    const priceId = TIER_PRICE_MAP[interval === 'annual' ? `${tier}_annual` : tier];
+    if (!priceId) throw new AppError(`Price ID for tier "${tier}" is not configured`, 500);
+
+    const sub = await this.client.subscriptions.retrieve(subscriptionId);
+    const item = sub.items.data[0];
+    if (!item) throw new AppError('Subscription has no items', 500);
+    if (item.price?.id === priceId) return;
+
+    await this.client.subscriptions.update(subscriptionId, {
+      items: [{ id: item.id, price: priceId }],
+      proration_behavior: 'create_prorations',
+      metadata: { ...(sub.metadata ?? {}), tier },
+    });
+  }
+
   async createBillingPortalSession(user: User, returnUrl: string): Promise<string> {
     const customerId = await this.getOrCreateCustomer(user);
     const session = await this.client.billingPortal.sessions.create({
@@ -133,7 +158,9 @@ class StripeService {
         id,
         percent_off: discountPercent,
         duration: 'forever',
-        name: `Promo: ${promoCode}`,
+        // Stripe caps coupon names at 40 characters; "Promo: family-age-<uuid>" is 54, which
+        // made every youth family-member checkout fail
+        name: `${discountPercent}% ${promoCode}`.slice(0, 40),
         metadata: { promoCode },
       });
       return coupon.id;
