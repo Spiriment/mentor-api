@@ -4,7 +4,8 @@ import { In, ILike } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { jwt } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
-import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
+import { ChurchPortal, CHURCH_PORTAL_STATUS } from '@/church-portal/entities/churchPortal.entity';
+import { adminOrgPlanService } from './adminOrgPlan.service';
 import { ChurchPortalUser } from '@/church-portal/entities/churchPortalUser.entity';
 import { User } from '@/database/entities/user.entity';
 import { OrgPlan } from '@/database/entities/orgPlan.entity';
@@ -211,8 +212,21 @@ export class AdminChurchPortalService {
     const portal = await repo.findOne({ where: { id: portalId } });
     if (!portal) throw new NotFoundError('Church portal not found');
 
-    Object.assign(portal, data);
-    return repo.save(portal);
+    const previousStatus = portal.status;
+    // The discount is derived from membership (5% / 10%) and recomputed on every join and leave,
+    // so a manual value would be silently overwritten
+    const { discountPercent: _ignored, ...rest } = data;
+    Object.assign(portal, rest);
+    const saved = await repo.save(portal);
+
+    if (data.status && data.status !== previousStatus) {
+      // Suspension ends members' church discount; reactivation brings it back
+      await adminOrgPlanService.syncChurchPortalMemberDiscounts(portalId, {
+        statusChange: data.status === CHURCH_PORTAL_STATUS.SUSPENDED ? 'suspended' : 'reactivated',
+      });
+      return (await repo.findOne({ where: { id: portalId } })) ?? saved;
+    }
+    return saved;
   }
 
   // ── Portal Users (pastors) ──────────────────────────────────────────────

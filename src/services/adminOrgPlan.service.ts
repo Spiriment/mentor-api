@@ -25,7 +25,7 @@ import {
   CHURCH_DISCOUNT_PERCENT,
   CHURCH_BULK_MEMBER_THRESHOLD,
 } from '@/common/constants/subscriptionPricing';
-import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
+import { ChurchPortal, CHURCH_PORTAL_STATUS } from '@/church-portal/entities/churchPortal.entity';
 import { stripePayingMemberIds, syncChurchCouponsInBackground } from './churchDiscountSync.service';
 import { adminAlertService } from './adminAlert.service';
 import {
@@ -458,18 +458,55 @@ export class AdminOrgPlanService {
     await this.syncChurchPortalMemberDiscounts(portal.id);
   }
 
-  async syncChurchPortalMemberDiscounts(churchPortalId: string): Promise<number> {
+  /**
+   * Recompute the church discount for every member (5%, 10% from 100 members, 0% while the
+   * church is suspended) and keep members' own Stripe coupons in line.
+   * `statusChange` comes from the admin suspending or reactivating the church.
+   */
+  async syncChurchPortalMemberDiscounts(
+    churchPortalId: string,
+    opts: { statusChange?: 'suspended' | 'reactivated' } = {},
+  ): Promise<number> {
     const userRepo = AppDataSource.getRepository(User);
     const portalRepo = AppDataSource.getRepository(ChurchPortal);
-    const before = await portalRepo.findOne({ where: { id: churchPortalId }, select: ['id', 'discountPercent'] });
+    const before = await portalRepo.findOne({
+      where: { id: churchPortalId },
+      select: ['id', 'discountPercent', 'status', 'metadata'],
+    });
     const count = await userRepo.count({ where: { churchPortalId } });
-    const discountPercent = getChurchDiscountPercentForMemberCount(count);
+    const suspended = before?.status === CHURCH_PORTAL_STATUS.SUSPENDED;
+    const discountPercent = suspended ? 0 : getChurchDiscountPercentForMemberCount(count);
 
     await portalRepo.update(churchPortalId, { discountPercent });
     await userRepo.update({ churchPortalId }, { churchDiscountPercent: discountPercent });
+    if (!before) return discountPercent;
 
-    // Crossing the 100-member line: move members' existing Stripe coupons to the new percent
-    if (before && before.discountPercent !== discountPercent) {
+    // Remember whose Stripe coupon suspension removed, so reactivation restores exactly those
+    const saveRemovedCoupons = async (userIds: string[] | null) => {
+      const fresh = await portalRepo.findOne({ where: { id: churchPortalId }, select: ['id', 'metadata'] });
+      if (!fresh) return;
+      const { couponsRemovedOnSuspension: previous, ...rest } = (fresh.metadata ?? {}) as Record<string, unknown>;
+      const merged = userIds
+        ? Array.from(new Set([...(Array.isArray(previous) ? (previous as string[]) : []), ...userIds]))
+        : [];
+      fresh.metadata = merged.length ? { ...rest, couponsRemovedOnSuspension: merged } : rest;
+      await portalRepo.save(fresh);
+    };
+
+    if (opts.statusChange === 'suspended') {
+      syncChurchCouponsInBackground(await stripePayingMemberIds(churchPortalId), `church ${churchPortalId} suspended`, {
+        onDone: (changed) => saveRemovedCoupons(changed),
+      });
+    } else if (opts.statusChange === 'reactivated') {
+      const removed = (before.metadata?.couponsRemovedOnSuspension as string[] | undefined) ?? [];
+      const payers = new Set(await stripePayingMemberIds(churchPortalId));
+      syncChurchCouponsInBackground(
+        removed.filter((id) => payers.has(id)),
+        `church ${churchPortalId} reactivated`,
+        { restore: true, onDone: () => saveRemovedCoupons(null) },
+      );
+    } else if (before.discountPercent !== discountPercent) {
+      // Crossing the 100-member line: move members' existing Stripe coupons to the new percent
       syncChurchCouponsInBackground(
         await stripePayingMemberIds(churchPortalId),
         `church ${churchPortalId} discount ${before.discountPercent}% → ${discountPercent}%`,
