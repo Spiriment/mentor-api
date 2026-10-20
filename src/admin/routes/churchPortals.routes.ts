@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { getEmailService } from '@/services/emailHelper';
 import { AdminChurchPortalService } from '@/services/adminChurchPortal.service';
 import { AdminChurchPortalController } from '@/controllers/adminChurchPortal.controller';
+import { adminChurchBillingHandlers } from '@/controllers/churchBilling.controller';
+import { ADMIN_ROLE } from '@/common/constants/adminRoles';
+import { requireAdminRole } from '../middleware/requireAdminRole.middleware';
 
 function buildController(): AdminChurchPortalController {
   const service = new AdminChurchPortalService(getEmailService());
@@ -46,6 +49,14 @@ router.post('/:portalId/users/:userId/resend-invite', (req, res, next) => ctrl()
 // GET /api/admin/church-portals/:portalId/report   — activity report
 
 router.get('/:portalId/members', (req, res, next) => ctrl().listMembers(req, res, next));
+// ── Billing: who the church pays for (Super Admin, like the church plans pages) ──
+const superAdmin = requireAdminRole(ADMIN_ROLE.SUPER_ADMIN);
+router.get('/:portalId/billing', superAdmin, adminChurchBillingHandlers.overview);
+router.post('/:portalId/billing/members/:userId', superAdmin, adminChurchBillingHandlers.cover);
+router.patch('/:portalId/billing/members/:userId', superAdmin, adminChurchBillingHandlers.changeTier);
+router.delete('/:portalId/billing/members/:userId', superAdmin, adminChurchBillingHandlers.uncover);
+router.patch('/:portalId/billing/settings', superAdmin, adminChurchBillingHandlers.updateSettings);
+
 // Needs the church.remove_members permission (super admins always have it)
 router.delete('/:portalId/members/:userId', (req, res, next) => ctrl().removeMember(req, res, next));
 router.get('/:portalId/report', (req, res, next) => ctrl().getReport(req, res, next));

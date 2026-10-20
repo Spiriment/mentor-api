@@ -1,403 +1,144 @@
-# Church Portal Feature — Implementation Checklist
+# Church Portal & Church Billing — How It Works
 
-> **Goal:** Add a `/particular-church` portal so each church gets its own login and dashboard to view mentor/mentee activity — without touching the existing Spiriment super-admin system.
+> **Status:** live. Rewritten October 2026 to describe what is built (the original April sprint
+> checklist is in git history). Member-facing pricing: `mentor-app/SPIRIMENT_SUBSCRIPTION_GUIDE.md` §11.
 
----
+Each church gets:
 
-## Login Assignment Strategy
-
-**Option A (chosen): Spiriment Admin Creates the Login**
-
-The Spiriment super-admin creates a church portal in the admin panel, enters the pastor's email, and the system sends the pastor an invite email. The pastor clicks the link, sets their own password, and logs in at their church-specific URL.
-
-**Login flow:**
-1. Spiriment admin creates the church in the admin panel (name, slug, denomination, etc.)
-2. Spiriment admin adds the pastor's email → system sends an **invite email** with a one-time setup link
-3. Pastor clicks the link → lands on a **Set Password** page
-4. Pastor sets their password and is redirected to their church login URL:
-   ```
-   https://admin.spiriment.com/church/:slug/login
-   ```
-5. Pastor logs in with email + password from that point on
-
-**Why Option A:**
-- Spiriment admin controls exactly who gets access to each church portal
-- No risk of unauthorized self-registration
-- Pastor picks their own password (secure, no plaintext passwords shared)
-- Clean audit trail — every portal user was explicitly created by an admin
-
----
-
-## Architecture
+- a **church portal**: a pastor dashboard at `https://admin.spiriment.com/church/:slug/login`
+- a **church billing plan** (`org_plans`, `planType = church`) that pays for the members the church chooses
 
 ```
-Spiriment Super Admin  ←  existing admin_users + /api/admin/*  (NO CHANGES)
-        |
-        v  (creates & manages)
-Church Portal Admin    ←  NEW: church_portals table + /api/church-portal/*
-        |
-        v  (sees only their church)
-Mentors & Mentees      ←  existing users table (scoped by churchPortalId)
+Spiriment admins  ← admin_users + /api/admin/*               (creates churches, invites pastors, billing)
+       │
+Pastors           ← church_portal_users + /api/church-portal/* (sees only their church)
+       │
+Members           ← users.churchPortalId  (joined the church: gets the church discount)
+                    users.orgPlanId       (the church pays for them: tier set by the church)
 ```
 
----
-
-## Sprint 1 — Backend Foundation
-
-### 1.1 Database Entities
-
-- [x] Create `src/church-portal/entities/churchPortal.entity.ts`
-- [x] Create `src/church-portal/entities/churchPortalUser.entity.ts`
-- [x] Create `src/church-portal/entities/churchPortalRefreshToken.entity.ts`
-- [x] Register all 3 new entities in `src/database/data-source.ts`
-
-### 1.2 Database Migrations
-
-- [x] Create migration `1780000000000-CreateChurchPortalTables.ts`
-
-  ```sql
-  -- church_portals
-  CREATE TABLE `church_portals` (
-    `id`           VARCHAR(36)  NOT NULL,
-    `orgPlanId`    VARCHAR(36)  NOT NULL,
-    `name`         VARCHAR(255) NOT NULL,
-    `slug`         VARCHAR(100) NOT NULL UNIQUE,   -- drives /church/:slug/login URL
-    `logoUrl`      VARCHAR(500) NULL,
-    `denomination` VARCHAR(100) NULL,
-    `city`         VARCHAR(100) NULL,
-    `country`      VARCHAR(100) NULL,
-    `timezone`     VARCHAR(64)  NOT NULL DEFAULT 'UTC',
-    `status`       VARCHAR(24)  NOT NULL DEFAULT 'active',
-    `metadata`     JSON         NULL,
-    `createdAt`    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    `updatedAt`    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (`id`),
-    INDEX `IDX_church_portals_orgPlanId` (`orgPlanId`),
-    INDEX `IDX_church_portals_slug`      (`slug`)
-  ) ENGINE=InnoDB;
-
-  -- church_portal_users (pastors — NOT in admin_users, NOT in users)
-  CREATE TABLE `church_portal_users` (
-    `id`             VARCHAR(36)  NOT NULL,
-    `churchPortalId` VARCHAR(36)  NOT NULL,
-    `email`          VARCHAR(255) NOT NULL UNIQUE,
-    `password`       VARCHAR(255) NOT NULL,
-    `firstName`      VARCHAR(120) NULL,
-    `lastName`       VARCHAR(120) NULL,
-    `role`           VARCHAR(32)  NOT NULL DEFAULT 'pastor',
-    `isActive`       TINYINT(1)   NOT NULL DEFAULT 1,
-    `lastLoginAt`    DATETIME(6)  NULL,
-    `createdAt`      DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    `updatedAt`      DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (`id`),
-    INDEX `IDX_cpu_churchPortalId` (`churchPortalId`)
-  ) ENGINE=InnoDB;
-
-  -- church_portal_refresh_tokens
-  CREATE TABLE `church_portal_refresh_tokens` (
-    `id`                 VARCHAR(36) NOT NULL,
-    `churchPortalUserId` VARCHAR(36) NOT NULL,
-    `token`              TEXT        NOT NULL,
-    `expiresAt`          DATETIME(6) NOT NULL,
-    `createdAt`          DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (`id`),
-    INDEX `IDX_cprt_userId` (`churchPortalUserId`)
-  ) ENGINE=InnoDB;
-  ```
-
-- [x] Create migration `1780100000000-AddChurchPortalIdToUsers.ts`
-
-  ```sql
-  ALTER TABLE `users`
-    ADD COLUMN `churchPortalId` VARCHAR(36) NULL AFTER `orgPlanId`,
-    ADD INDEX `IDX_users_churchPortalId` (`churchPortalId`);
-  ```
-
-- [ ] Run both migrations against the dev database
-- [x] Add `churchPortalId` column to the existing `User` entity (additive only — no other changes)
-
-### 1.3 JWT Token Types
-
-- [x] Append church portal constants to `src/church-portal/types/adminJwt.ts` (do NOT modify existing types):
-
-  ```typescript
-  export const CHURCH_PORTAL_JWT_TYP     = 'church_portal'         as const;
-  export const CHURCH_PORTAL_REFRESH_TYP = 'church_portal_refresh' as const;
-
-  export type ChurchPortalAccessPayload = {
-    typ:            typeof CHURCH_PORTAL_JWT_TYP;
-    portalUserId:   string;
-    churchPortalId: string;
-    email:          string;
-    role:           string;
-  };
-
-  export type ChurchPortalRefreshPayload = {
-    typ:          typeof CHURCH_PORTAL_REFRESH_TYP;
-    portalUserId: string;
-  };
-  ```
-
-- [x] Append `signChurchPortalAccessToken()` method to `JwtService`
-- [x] Append `verifyChurchPortalAccessToken()` method to `JwtService`
-
-### 1.4 Auth Middleware
-
-- [x] Create `src/church-portal/middleware/churchPortalAuth.middleware.ts`
-  - Verifies `typ === 'church_portal'` — rejects all admin and app tokens
-  - Loads `ChurchPortalUser` from DB and attaches to `req.churchPortalUser`
-  - All queries downstream get `churchPortalId` from `req.churchPortalUser` only (never from request body)
+`churchPortalId` (membership) and `orgPlanId` (who the church pays for) are deliberately separate:
+joining with the code gives the discount; the church then picks who it pays for.
 
 ---
 
-## Sprint 2 — Auth API
+## 1. Setting up a church
 
-### 2.1 Validation Schemas
+1. A Spiriment admin creates the church (name, slug, denomination…). A **join code** (8 characters) is generated.
+2. The admin adds pastor logins (role `pastor`, `deacon` or `leader`). Each gets an invite email
+   (`church-portal-invite` template, link valid 48 h) to set a password at `/church/:slug/accept-invite`.
+   If the email fails, the account still exists and the admin uses **Resend invite**.
+3. The church's billing plan is created automatically the first time billing is used (no seat cap).
 
-- [x] Create `src/church-portal/validation/churchPortalAuth.validation.ts`
-  - `loginSchema` — email, password, churchPortalId
-  - `forgotPasswordSchema` — email
-  - `resetPasswordSchema` — otp, newPassword
-  - `updateProfileSchema` — firstName, lastName
+Pastor accounts: login, refresh, logout, forgot password (6-digit code by email, valid 15 min,
+burned after 5 wrong tries; signs out other sessions). A pastor who never finished their invite gets
+a fresh invite instead of a code. Tokens are `typ: church_portal*` JWTs and never work on admin or
+app routes (and vice versa).
 
-### 2.2 Auth Service
+## 2. Members joining
 
-- [x] Create `src/church-portal/services/churchPortalAuth.service.ts`
-  - [x] `login(email, password, churchPortalId)` — bcrypt verify, sign both tokens, store refresh
-  - [x] `logout(refreshToken)` — delete from `church_portal_refresh_tokens`
-  - [x] `refreshToken(token)` — verify, sign new access token
-  - [x] `acceptInvite(inviteToken, newPassword)` — verify one-time invite token, bcrypt hash password, activate account
-  - [x] `forgotPassword(email)` — generate OTP, send email
-  - [x] `resetPassword(otp, newPassword)` — verify OTP, bcrypt hash, update password
-  - [x] `getMe(portalUserId)` — return portal user profile
-  - [x] `updateMe(portalUserId, data)` — update first/last name
+- In the app (onboarding or Profile → Church) the member enters the join code (or the church's slug).
+- This creates a **pending join request**; one pending request at a time (asking another church withdraws it).
+- Pastors are **emailed** (`church-join-request`, at most one email per church per hour, with the
+  pending count) and see a badge on **Join requests** in the portal.
+- On approve/decline the member gets a **push**. Approval links them (`users.churchPortalId`) and
+  recalculates the church discount; a member already in another church can't be approved.
+- Removed members must ask again (their old approval no longer re-links them).
+- Leaving the church (app) or being removed (pastor, or an admin with `church.remove_members`) ends
+  the church discount and anything the church pays for.
 
-### 2.3 Auth Controller & Routes
+## 3. Pricing
 
-- [x] Create `src/church-portal/controllers/churchPortalAuth.controller.ts`
-- [x] Create `src/church-portal/routes/auth.routes.ts`
+| Item | Price |
+|---|---|
+| Church portal | €50 / month, on every church invoice |
+| Each member the church pays for | tier price (Basic €3, Pro €5, Premium €7.50) minus the church discount |
+| Church discount | 5%; 10% once the church has 100+ members (mentors + mentees) |
 
-  | Method | Path | Auth Required |
-  |--------|------|---------------|
-  | POST | `/auth/login` | No |
-  | POST | `/auth/logout` | Yes |
-  | POST | `/auth/refresh` | No |
-  | POST | `/auth/accept-invite` | No — validates one-time invite token, sets password |
-  | POST | `/auth/forgot-password` | No |
-  | POST | `/auth/reset-password` | No |
-  | GET  | `/auth/me` | Yes |
-  | PATCH | `/auth/me` | Yes |
+Constants: `src/common/constants/subscriptionPricing.ts` (`CHURCH_DISCOUNT_PERCENT`,
+`CHURCH_BULK_DISCOUNT_PERCENT`, `CHURCH_BULK_MEMBER_THRESHOLD`, `CHURCH_PORTAL_MONTHLY_FEE_EUR`).
 
-### 2.4 Portal Info Route (Public)
+The discount is stored on every member (`users.churchDiscountPercent`) and resynced on each join and
+leave. Members who subscribe themselves by card get it as a Stripe coupon; when the percent changes
+(crossing 100 members) or they leave, their coupon is updated from the next invoice. Members who
+subscribed **before** joining get it added on approval (only if they have no other discount).
+App Store prices can't be discounted. One discount per person: the biggest wins (mentor 30%, youth 30%, church 5/10%).
 
-- [x] Create `src/church-portal/routes/portal.routes.ts`
-  - `GET /portal/info?slug=:slug` — returns `{ name, logoUrl, denomination }` for login page branding
+## 4. Who the church pays for
 
-### 2.5 Wire Up Router
+Pastors (Billing page, **Pastor role only** for changes) and Spiriment super admins (church page →
+Billing tab) can:
 
-- [x] Create `src/church-portal/router.ts` — assembles all church-portal sub-routes
-- [x] Register in `src/routes/root.route.ts`:
-  ```typescript
-  rootRouter.use('/api/church-portal', createChurchPortalRouter());
-  ```
-- [ ] Test all auth endpoints with Postman/curl
+| Action | Effect |
+|---|---|
+| **Church pays** (pick a tier) | member gets the tier now (`church_central` subscription), a push, and is on the next invoice |
+| **Change tier** | immediate; next invoice uses the new tier |
+| **Stop paying** | member moves to Free (email "subscription ended"); stays in the church |
 
----
+Rules:
+- Only members of the church can be added.
+- Someone already paying for themselves (card, App Store, family plan) must cancel and let it run out first; nobody pays twice.
+- Members the church pays for can't buy or change a plan in the app.
+- Optional **paid places cap** per church (super admin). 0 = no cap.
 
-## Sprint 3 — Dashboard & Activity API
+API — `src/services/churchBilling.service.ts`, `src/controllers/churchBilling.controller.ts`:
 
-### 3.1 Dashboard Service
+| Pastor (`/api/church-portal`) | Admin (`/api/admin/church-portals/:portalId`, Super Admin) |
+|---|---|
+| `GET /billing/coverage` | `GET /billing` |
+| `POST\|PATCH\|DELETE /billing/coverage/:userId` `{ tier }` | `POST\|PATCH\|DELETE /billing/members/:userId` `{ tier }` |
+| `PATCH /billing/settings` `{ billingEmail }` | `PATCH /billing/settings` `{ billingEmail, autoInvoice: { enabled, dayOfMonth }, seatCap }` |
 
-- [x] Create `src/church-portal/services/churchPortalDashboard.service.ts`
-  - [x] `getSummary(churchPortalId)` — total mentors, total mentees, sessions this week, avg streak
-  - [x] `getActivityFeed(churchPortalId)` — recent sessions completed + new members joined (last 7 days)
+## 5. Invoices
 
-### 3.2 Members Service
+- **One Stripe invoice per month** (`collection_method: send_invoice`, due in 14 days): the €50
+  portal fee plus one line per member the church pays for. Built in
+  `AdminOrgPlanService.buildChurchInvoiceDraft`; sent by `StripeService.createAndSendInvoice` (items
+  are attached to the invoice itself; the total is checked before sending).
+- **Recipient**, in order: billing admin user → church billing email → the pastor generating it →
+  the church's first active pastor.
+- **Automatic monthly invoicing** (off by default; a super admin turns it on per church with a day
+  1–28): cron daily 08:00 UTC, catches up if a day was missed, one automatic invoice per month,
+  skipped while the church is suspended. Failures alert super admins.
+- **Manual**: pastor (max once per 24 h) or admin "Generate invoice".
+- **Tracking**: each invoice is recorded on the plan (`metadata.invoices`) and updated from Stripe
+  webhooks (`invoice.paid`, `payment_succeeded`, `payment_failed`, `overdue`, `voided`,
+  `marked_uncollectible`) plus a daily reconcile at 09:30 UTC. Super admins are alerted on paid,
+  failed and overdue (once). Status shows on the pastor Billing page and the admin plan page.
+- Church invoice webhooks never touch personal subscriptions (detected by `metadata.planType = church`).
+- **Unpaid invoices don't cut anyone off automatically**; Spiriment decides (e.g. suspend the church).
 
-- [x] Create `src/church-portal/services/churchPortalMembers.service.ts`
-  - [x] `listMembers(churchPortalId, role?, page, limit)` — paginated, scoped by churchPortalId
-  - [x] `getMember(churchPortalId, userId)` — profile + stats (verifies user belongs to this church)
-  - [x] `getMemberSessions(churchPortalId, userId)` — session history
-  - [x] `getMemberStreak(churchPortalId, userId)` — streak + Bible reading data
+## 6. Suspension
 
-### 3.3 Activity Service
+Super admins (or support admins granted `church.suspend`) can suspend/reactivate a church:
+pastors are signed out on their next request and can't sign in; new joins are blocked; members'
+church discount drops to 0% (Stripe coupons removed and restored on reactivation for exactly the
+members who had one). Plans the church pays for are **not** changed by suspension.
 
-- [x] Create `src/church-portal/services/churchPortalActivity.service.ts`
-  - [x] `getMentors(churchPortalId)` — mentors with mentee count, session count, last active
-  - [x] `getMentees(churchPortalId)` — mentees with assigned mentor, last session, streak
-  - [x] `getSessions(churchPortalId)` — recent/upcoming sessions across the church
-  - [x] `getBibleReading(churchPortalId)` — aggregated Bible reading streaks
+## 7. Pastor portal pages (`spiriment-admin`, `/church/:slug/*`)
 
-### 3.4 Controllers & Routes
+Dashboard · Join requests · Mentors · Mentees · Sessions · Bible reading · Member detail (remove from
+church: Pastor role) · Billing
+(who the church pays for, billing email, invoice preview, invoice history) · Login / accept invite /
+forgot password.
 
-- [x] Create `src/church-portal/controllers/churchPortalDashboard.controller.ts`
-- [x] Create `src/church-portal/controllers/churchPortalMembers.controller.ts`
-- [x] Create `src/church-portal/controllers/churchPortalActivity.controller.ts`
-- [x] Create `src/church-portal/routes/dashboard.routes.ts`
-- [x] Create `src/church-portal/routes/members.routes.ts`
-- [x] Create `src/church-portal/routes/activity.routes.ts`
+## 8. Known gaps
 
-  | Method | Path | Description |
-  |--------|------|-------------|
-  | GET | `/dashboard/summary` | Counts + avg streak |
-  | GET | `/dashboard/activity` | Recent activity feed |
-  | GET | `/members` | All church members (`?role=mentor\|mentee&page=1`) |
-  | GET | `/members/:userId` | Member profile + stats |
-  | GET | `/members/:userId/sessions` | Session history |
-  | GET | `/members/:userId/streak` | Streak + Bible reading |
-  | GET | `/activity/mentors` | Mentor activity table |
-  | GET | `/activity/mentees` | Mentee activity table |
-  | GET | `/activity/sessions` | Sessions across the church |
-  | GET | `/activity/bible-reading` | Aggregated Bible streaks |
+- Sessions are attributed to the church only when the **mentor** is a church member (church mentees
+  with outside mentors don't appear in the dashboard/session counts).
+- Streak numbers are only refreshed when the member opens the app, so inactive members can show old streaks.
+- "New member" in the activity feed uses the account creation date, not the join date.
+- The portal sessions list doesn't show mentor/mentee names.
+- Not built: bulk import, bulk tier changes, default tier for new members, CSV exports, in-app church branding.
+- Church invoice revenue is not counted in MRR (`church_central` is a non-paying provider in MRR).
 
-- [x] Register all new routes in `src/church-portal/router.ts`
-
----
-
-## Sprint 4 — Admin Panel Backend
-
-> These endpoints are protected by the **existing** admin auth middleware — no changes to that.
-
-- [x] Create `src/admin/routes/churchPortals.routes.ts`
-- [x] Create admin controller + service for church portal management
-
-  | Method | Path | Description |
-  |--------|------|-------------|
-  | GET | `/admin/church-portals` | List all portals |
-  | POST | `/admin/church-portals` | Create a portal (linked to existing org_plan) |
-  | GET | `/admin/church-portals/:id` | Portal detail |
-  | PATCH | `/admin/church-portals/:id` | Update name, logo, status |
-  | GET | `/admin/church-portals/:id/users` | List pastor logins |
-  | POST | `/admin/church-portals/:id/users` | Create pastor login → sends invite email with one-time setup link |
-  | DELETE | `/admin/church-portals/:id/users/:uid` | Deactivate pastor login |
-  | GET | `/admin/church-portals/:id/members` | List app users in this church |
-  | GET | `/admin/church-portals/:id/report` | Activity report |
-
-- [x] Register `churchPortals.routes.ts` inside `src/admin/router.ts`
-
----
-
-## Sprint 5 — Admin Panel Frontend (spiriment-admin)
-
-### 5.1 API Functions
-
-- [ ] Append to `src/api/adminApi.ts` (do NOT modify existing functions):
-  - [ ] `createChurchPortal(body)`
-  - [ ] `listChurchPortals(page?)`
-  - [ ] `getChurchPortal(id)`
-  - [ ] `updateChurchPortal(id, body)`
-  - [ ] `createChurchPortalUser(portalId, body)`
-  - [ ] `listChurchPortalUsers(portalId)`
-  - [ ] `deactivateChurchPortalUser(portalId, userId)`
-  - [ ] `listChurchPortalMembers(portalId, params?)`
-  - [ ] `getChurchPortalReport(portalId)`
-
-### 5.2 Church Portal Detail Page
-
-- [ ] Create `src/pages/ChurchPortalDetail.tsx` with 4 tabs:
-  - [ ] **Overview** tab — portal info card, member counts, activity summary
-  - [ ] **Portal Admins** tab — table of pastor logins, create button, deactivate action
-  - [ ] **Members** tab — app users (mentors + mentees) in this church
-  - [ ] **Activity Report** tab — reuse existing chart components from `ChurchPlanDetail.tsx`
-
-### 5.3 Routing & Navigation
-
-- [ ] Add route `/church-portals/:id` to `src/App.tsx`
-- [ ] Add "Manage Church Portal" button in `ChurchPlanDetail.tsx` → navigates to `/church-portals/:id`
-
----
-
-## Sprint 6 — Pastor-Facing Web Portal (spiriment-admin)
-
-> Built as a parallel route group in the existing admin app using a separate auth context. Church portal tokens are stored under different localStorage keys (`cp_access_token`, `cp_refresh_token`) and never mixed with admin tokens.
-
-### 6.1 Auth Context & Guard
-
-- [x] Create `src/contexts/ChurchPortalAuthContext.tsx`
-  - Mirrors `AuthContext.tsx` but uses church portal login endpoint
-  - Stores tokens under `cp_access_token` / `cp_refresh_token`
-  - Exposes `portalRole` instead of `isSuperAdmin`
-- [ ] Create `src/components/RequireChurchPortalAuth.tsx` — route guard for pastor pages
-
-### 6.2 Pages
-
-- [ ] `src/pages/church-portal/ChurchPortalLogin.tsx`
-  - Fetches `GET /church-portal/portal/info?slug=:slug` to brand the login form
-  - Route: `/church/:slug/login` (public, no auth guard)
-
-- [ ] `src/pages/church-portal/ChurchPortalDashboard.tsx`
-  - Shows summary cards: total mentors, total mentees, sessions this week, avg streak
-  - Shows recent activity feed
-  - Route: `/church/:slug/dashboard`
-
-- [ ] `src/pages/church-portal/ChurchPortalMentors.tsx`
-  - Table: mentor name, mentee count, session count, last active
-  - Route: `/church/:slug/mentors`
-
-- [ ] `src/pages/church-portal/ChurchPortalMentees.tsx`
-  - Table: mentee name, assigned mentor, last session, current streak
-  - Route: `/church/:slug/mentees`
-
-- [ ] `src/pages/church-portal/ChurchPortalMemberDetail.tsx`
-  - Profile card, session history, streak chart
-  - Route: `/church/:slug/members/:userId`
-
-- [ ] `src/pages/church-portal/ChurchPortalSessions.tsx`
-  - List of recent + upcoming sessions across the whole church
-  - Route: `/church/:slug/sessions`
-
-### 6.3 Navigation Layout
-
-- [ ] Create `src/layouts/ChurchPortalLayout.tsx` — sidebar with links to all pastor pages
-- [ ] Add all `/church/:slug/*` routes to `src/App.tsx` wrapped in `RequireChurchPortalAuth`
-
----
-
-## Sprint 7 — Mobile App (Optional Enhancement)
-
-- [ ] Create `src/screens/auth/ChurchCodeScreen.tsx`
-  - Optional step in onboarding flow (after `RoleSelectionScreen`)
-  - User enters 6-char church code OR follows invite deep link
-  - Calls `GET /api/church-portal/portal/info?slug=XXXXXX` to validate and show church name
-  - On confirm: passes `churchPortalId` through onboarding params
-- [ ] Add `ChurchCode` to `RootStackParamList` in `src/types/index.ts`
-- [ ] Add `ChurchCodeScreen` to navigation stack in `src/navigation/index.tsx`
-- [ ] Pass `churchPortalId` to the final profile save API call in onboarding
-
----
-
-## Data Isolation Verification
-
-Before marking Sprint 3 as done, verify all of these are true:
-
-- [ ] `churchPortalAuthMiddleware` rejects any token where `typ !== 'church_portal'`
-- [ ] `churchPortalId` is always sourced from `req.churchPortalUser.churchPortalId` (the verified token) — never from `req.body` or `req.query`
-- [ ] Every TypeORM query in the church portal services filters by `churchPortalId`
-- [ ] Admin routes at `/api/admin/*` still reject church portal tokens (admin middleware checks `typ === 'admin'`)
-- [ ] Church portal users cannot call `/api/auth/*` app endpoints (they are not in the `users` table)
-
----
-
-## Migration Execution Order
-
-```
-1. Run CreateChurchPortalTables migration
-2. Run AddChurchPortalIdToUsers migration
-3. Register new entities in data-source.ts
-4. Run seed script:  scripts/seed-church-portal.ts
-   (creates one OrgPlan, one ChurchPortal, one pastor ChurchPortalUser)
-5. Backfill existing church users (if any):
-   UPDATE users SET churchPortalId = ? WHERE orgPlanId = ?
-```
-
----
-
-## Key Design Decisions
+## 9. Key design decisions
 
 | Decision | Reason |
-|----------|--------|
-| Pastors are in `church_portal_users`, NOT `admin_users` | Admin users are platform-wide; pastors must be scoped to one church |
-| Separate `churchPortalId` column on `users` (not just `orgPlanId`) | `orgPlanId` = billing; `churchPortalId` = access control. Keeping both allows multi-campus churches later |
-| `slug` field on `church_portals` | Drives the URL `/church/:slug/login`, memorable per-church, no internal UUID exposed |
-| `church_portals` is separate from `org_plans` | Avoids mixing auth credentials into a billing entity |
-| Parallel auth context in admin app (not shared with admin auth) | Zero token crossover between admin and pastor sessions |
+|---|---|
+| Pastors in `church_portal_users`, not `admin_users` | Admins are platform-wide; pastors are scoped to one church |
+| `churchPortalId` separate from `orgPlanId` | Membership/discount vs who the church pays for; a church only pays for members it chooses |
+| `slug` on `church_portals` | Readable portal URL without exposing ids |
+| Separate auth context in the admin app | No token crossover between admin and pastor sessions |
+| Plan created on first billing use | Every church can bill without manual plan setup |
+| Automatic invoicing opt-in per church | Existing churches aren't suddenly invoiced |

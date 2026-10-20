@@ -6,6 +6,8 @@ import {
   upsertInvoiceRecord,
   readInvoiceRecords,
   MAX_INVOICE_RECORDS,
+  isAutoInvoiceDue,
+  readAutoInvoiceSettings,
   type ChurchInvoiceRecord,
 } from './churchBilling';
 
@@ -100,5 +102,41 @@ describe('church invoice records', () => {
     assert.deepEqual(readInvoiceRecords(null), []);
     assert.deepEqual(readInvoiceRecords({ invoices: 'x' }), []);
     assert.equal(readInvoiceRecords({ invoices: [rec({}), null, { foo: 1 }] }).length, 1);
+  });
+});
+
+describe('automatic monthly church invoices', () => {
+  const sys = (createdAt: string): ChurchInvoiceRecord => ({
+    id: createdAt,
+    status: 'open',
+    totalCents: 5000,
+    createdAt,
+    dueAt: null,
+    paidAt: null,
+    hostedInvoiceUrl: null,
+    generatedBy: 'system',
+  });
+  const on = { enabled: true, dayOfMonth: 5 };
+
+  it('is off unless enabled', () => {
+    assert.equal(isAutoInvoiceDue({ enabled: false, dayOfMonth: 1 }, [], new Date('2026-10-20T08:00:00Z')), false);
+  });
+
+  it('waits for the billing day, then catches up if that day was missed', () => {
+    assert.equal(isAutoInvoiceDue(on, [], new Date('2026-10-04T08:00:00Z')), false);
+    assert.equal(isAutoInvoiceDue(on, [], new Date('2026-10-05T08:00:00Z')), true);
+    assert.equal(isAutoInvoiceDue(on, [], new Date('2026-10-09T08:00:00Z')), true);
+  });
+
+  it('sends one automatic invoice per month; manual invoices do not count', () => {
+    assert.equal(isAutoInvoiceDue(on, [sys('2026-10-05T08:00:00Z')], new Date('2026-10-20T08:00:00Z')), false);
+    assert.equal(isAutoInvoiceDue(on, [sys('2026-09-05T08:00:00Z')], new Date('2026-10-05T08:00:00Z')), true);
+    const manual = { ...sys('2026-10-06T08:00:00Z'), generatedBy: 'church_portal' as const };
+    assert.equal(isAutoInvoiceDue(on, [manual], new Date('2026-10-07T08:00:00Z')), true);
+  });
+
+  it('reads stored settings defensively', () => {
+    assert.deepEqual(readAutoInvoiceSettings(null), { enabled: false, dayOfMonth: 1 });
+    assert.deepEqual(readAutoInvoiceSettings({ autoInvoice: { enabled: true, dayOfMonth: 31 } }), { enabled: true, dayOfMonth: 1 });
   });
 });

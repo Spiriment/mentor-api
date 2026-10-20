@@ -1,5 +1,5 @@
 import { validate as isUuid } from 'uuid';
-import { In } from 'typeorm';
+import { In, IsNull, Not } from 'typeorm';
 import { fromZonedTime } from 'date-fns-tz';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
@@ -26,6 +26,10 @@ import {
   CHURCH_BULK_MEMBER_THRESHOLD,
 } from '@/common/constants/subscriptionPricing';
 import { ChurchPortal, CHURCH_PORTAL_STATUS } from '@/church-portal/entities/churchPortal.entity';
+import { ChurchPortalUser } from '@/church-portal/entities/churchPortalUser.entity';
+
+/** Who changed church billing: a Spiriment admin, a pastor in the church portal, or the scheduler */
+export type BillingActor = { kind: 'admin' | 'church_portal' | 'system'; id: string };
 import { stripePayingMemberIds, syncChurchCouponsInBackground } from './churchDiscountSync.service';
 import { adminAlertService } from './adminAlert.service';
 import {
@@ -363,16 +367,20 @@ export class AdminOrgPlanService {
     planId: string,
     userId: string,
     tier: 'basic' | 'pro' | 'premium',
-    adminUserId: string,
+    /** Admin user id (admin panel), or the acting pastor / system */
+    actorOrAdminId: string | BillingActor,
     ip?: string,
   ) {
+    const actor: BillingActor =
+      typeof actorOrAdminId === 'string' ? { kind: 'admin', id: actorOrAdminId } : actorOrAdminId;
     if (!isUuid(planId)) throw new AppError('Invalid plan id', 400);
     if (!isUuid(userId)) throw new AppError('Invalid user id', 400);
 
     const userRepo = AppDataSource.getRepository(User);
     const user = await userRepo.findOne({ where: { id: userId } });
     if (!user) throw new AppError('User not found', 404);
-    if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
+    if (user.orgPlanId === planId) throw new AppError('The church already pays for this member', 409);
+    if (user.orgPlanId) throw new AppError('This member is already paid for by another church plan', 409);
 
     // Someone already paying for themselves would be charged twice (their own store/Stripe
     // billing keeps running), or the church billed for a seat that never takes effect
@@ -400,8 +408,9 @@ export class AdminOrgPlanService {
       });
       if (!plan) throw new AppError('Plan not found or inactive', 404);
 
-      if (plan.usedSeats >= plan.totalSeats) {
-        throw new AppError('Plan has no available seats', 409);
+      // 0 = no cap (plans created from the portal); an admin can set one
+      if (plan.totalSeats > 0 && plan.usedSeats >= plan.totalSeats) {
+        throw new AppError(`All ${plan.totalSeats} paid places on this church plan are used. Contact Spiriment to add more.`, 409);
       }
 
       const memberTiers = {
@@ -435,16 +444,71 @@ export class AdminOrgPlanService {
 
     await this.syncLinkedPortalDiscounts(planId);
 
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.org_plan.assign_member',
-      targetType: 'user',
-      targetId: userId,
-      metadata: { planId, tier, discountPercent, billing: 'central' },
-      ip: ip ?? null,
-    });
+    await this.logBillingAction(actor, 'admin.org_plan.assign_member', userId, {
+      planId,
+      tier,
+      discountPercent,
+      billing: 'central',
+    }, ip);
 
     return { assigned: true, discountPercent, tier, checkoutUrl: null as string | null };
+  }
+
+  /** Move a church-paid member to another tier (from the next invoice). */
+  async changeMemberTier(
+    planId: string,
+    userId: string,
+    tier: 'basic' | 'pro' | 'premium',
+    actor: BillingActor,
+    ip?: string,
+  ) {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'orgPlanId', 'churchDiscountPercent'],
+    });
+    if (!user || user.orgPlanId !== planId) {
+      throw new AppError('This member is not paid for by the church', 400);
+    }
+
+    await AppDataSource.transaction(async (manager) => {
+      const planRepo = manager.getRepository(OrgPlan);
+      const plan = await planRepo.findOne({ where: { id: planId }, lock: { mode: 'pessimistic_write' } });
+      if (!plan) throw new AppError('Plan not found', 404);
+      plan.metadata = {
+        ...(plan.metadata ?? {}),
+        memberTiers: { ...((plan.metadata?.memberTiers as Record<string, string> | undefined) ?? {}), [userId]: tier },
+      };
+      await planRepo.save(plan);
+    });
+
+    const discountPercent = await this.resolveChurchDiscountPercent(planId);
+    await subscriptionService.upsertSubscription(userId, {
+      tier,
+      status: 'active',
+      externalProvider: 'church_central',
+      externalRef: null,
+      mrrCents: Math.round(applyDiscount(TIER_PRICE_EUR[tier], discountPercent) * 100),
+      billingInterval: 'monthly',
+      notes: 'church_central_billing',
+    });
+
+    await this.logBillingAction(actor, 'admin.org_plan.change_member_tier', userId, { planId, tier }, ip);
+    return { tier };
+  }
+
+  /** Admin actions go to the admin audit log; pastor actions (no admin account) to the app log. */
+  private async logBillingAction(
+    actor: BillingActor,
+    action: string,
+    targetId: string,
+    metadata: Record<string, unknown>,
+    ip?: string,
+  ) {
+    if (actor.kind === 'admin') {
+      await adminAuditService.log({ adminUserId: actor.id, action, targetType: 'user', targetId, metadata, ip: ip ?? null });
+    } else {
+      logger.info(`Church billing: ${action}`, { ...metadata, targetId, actor });
+    }
   }
 
   /** Member count for discount = mentors + mentees on linked portal, else org-plan used seats. */
@@ -531,6 +595,20 @@ export class AdminOrgPlanService {
     return discountPercent;
   }
 
+  /** The church portal with its billing plan (created on first use) */
+  private async portalWithPlan(churchPortalId: string): Promise<ChurchPortal & { orgPlanId: string }> {
+    const { churchBillingService } = await import('./churchBilling.service');
+    const orgPlanId = await churchBillingService.ensurePlanForPortal(churchPortalId);
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({ where: { id: churchPortalId } });
+    if (!portal) throw new AppError('Church portal not found', 404);
+    return Object.assign(portal, { orgPlanId });
+  }
+
+  /** The monthly scheduled invoice (see ChurchBillingService.runAutoInvoices) */
+  async generateChurchInvoiceAutomatically(planId: string) {
+    return this.createChurchPlanInvoice({ planId, actor: { kind: 'system', id: 'auto-invoice' } });
+  }
+
   async generateChurchInvoice(planId: string, adminUserId: string, ip?: string) {
     return this.createChurchPlanInvoice({
       planId,
@@ -550,16 +628,7 @@ export class AdminOrgPlanService {
   ) {
     if (!isUuid(churchPortalId)) throw new AppError('Invalid portal id', 400);
 
-    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
-      where: { id: churchPortalId },
-    });
-    if (!portal) throw new AppError('Church portal not found', 404);
-    if (!portal.orgPlanId) {
-      throw new AppError(
-        'This church is not linked to a billing plan yet. Contact Spiriment support.',
-        400,
-      );
-    }
+    const portal = await this.portalWithPlan(churchPortalId);
     if (!portalUser.email) {
       throw new AppError('Your portal account has no email address', 400);
     }
@@ -603,16 +672,7 @@ export class AdminOrgPlanService {
 
   async getChurchInvoicePreviewForPortal(churchPortalId: string) {
     if (!isUuid(churchPortalId)) throw new AppError('Invalid portal id', 400);
-    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
-      where: { id: churchPortalId },
-    });
-    if (!portal) throw new AppError('Church portal not found', 404);
-    if (!portal.orgPlanId) {
-      throw new AppError(
-        'This church is not linked to a billing plan yet. Contact Spiriment support.',
-        400,
-      );
-    }
+    const portal = await this.portalWithPlan(churchPortalId);
 
     const draft = await this.buildChurchInvoiceDraft(portal.orgPlanId);
     const plan = await this.get(portal.orgPlanId);
@@ -628,14 +688,8 @@ export class AdminOrgPlanService {
       }
     }
 
-    let billingEmail: string | null = null;
-    if (plan.billingAdminUserId) {
-      const billingAdmin = await AppDataSource.getRepository(User).findOne({
-        where: { id: plan.billingAdminUserId },
-        select: ['email'],
-      });
-      billingEmail = billingAdmin?.email ?? null;
-    }
+    // Same order the invoice uses, so the preview names the real recipient
+    const billingEmail = (await this.resolveBillingRecipient(plan))?.email ?? null;
 
     return {
       ...draft,
@@ -715,9 +769,50 @@ export class AdminOrgPlanService {
     };
   }
 
+  /**
+   * Who receives the church's invoices, in order: the billing admin (an app user), the church's
+   * billing email (set by a pastor or admin), the pastor generating it, then the church's first
+   * active pastor. Null when none exists.
+   */
+  async resolveBillingRecipient(
+    plan: { id: string; billingAdminUserId?: string | null; metadata?: Record<string, unknown> | null; name: string },
+    fallback?: { email: string; name: string },
+  ): Promise<{ email: string; name: string; userId: string | null; source: string } | null> {
+    if (plan.billingAdminUserId) {
+      const billingAdmin = await AppDataSource.getRepository(User).findOne({
+        where: { id: plan.billingAdminUserId },
+        select: ['id', 'email', 'firstName', 'lastName'],
+      });
+      if (billingAdmin?.email) {
+        const name = `${billingAdmin.firstName ?? ''} ${billingAdmin.lastName ?? ''}`.trim() || plan.name;
+        return { email: billingAdmin.email, name, userId: billingAdmin.id, source: 'billing_admin' };
+      }
+    }
+    const billingEmail = typeof plan.metadata?.billingEmail === 'string' ? plan.metadata.billingEmail.trim() : '';
+    if (billingEmail) return { email: billingEmail, name: plan.name, userId: null, source: 'billing_email' };
+    if (fallback?.email) return { ...fallback, userId: null, source: 'portal_user' };
+
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { orgPlanId: plan.id },
+      select: ['id'],
+    });
+    if (portal) {
+      const pastor = await AppDataSource.getRepository(ChurchPortalUser).findOne({
+        where: { churchPortalId: portal.id, isActive: true, password: Not(IsNull()) },
+        select: ['id', 'email', 'firstName', 'lastName', 'role'],
+        order: { createdAt: 'ASC' },
+      });
+      if (pastor?.email) {
+        const name = `${pastor.firstName ?? ''} ${pastor.lastName ?? ''}`.trim() || plan.name;
+        return { email: pastor.email, name, userId: null, source: 'pastor' };
+      }
+    }
+    return null;
+  }
+
   private async createChurchPlanInvoice(opts: {
     planId: string;
-    actor: { kind: 'admin' | 'church_portal'; id: string };
+    actor: BillingActor;
     ip?: string;
     billingOverride?: {
       email?: string;
@@ -734,28 +829,14 @@ export class AdminOrgPlanService {
     let userId = opts.billingOverride?.userId;
 
     if (!email) {
-      const billingAdminId = plan.billingAdminUserId;
-      if (billingAdminId) {
-        const billingAdmin = await AppDataSource.getRepository(User).findOne({
-          where: { id: billingAdminId },
-          select: ['id', 'email', 'firstName', 'lastName'],
-        });
-        if (!billingAdmin?.email) {
-          throw new AppError('Billing admin has no email address', 400);
-        }
-        email = billingAdmin.email;
-        name = `${billingAdmin.firstName ?? ''} ${billingAdmin.lastName ?? ''}`.trim();
-        userId = billingAdmin.id;
-      } else if (opts.fallbackRecipient?.email) {
-        email = opts.fallbackRecipient.email;
-        name = opts.fallbackRecipient.name;
-        userId = null;
-      } else {
+      const recipient = await this.resolveBillingRecipient(plan, opts.fallbackRecipient);
+      if (!recipient) {
         throw new AppError(
-          'No billing email is configured. Assign a billing admin or use a portal account with an email.',
+          'No billing email is set for this church. Add one in the church billing settings.',
           400,
         );
       }
+      ({ email, name, userId } = recipient);
     }
 
     const invoice = await stripeService.createAndSendInvoice({
@@ -866,7 +947,8 @@ export class AdminOrgPlanService {
       dueAt: null,
       paidAt: null,
       hostedInvoiceUrl: null,
-      generatedBy: generatedBy === 'admin' || generatedBy === 'church_portal' ? generatedBy : 'stripe',
+      generatedBy:
+        generatedBy === 'admin' || generatedBy === 'church_portal' || generatedBy === 'system' ? generatedBy : 'stripe',
     };
   }
 
@@ -1076,7 +1158,7 @@ export class AdminOrgPlanService {
         throw new AppError('Church plan not found or inactive', 404);
       }
 
-      if (plan.usedSeats >= plan.totalSeats) {
+      if (plan.totalSeats > 0 && plan.usedSeats >= plan.totalSeats) {
         throw new AppError('Church plan has no available seats', 409);
       }
 

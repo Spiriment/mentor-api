@@ -223,6 +223,9 @@ Legend: **Y** = allowed, **N** = denied, **R** = read-only where noted.
 | Apply / remove discount                      | Y           | N (or Y with limits—document in policy)     |
 | Subscription / revenue reports               | Y           | R or N (no billing change)                  |
 | Church / family plan billing admin           | Y           | N                                           |
+| Church billing (who the church pays for, auto-invoicing) | Y | N                                         |
+| Suspend / reactivate a church                | Y           | N unless granted (`church.suspend`)         |
+| Remove a member from a church                | Y           | N unless granted (`church.remove_members`)  |
 | System-wide settings                         | Y           | N                                           |
 | Support tickets / reports queue              | Y           | Y                                           |
 | Export monthly report (PII-heavy)            | Y           | R or N per policy                           |
@@ -230,6 +233,8 @@ Legend: **Y** = allowed, **N** = denied, **R** = read-only where noted.
 | Audit log viewer                             | Y           | R or N per policy                           |
 
 _Adjust cells marked “per policy” to match legal/compliance._
+
+**Per-admin permissions (built Oct 2026):** a Super Admin can grant individual Support admins extra permissions from **Admin users → Permissions**. They're off by default, take effect immediately (no sign-out), and are audit-logged. Current permissions: `church.suspend`, `church.remove_members` (defined in `src/common/adminPermissions.ts`).
 
 ### C.2 API routes (planned — see Part D)
 
@@ -293,6 +298,7 @@ _If admins are app users with a flag, reuse existing auth and issue role-scoped 
 
 - `GET /api/admin/plans/church` / `GET /api/admin/plans/family` — list active plans.
 - `POST`, `PATCH`, `DELETE` variants as product requires (seats, billing admin transfer).
+- **Church billing per church (built Oct 2026):** `GET /api/admin/church-portals/:portalId/billing`; `POST|PATCH|DELETE .../billing/members/:userId` (`{ tier }`) to start paying for a member, change their tier, stop paying; `PATCH .../billing/settings` (`billingEmail`, `autoInvoice: { enabled, dayOfMonth }`, `seatCap`). The church's billing plan is created automatically on first use. Pastors have the same endpoints under `/api/church-portal/billing/*` (Pastor role only for changes). See `docs/CHURCH_PORTAL_PLAN.md`.
 
 ### D.7 Settings and operations
 

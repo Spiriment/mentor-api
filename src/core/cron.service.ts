@@ -349,6 +349,25 @@ export class CronService {
       this.tasks.set("grace-period-downgrade", gracePeriodTask);
       logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
 
+      // Daily at 08:00 UTC — this month's invoice for churches with automatic invoicing on
+      const churchAutoInvoiceTask = cron.schedule(
+        "0 8 * * *",
+        async () => {
+          try {
+            const { churchBillingService } = await import("@/services/churchBilling.service");
+            const { sent, failed } = await churchBillingService.runAutoInvoices();
+            if (sent || failed) {
+              logger.info(`Automatic church invoices: ${sent} sent, ${failed} failed`);
+            }
+          } catch (err) {
+            logger.error("Error in church auto-invoice cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("church-auto-invoice", churchAutoInvoiceTask);
+      logger.info("Church auto-invoice cron job scheduled (daily 08:00 UTC)");
+
       // Daily at 09:30 UTC — refresh open church invoices from Stripe, alert on overdue ones
       const churchInvoiceTask = cron.schedule(
         "30 9 * * *",

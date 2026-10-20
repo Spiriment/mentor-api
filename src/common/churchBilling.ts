@@ -62,7 +62,8 @@ export interface ChurchInvoiceRecord {
   dueAt: string | null;
   paidAt: string | null;
   hostedInvoiceUrl: string | null;
-  generatedBy: 'admin' | 'church_portal' | 'stripe';
+  /** system = sent automatically each month */
+  generatedBy: 'admin' | 'church_portal' | 'system' | 'stripe';
   /** Last failed card attempt on the hosted invoice page (the invoice stays open) */
   paymentFailedAt?: string | null;
   /** Set once super admins were alerted that this invoice is overdue */
@@ -106,4 +107,39 @@ export function upsertInvoiceRecord(
 
 function stripUndefined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+// ─── Automatic monthly invoices ──────────────────────────────────────────────
+
+export interface AutoInvoiceSettings {
+  enabled: boolean;
+  /** 1–28, so every month has the day */
+  dayOfMonth: number;
+}
+
+export function readAutoInvoiceSettings(metadata: Record<string, unknown> | null | undefined): AutoInvoiceSettings {
+  const raw = metadata?.autoInvoice as Partial<AutoInvoiceSettings> | undefined;
+  const day = Number(raw?.dayOfMonth);
+  return {
+    enabled: raw?.enabled === true,
+    dayOfMonth: Number.isInteger(day) && day >= 1 && day <= 28 ? day : 1,
+  };
+}
+
+/**
+ * Whether this month's automatic invoice should go out now (UTC). Catches up if the server was
+ * down on the day, and never sends two automatic invoices in one month. Invoices made by hand
+ * (corrections) don't count.
+ */
+export function isAutoInvoiceDue(
+  settings: AutoInvoiceSettings,
+  records: ChurchInvoiceRecord[],
+  now: Date = new Date(),
+): boolean {
+  if (!settings.enabled || now.getUTCDate() < settings.dayOfMonth) return false;
+  const month = `${now.getUTCFullYear()}-${now.getUTCMonth()}`;
+  return !records.some((r) => {
+    const d = new Date(r.createdAt);
+    return r.generatedBy === 'system' && `${d.getUTCFullYear()}-${d.getUTCMonth()}` === month;
+  });
 }

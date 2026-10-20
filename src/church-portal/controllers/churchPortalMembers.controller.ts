@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { ChurchPortalMembersService } from '../services/churchPortalMembers.service';
 import { churchPortalJoinRequestService } from '../services/churchPortalJoinRequest.service';
+import { CHURCH_PORTAL_USER_ROLE } from '../entities/churchPortalUser.entity';
+import { ForbiddenError } from '@/common/errors';
 
 export class ChurchPortalMembersController {
   constructor(private readonly membersService: ChurchPortalMembersService) {}
@@ -85,6 +87,10 @@ export class ChurchPortalMembersController {
 
   removeMember = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // It also ends anything the church pays for, so it's a billing change: pastors only
+      if (req.churchPortalUser!.role !== CHURCH_PORTAL_USER_ROLE.PASTOR) {
+        throw new ForbiddenError('Only pastors can remove members from the church.');
+      }
       const data = await this.membersService.removeMember(
         req.churchPortalUser!.churchPortalId,
         req.params.userId

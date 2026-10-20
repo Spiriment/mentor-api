@@ -106,3 +106,28 @@ export function notifyMemberOfJoinDecision(userId: string, churchName: string, a
     })
   );
 }
+
+/** Push the member that their church now pays for their plan. Fire-and-forget. */
+export function notifyMemberCovered(userId: string, churchName: string, tier: string): void {
+  void (async () => {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'pushToken', 'pushNotificationsEnabled'],
+    });
+    if (!user?.pushToken || user.pushNotificationsEnabled === false) return;
+    const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
+    await pushNotificationService.sendToUser({
+      userId,
+      pushToken: user.pushToken,
+      title: `${churchName} covers your ${tierLabel} plan`,
+      body: `Your church now pays for Spiriment ${tierLabel}. Everything in it is unlocked, with nothing to pay in the app.`,
+      data: { type: 'church_plan_covered' },
+      channelId: 'default',
+    });
+  })().catch((err) =>
+    logger.warn('Church coverage push failed', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  );
+}

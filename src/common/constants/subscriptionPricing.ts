@@ -37,31 +37,31 @@ export function getMentorDiscountPercent(
 export function getSubscriptionDiscount(
   user: Pick<User, 'birthday' | 'role' | 'mentorApprovalStatus' | 'churchDiscountPercent'>,
 ) {
+  // One discount per person: the biggest one they qualify for (was first-match, so a 15–18
+  // year-old in a church got the 5% church discount instead of their 30% youth discount).
+  // Ties keep this order.
+  const candidates: Array<{ percent: number; type: DiscountType; label: string }> = [];
   const mentorDiscount = getMentorDiscountPercent(user);
   if (mentorDiscount !== null) {
-    return {
-      percent: mentorDiscount,
-      type: 'mentor' as DiscountType,
-      label: `${MENTOR_DISCOUNT_PERCENT}% mentor discount`,
-    };
+    candidates.push({ percent: mentorDiscount, type: 'mentor', label: `${MENTOR_DISCOUNT_PERCENT}% mentor discount` });
   }
-
   if (user.churchDiscountPercent && user.churchDiscountPercent > 0) {
-    return {
+    candidates.push({
       percent: user.churchDiscountPercent,
-      type: 'church' as DiscountType,
+      type: 'church',
       label: `${user.churchDiscountPercent}% church discount`,
-    };
+    });
   }
-
   const youthDiscount = getYouthDiscountPercent(user.birthday);
   if (youthDiscount !== null) {
-    return {
-      percent: youthDiscount,
-      type: 'youth' as DiscountType,
-      label: `${YOUTH_DISCOUNT_PERCENT}% youth discount`,
-    };
+    candidates.push({ percent: youthDiscount, type: 'youth', label: `${YOUTH_DISCOUNT_PERCENT}% youth discount` });
   }
+
+  const best = candidates.reduce<(typeof candidates)[number] | null>(
+    (top, c) => (!top || c.percent > top.percent ? c : top),
+    null,
+  );
+  if (best) return { percent: best.percent, type: best.type as DiscountType, label: best.label };
 
   return { percent: null, type: null as null, label: null as null };
 }

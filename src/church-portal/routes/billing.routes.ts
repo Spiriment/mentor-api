@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { churchPortalAuthMiddleware } from '../middleware/churchPortalAuth.middleware';
 import { ChurchPortalBillingController } from '../controllers/churchPortalBilling.controller';
+import { churchPortalBillingHandlers } from '@/controllers/churchBilling.controller';
 
 const invoiceLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -18,5 +19,12 @@ export function createChurchPortalBillingRoutes(
   router.use(churchPortalAuthMiddleware);
   router.get('/preview', controller.getPreview);
   router.post('/invoice', invoiceLimiter, controller.generateInvoice);
+
+  // Who the church pays for (changes: pastor role only)
+  router.get('/coverage', churchPortalBillingHandlers.overview);
+  router.post('/coverage/:userId', churchPortalBillingHandlers.cover);
+  router.patch('/coverage/:userId', churchPortalBillingHandlers.changeTier);
+  router.delete('/coverage/:userId', churchPortalBillingHandlers.uncover);
+  router.patch('/settings', churchPortalBillingHandlers.updateSettings);
   return router;
 }
