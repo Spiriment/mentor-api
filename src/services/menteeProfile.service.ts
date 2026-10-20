@@ -1,3 +1,7 @@
+import { StatusCodes } from 'http-status-codes';
+import { AppError } from '@/common/errors';
+import { menteeChurchInfoProblem } from '@/common/onboardingRules';
+import { assertOldEnoughToOnboard } from './onboardingAge';
 import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/data-source';
 import { MenteeProfile } from '../database/entities/menteeProfile.entity';
@@ -157,10 +161,17 @@ export class MenteeProfileService {
   // Complete onboarding
   async completeOnboarding(userId: string, data: any): Promise<MenteeProfile> {
     try {
+      await assertOldEnoughToOnboard(userId);
       const profile = await this.getOrCreateProfile(userId);
 
       // Update all fields
       Object.assign(profile, data);
+
+      const churchProblem = menteeChurchInfoProblem(profile);
+      if (churchProblem) {
+        throw new AppError(churchProblem, StatusCodes.BAD_REQUEST, 'CHURCH_INFO_REQUIRED');
+      }
+
       profile.isOnboardingComplete = true;
       profile.onboardingStep = 'completed';
 

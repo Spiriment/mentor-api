@@ -1,3 +1,4 @@
+import { assertOldEnoughToOnboard } from './onboardingAge';
 import { Repository } from 'typeorm';
 import { adminAlertService } from './adminAlert.service';
 import { AppDataSource } from '../config/data-source';
@@ -143,6 +144,7 @@ export class MentorProfileService {
   // Complete onboarding
   async completeOnboarding(userId: string, data: any): Promise<MentorProfile> {
     try {
+      await assertOldEnoughToOnboard(userId);
       const profile = await this.getOrCreateProfile(userId);
 
       // Update all fields

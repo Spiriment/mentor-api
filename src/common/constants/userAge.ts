@@ -14,6 +14,21 @@ export function calcAge(birthday: Date | string): number {
   return age;
 }
 
+/**
+ * Why someone can't finish onboarding, or null when they can: a birthday is required and the
+ * user must be at least MIN_USER_AGE. Enforced server-side so no app path (or old build) can
+ * finish onboarding without it.
+ */
+export function onboardingAgeProblem(birthday: Date | string | null | undefined): string | null {
+  if (!birthday || Number.isNaN(new Date(birthday).getTime())) {
+    return 'Please add your date of birth to finish setting up your account.';
+  }
+  if (calcAge(birthday) < MIN_USER_AGE) {
+    return `You must be at least ${MIN_USER_AGE} years old to use Spiriment`;
+  }
+  return null;
+}
+
 export function getYouthDiscountPercent(birthday: Date | string | null | undefined): number | null {
   if (!birthday) return null;
   const age = calcAge(birthday);
