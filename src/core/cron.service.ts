@@ -349,6 +349,25 @@ export class CronService {
       this.tasks.set("grace-period-downgrade", gracePeriodTask);
       logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
 
+      // Daily at 07:30 UTC — the 30% youth discount ends when a member turns 19
+      const youthDiscountTask = cron.schedule(
+        "30 7 * * *",
+        async () => {
+          try {
+            const { runYouthDiscountExpiry } = await import("@/services/youthDiscountExpiry.service");
+            const { family, personal, failed } = await runYouthDiscountExpiry();
+            if (family || personal || failed) {
+              logger.info(`Youth discount ended: ${family} family seats, ${personal} personal, ${failed} failed`);
+            }
+          } catch (err) {
+            logger.error("Error in youth discount expiry cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("youth-discount-expiry", youthDiscountTask);
+      logger.info("Youth discount expiry cron job scheduled (daily 07:30 UTC)");
+
       // Daily at 08:00 UTC — this month's invoice for churches with automatic invoicing on
       const churchAutoInvoiceTask = cron.schedule(
         "0 8 * * *",

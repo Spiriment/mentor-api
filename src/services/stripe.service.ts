@@ -3,6 +3,7 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { AppError } from '@/common';
 import { isChurchCouponId, planChurchCouponUpdate, type ChurchCouponMode } from '@/common/churchBilling';
+import { isAgeCouponId, planAgeCouponRemoval } from '@/common/youthDiscount';
 
 const TIER_PRICE_MAP: Record<string, string> = {
   basic:          process.env.STRIPE_PRICE_BASIC_MONTHLY  ?? '',
@@ -180,6 +181,33 @@ class StripeService {
    * `mode` says whether a subscription without a church coupon may get one (see
    * planChurchCouponUpdate). Takes effect from the next invoice. Returns true when it changed anything.
    */
+  /**
+   * Take the youth coupon off a subscription (member turned 19), optionally swapping in another
+   * discount they still qualify for. From the next invoice. True when it changed anything.
+   */
+  async removeYouthCoupon(
+    subscriptionId: string,
+    resolveReplacementCouponId: () => Promise<string | null>,
+  ): Promise<boolean> {
+    const sub = await this.client.subscriptions.retrieve(subscriptionId, { expand: ['discounts'] });
+    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return false;
+    const applied = (sub.discounts ?? [])
+      .flatMap((d) => (typeof d === 'string' ? [] : [d]))
+      .map((d) => ({
+        id: d.id,
+        couponId: typeof d.source?.coupon === 'string' ? d.source.coupon : d.source?.coupon?.id ?? null,
+      }));
+    if (!applied.some((d) => isAgeCouponId(d.couponId))) return false;
+
+    const next = planAgeCouponRemoval(applied, await resolveReplacementCouponId());
+    if (!next) return false;
+    await this.client.subscriptions.update(subscriptionId, {
+      discounts: next.length > 0 ? next : '',
+      proration_behavior: 'none',
+    });
+    return true;
+  }
+
   async replaceChurchCoupon(
     subscriptionId: string,
     resolveDesiredCouponId: () => Promise<string | null>,
