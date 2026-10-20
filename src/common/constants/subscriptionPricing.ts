@@ -66,6 +66,12 @@ export function getSubscriptionDiscount(
   return { percent: null, type: null as null, label: null as null };
 }
 
+/** Stripe coupon label for a user's discount (StripeService turns it into the coupon ID). */
+export function discountCouponLabel(type: DiscountType | null, userId: string): string {
+  const prefix = type === 'mentor' ? 'mentor' : type === 'church' ? 'church' : 'age';
+  return `${prefix}-${userId.slice(0, 8)}`;
+}
+
 export function applyDiscount(amount: number, percent: number): number {
   return Math.round(amount * (1 - percent / 100) * 100) / 100;
 }

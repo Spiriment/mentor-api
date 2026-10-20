@@ -349,6 +349,24 @@ export class CronService {
       this.tasks.set("grace-period-downgrade", gracePeriodTask);
       logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
 
+      // Daily at 09:30 UTC — refresh open church invoices from Stripe, alert on overdue ones
+      const churchInvoiceTask = cron.schedule(
+        "30 9 * * *",
+        async () => {
+          try {
+            const { checked, overdueAlerts } = await adminOrgPlanService.reconcileChurchInvoices();
+            if (checked > 0) {
+              logger.info(`Church invoices reconciled: ${checked} open, ${overdueAlerts} newly overdue`);
+            }
+          } catch (err) {
+            logger.error("Error in church invoice reconcile cron", err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("church-invoice-reconcile", churchInvoiceTask);
+      logger.info("Church invoice reconcile cron job scheduled (daily 09:30 UTC)");
+
       // Daily at 00:15 UTC — persist MRR snapshot for admin revenue history
       const mrrSnapshotTask = cron.schedule(
         "15 0 * * *",

@@ -9,7 +9,7 @@ import { PromoCodeRedemption } from '@/database/entities/promoCodeRedemption.ent
 import { AppError } from '@/common';
 import { stripeService } from './stripe.service';
 import { EmailService } from '@/core/email.service';
-import { buildPricingPreview, getSubscriptionDiscount } from '@/common/constants/subscriptionPricing';
+import { buildPricingPreview, discountCouponLabel, getSubscriptionDiscount } from '@/common/constants/subscriptionPricing';
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr';
 import { logger } from '@/config/int-services';
@@ -305,11 +305,9 @@ export class SubscriptionService {
 
     const discount = getSubscriptionDiscount(user);
     if (discount.percent !== null) {
-      const couponPrefix =
-        discount.type === 'mentor' ? 'mentor' : discount.type === 'church' ? 'church' : 'age';
       couponId = await stripeService.getOrCreatePercentageCoupon(
         discount.percent,
-        `${couponPrefix}-${user.id.slice(0, 8)}`,
+        discountCouponLabel(discount.type, user.id),
       );
     }
 

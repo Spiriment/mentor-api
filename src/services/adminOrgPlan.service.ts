@@ -26,6 +26,16 @@ import {
   CHURCH_BULK_MEMBER_THRESHOLD,
 } from '@/common/constants/subscriptionPricing';
 import { ChurchPortal } from '@/church-portal/entities/churchPortal.entity';
+import { stripePayingMemberIds, syncChurchCouponsInBackground } from './churchDiscountSync.service';
+import { adminAlertService } from './adminAlert.service';
+import {
+  invoiceDisplayStatus,
+  readInvoiceRecords,
+  toInvoiceStatus,
+  upsertInvoiceRecord,
+  type ChurchInvoiceRecord,
+  type ChurchInvoiceStatus,
+} from '@/common/churchBilling';
 
 const subscriptionService = new SubscriptionService(new EmailService(null));
 
@@ -45,6 +55,7 @@ export class AdminOrgPlanService {
         ? `${p.billingAdmin.firstName} ${p.billingAdmin.lastName}`
         : null,
       metadata: p.metadata ?? null,
+      invoices: this.invoicesForDisplay(p.metadata),
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     };
@@ -175,20 +186,48 @@ export class AdminOrgPlanService {
       row.billingAdminUserId = input.billingAdminUserId;
     }
     if (input.metadata !== undefined) {
-      row.metadata = input.metadata;
+      // Invoice history is written by the system; a metadata edit must not wipe it
+      const invoices = row.metadata?.invoices;
+      row.metadata = invoices !== undefined ? { ...(input.metadata ?? {}), invoices } : input.metadata;
     }
+    const deactivating = input.status === 'inactive' && row.status !== 'inactive';
     if (input.status !== undefined) {
       row.status = input.status;
     }
 
-    const saved = await repo.save(row);
+    let saved = await repo.save(row);
+
+    // A deactivated plan stops paying: end church-billed access and free every seat
+    let membersEnded = 0;
+    if (deactivating) {
+      const members = await AppDataSource.getRepository(User).find({
+        where: { orgPlanId: planId },
+        select: ['id'],
+      });
+      for (const m of members) {
+        try {
+          await this.endChurchPaidAccess(m.id, planId);
+          membersEnded++;
+        } catch (err) {
+          logger.error('Failed to end church plan access on deactivation', err instanceof Error ? err : new Error(String(err)), {
+            planId,
+            userId: m.id,
+          });
+        }
+      }
+      saved = (await repo.findOne({ where: { id: planId } })) ?? saved;
+    }
 
     await adminAuditService.log({
       adminUserId,
       action: 'admin.org_plan.update',
       targetType: 'org_plan',
       targetId: planId,
-      metadata: { planType: CHURCH_PLAN_TYPE, patch: Object.keys(input) },
+      metadata: {
+        planType: CHURCH_PLAN_TYPE,
+        patch: Object.keys(input),
+        ...(deactivating ? { membersEnded } : {}),
+      },
       ip: ip ?? null,
     });
 
@@ -422,11 +461,20 @@ export class AdminOrgPlanService {
   async syncChurchPortalMemberDiscounts(churchPortalId: string): Promise<number> {
     const userRepo = AppDataSource.getRepository(User);
     const portalRepo = AppDataSource.getRepository(ChurchPortal);
+    const before = await portalRepo.findOne({ where: { id: churchPortalId }, select: ['id', 'discountPercent'] });
     const count = await userRepo.count({ where: { churchPortalId } });
     const discountPercent = getChurchDiscountPercentForMemberCount(count);
 
     await portalRepo.update(churchPortalId, { discountPercent });
     await userRepo.update({ churchPortalId }, { churchDiscountPercent: discountPercent });
+
+    // Crossing the 100-member line: move members' existing Stripe coupons to the new percent
+    if (before && before.discountPercent !== discountPercent) {
+      syncChurchCouponsInBackground(
+        await stripePayingMemberIds(churchPortalId),
+        `church ${churchPortalId} discount ${before.discountPercent}% → ${discountPercent}%`,
+      );
+    }
     return discountPercent;
   }
 
@@ -538,6 +586,7 @@ export class AdminOrgPlanService {
 
     return {
       ...draft,
+      invoices: this.invoicesForDisplay(plan.metadata).slice(0, 12),
       lastPortalInvoiceAt,
       lastPortalInvoiceId:
         ((plan.metadata as any)?.lastPortalInvoiceId as string | undefined) ?? null,
@@ -673,6 +722,26 @@ export class AdminOrgPlanService {
       },
     });
 
+    await this.saveInvoiceRecord(
+      opts.planId,
+      { id: invoice.invoiceId },
+      {
+        status: toInvoiceStatus(invoice.status) ?? 'open',
+        totalCents: invoice.totalCents,
+        createdAt: invoice.createdAt,
+        dueAt: invoice.dueAt,
+        paidAt: null,
+        hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+        generatedBy: opts.actor.kind,
+      },
+    ).catch((err) =>
+      // The invoice is already sent; the daily reconcile or a webhook will fill the record in
+      logger.error('Failed to record church invoice', err instanceof Error ? err : new Error(String(err)), {
+        planId: opts.planId,
+        invoiceId: invoice.invoiceId,
+      }),
+    );
+
     if (opts.actor.kind === 'admin') {
       await adminAuditService.log({
         adminUserId: opts.actor.id,
@@ -699,6 +768,151 @@ export class AdminOrgPlanService {
       lineItems: draft.lineItems,
       totalEur: Math.round(invoice.totalCents) / 100,
     };
+  }
+
+  // ─── Central church invoice tracking ──────────────────────────────────────────
+
+  /** Insert/merge one invoice record on the plan (row-locked). Returns it with its previous status. */
+  private async saveInvoiceRecord(
+    planId: string,
+    update: Partial<ChurchInvoiceRecord> & { id: string },
+    fallback: Omit<ChurchInvoiceRecord, 'id'>,
+  ): Promise<{ record: ChurchInvoiceRecord; previousStatus: ChurchInvoiceStatus | null; planName: string } | null> {
+    return AppDataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(OrgPlan);
+      const plan = await repo.findOne({ where: { id: planId }, lock: { mode: 'pessimistic_write' } });
+      if (!plan) return null;
+      const before = readInvoiceRecords(plan.metadata);
+      const previousStatus = before.find((r) => r.id === update.id)?.status ?? null;
+      const list = upsertInvoiceRecord(before, update, fallback);
+      plan.metadata = { ...(plan.metadata ?? {}), invoices: list };
+      await repo.save(plan);
+      const record = list.find((r) => r.id === update.id);
+      return record ? { record, previousStatus, planName: plan.name } : null;
+    });
+  }
+
+  private invoiceUpdateFromStripe(invoice: any): Partial<ChurchInvoiceRecord> & { id: string } {
+    const iso = (unix?: number | null) => (unix ? new Date(unix * 1000).toISOString() : undefined);
+    return {
+      id: invoice.id,
+      status: toInvoiceStatus(invoice.status) ?? undefined,
+      totalCents: typeof invoice.total === 'number' ? invoice.total : undefined,
+      dueAt: iso(invoice.due_date),
+      paidAt: iso(invoice.status_transitions?.paid_at),
+      hostedInvoiceUrl: invoice.hosted_invoice_url ?? undefined,
+    };
+  }
+
+  private invoiceFallbackFromStripe(invoice: any): Omit<ChurchInvoiceRecord, 'id'> {
+    const generatedBy = invoice.metadata?.generatedBy;
+    return {
+      status: toInvoiceStatus(invoice.status) ?? 'open',
+      totalCents: typeof invoice.total === 'number' ? invoice.total : 0,
+      createdAt: new Date((invoice.created ?? Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+      dueAt: null,
+      paidAt: null,
+      hostedInvoiceUrl: null,
+      generatedBy: generatedBy === 'admin' || generatedBy === 'church_portal' ? generatedBy : 'stripe',
+    };
+  }
+
+  /**
+   * Stripe webhook for a central church invoice (metadata.planType = church). These must never
+   * reach the personal-subscription handlers: the invoice customer is looked up by billing
+   * email, which can be an app user's own Stripe customer.
+   */
+  async recordChurchInvoiceFromStripe(invoice: any, eventType: string): Promise<void> {
+    const planId = invoice?.metadata?.orgPlanId;
+    if (!planId || !isUuid(planId) || !invoice.id) return;
+
+    const update = this.invoiceUpdateFromStripe(invoice);
+    if (eventType === 'invoice.payment_failed') update.paymentFailedAt = new Date().toISOString();
+
+    const saved = await this.saveInvoiceRecord(planId, update, this.invoiceFallbackFromStripe(invoice));
+    if (!saved) return;
+
+    const { record, previousStatus, planName } = saved;
+    const amount = `€${(record.totalCents / 100).toFixed(2)}`;
+    const alert = (title: string) =>
+      void adminAlertService.notify('subscription', {
+        title,
+        body: `${planName} · ${amount}`,
+        link: `/subscriptions/church/${planId}`,
+      });
+
+    if (record.status === 'paid' && previousStatus !== 'paid') alert('Church invoice paid');
+    else if (eventType === 'invoice.payment_failed') alert('Church invoice payment failed');
+    else if (record.status === 'uncollectible' && previousStatus !== 'uncollectible') {
+      alert('Church invoice marked uncollectible');
+    }
+  }
+
+  /**
+   * Daily: refresh open church invoices from Stripe (covers webhooks that were missed or not
+   * enabled, and invoices marked paid by hand in Stripe), then alert super admins once for each
+   * invoice that is past due. Nothing is cut off automatically; that stays an admin decision.
+   */
+  async reconcileChurchInvoices(now: Date = new Date()): Promise<{ checked: number; overdueAlerts: number }> {
+    const plans = await AppDataSource.getRepository(OrgPlan).find({
+      where: { planType: CHURCH_PLAN_TYPE },
+      select: ['id', 'name', 'metadata'],
+    });
+    let checked = 0;
+    let overdueAlerts = 0;
+
+    for (const plan of plans) {
+      for (const rec of readInvoiceRecords(plan.metadata).filter((r) => r.status === 'open')) {
+        checked++;
+        let current = rec;
+        try {
+          const invoice = await stripeService.stripe.invoices.retrieve(rec.id);
+          const saved = await this.saveInvoiceRecord(plan.id, this.invoiceUpdateFromStripe(invoice), this.invoiceFallbackFromStripe(invoice));
+          if (saved) {
+            current = saved.record;
+            if (current.status === 'paid' && saved.previousStatus !== 'paid') {
+              void adminAlertService.notify('subscription', {
+                title: 'Church invoice paid',
+                body: `${plan.name} · €${(current.totalCents / 100).toFixed(2)}`,
+                link: `/subscriptions/church/${plan.id}`,
+              });
+            }
+          }
+        } catch (err) {
+          logger.warn('Church invoice reconcile: Stripe lookup failed', {
+            planId: plan.id,
+            invoiceId: rec.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        if (invoiceDisplayStatus(current, now) === 'overdue' && !current.overdueAlertedAt) {
+          await this.saveInvoiceRecord(plan.id, { id: rec.id, overdueAlertedAt: now.toISOString() }, { ...current });
+          overdueAlerts++;
+          void adminAlertService.notify('subscription', {
+            title: 'Church invoice overdue',
+            body: `${plan.name} · €${(current.totalCents / 100).toFixed(2)} was due ${current.dueAt?.slice(0, 10)}`,
+            link: `/subscriptions/church/${plan.id}`,
+          });
+        }
+      }
+    }
+    return { checked, overdueAlerts };
+  }
+
+  /** Invoice history for the admin plan page and the pastor billing page */
+  invoicesForDisplay(metadata: Record<string, unknown> | null | undefined, now: Date = new Date()) {
+    return readInvoiceRecords(metadata).map((r) => ({
+      id: r.id,
+      status: invoiceDisplayStatus(r, now),
+      totalCents: r.totalCents,
+      createdAt: r.createdAt,
+      dueAt: r.dueAt,
+      paidAt: r.paidAt,
+      hostedInvoiceUrl: r.hostedInvoiceUrl,
+      generatedBy: r.generatedBy,
+      paymentFailedAt: r.paymentFailedAt ?? null,
+    }));
   }
 
   async generateFamilyInvoice(planId: string, adminUserId: string, ip?: string) {
@@ -862,9 +1076,55 @@ export class AdminOrgPlanService {
 
       if (plan) {
         plan.usedSeats = Math.max(0, plan.usedSeats - 1);
+        const memberTiers = plan.metadata?.memberTiers as Record<string, string> | undefined;
+        if (memberTiers && userId in memberTiers) {
+          const { [userId]: _removed, ...rest } = memberTiers;
+          plan.metadata = { ...(plan.metadata ?? {}), memberTiers: rest };
+        }
         await planRepo.save(plan);
       }
     });
+  }
+
+  /**
+   * End everything a church plan pays for: frees the seat and, for church-billed members
+   * (`church_central`), downgrades the subscription to free. Members on the older flow who pay
+   * through their own Stripe subscription keep it. No-op unless the user is on `planId`.
+   */
+  async endChurchPaidAccess(userId: string, planId: string): Promise<{ released: boolean; downgraded: boolean }> {
+    const user = await AppDataSource.getRepository(User).findOne({
+      where: { id: userId },
+      select: ['id', 'orgPlanId'],
+    });
+    if (!user || user.orgPlanId !== planId) return { released: false, downgraded: false };
+
+    await this.releaseChurchMembership(userId);
+
+    const sub = await AppDataSource.getRepository(UserSubscription).findOne({ where: { userId } });
+    if (sub?.externalProvider !== 'church_central') return { released: true, downgraded: false };
+
+    // Sends the usual "subscription ended" email
+    await subscriptionService.upsertSubscription(userId, {
+      tier: 'free',
+      status: 'active',
+      externalProvider: null,
+      externalRef: null,
+      mrrCents: null,
+      expiresAt: null,
+      billingInterval: null,
+      notes: null,
+    });
+    return { released: true, downgraded: true };
+  }
+
+  /** endChurchPaidAccess for the plan linked to a church portal (when a member leaves or is removed). */
+  async endChurchPaidAccessForPortal(userId: string, churchPortalId: string) {
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: churchPortalId },
+      select: ['id', 'orgPlanId'],
+    });
+    if (!portal?.orgPlanId) return { released: false, downgraded: false };
+    return this.endChurchPaidAccess(userId, portal.orgPlanId);
   }
 
   async removeMember(
@@ -904,14 +1164,15 @@ export class AdminOrgPlanService {
         notes: CANCEL_AT_PERIOD_END_NOTE,
       });
     }
-    await this.releaseChurchMembership(userId);
+    // Was releaseChurchMembership alone, which left church-billed members on their paid tier
+    const ended = await this.endChurchPaidAccess(userId, planId);
 
     await adminAuditService.log({
       adminUserId,
       action: 'admin.org_plan.remove_member',
       targetType: 'user',
       targetId: userId,
-      metadata: { planId },
+      metadata: { planId, churchBilledAccessEnded: ended.downgraded },
       ip: ip ?? null,
     });
   }

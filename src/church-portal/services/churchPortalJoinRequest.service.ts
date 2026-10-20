@@ -1,4 +1,4 @@
-import { In } from 'typeorm';
+import { In, Not } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { ChurchPortal } from '../entities/churchPortal.entity';
@@ -8,6 +8,7 @@ import {
 } from '../entities/churchPortalJoinRequest.entity';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
+import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
 
 function portalPreview(portal: ChurchPortal) {
   return {
@@ -75,50 +76,51 @@ export class ChurchPortalJoinRequestService {
       );
     }
 
-    let row = await joinRepo.findOne({
-      where: { churchPortalId: portal.id, userId: appUserId },
-    });
-
-    if (row?.status === CHURCH_JOIN_REQUEST_STATUS.PENDING) {
-      return {
-        membershipStatus: 'pending' as const,
-        message: 'Your request is pending pastor approval.',
-        church: portalPreview(portal),
-      };
-    }
-
-    if (row?.status === CHURCH_JOIN_REQUEST_STATUS.APPROVED) {
-      await userRepo.update(appUserId, { churchPortalId: portal.id });
-      return {
-        membershipStatus: 'active' as const,
-        message: `You are now linked to ${portal.name}`,
-        church: portalPreview(portal),
-      };
-    }
-
-    if (row?.status === CHURCH_JOIN_REQUEST_STATUS.REJECTED) {
-      row.status = CHURCH_JOIN_REQUEST_STATUS.PENDING;
-      row.resolvedAt = null;
-      await joinRepo.save(row);
-      return {
-        membershipStatus: 'pending' as const,
-        message: 'Join request sent. Your pastor will review it.',
-        church: portalPreview(portal),
-      };
-    }
-
-    const created = joinRepo.create({
-      churchPortalId: portal.id,
+    // One pending request at a time: asking to join this church withdraws requests elsewhere,
+    // so two pastors can't both approve and silently move the member between churches
+    await joinRepo.delete({
       userId: appUserId,
       status: CHURCH_JOIN_REQUEST_STATUS.PENDING,
+      churchPortalId: Not(portal.id),
     });
-    await joinRepo.save(created);
 
-    return {
+    const pending = {
       membershipStatus: 'pending' as const,
       message: 'Join request sent. Your pastor will review it.',
       church: portalPreview(portal),
     };
+
+    const row = await joinRepo.findOne({
+      where: { churchPortalId: portal.id, userId: appUserId },
+    });
+
+    if (row?.status === CHURCH_JOIN_REQUEST_STATUS.PENDING) {
+      return { ...pending, message: 'Your request is pending pastor approval.' };
+    }
+
+    if (row) {
+      // Rejected, or approved earlier but no longer a member (removed by the pastor, or left):
+      // either way the pastor decides again. Re-linking an old approval would let removed
+      // members walk straight back in.
+      row.status = CHURCH_JOIN_REQUEST_STATUS.PENDING;
+      row.resolvedAt = null;
+      await joinRepo.save(row);
+      return pending;
+    }
+
+    try {
+      await joinRepo.save(
+        joinRepo.create({
+          churchPortalId: portal.id,
+          userId: appUserId,
+          status: CHURCH_JOIN_REQUEST_STATUS.PENDING,
+        })
+      );
+    } catch (err: any) {
+      // Double tap: the other request created the row (unique churchPortalId + userId)
+      if (err?.code !== 'ER_DUP_ENTRY') throw err;
+    }
+    return pending;
   }
 
   async clearMembershipAndRequests(appUserId: string) {
@@ -133,7 +135,10 @@ export class ChurchPortalJoinRequestService {
     await joinRepo.delete({ userId: appUserId });
     if (previousPortalId) {
       const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
+      // Leaving the church also ends what the church pays for (seat + church-billed plan)
+      await adminOrgPlanService.endChurchPaidAccessForPortal(appUserId, previousPortalId);
       await adminOrgPlanService.syncChurchPortalMemberDiscounts(previousPortalId);
+      syncChurchCouponsInBackground([appUserId], 'left church');
     }
   }
 
@@ -221,25 +226,49 @@ export class ChurchPortalJoinRequestService {
 
   async approve(churchPortalId: string, userId: string) {
     const joinRepo = AppDataSource.getRepository(ChurchPortalJoinRequest);
-    const userRepo = AppDataSource.getRepository(User);
-    const portalRepo = AppDataSource.getRepository(ChurchPortal);
 
-    const row = await joinRepo.findOne({
-      where: { churchPortalId, userId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING },
-    });
-    if (!row) {
-      throw new AppError('No pending request for this member.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
-    }
-
-    const portal = await portalRepo.findOne({ where: { id: churchPortalId } });
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({ where: { id: churchPortalId } });
     if (!portal) {
       throw new AppError('Church portal not found.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
     }
 
-    await userRepo.update(userId, { churchPortalId });
-    row.status = CHURCH_JOIN_REQUEST_STATUS.APPROVED;
-    row.resolvedAt = new Date();
-    await joinRepo.save(row);
+    // Lock the member so two approvals (this church and another) can't both link them
+    const outcome = await AppDataSource.transaction(async (manager) => {
+      const row = await manager.getRepository(ChurchPortalJoinRequest).findOne({
+        where: { churchPortalId, userId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!row) return 'no_request' as const;
+
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        select: ['id', 'churchPortalId'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!user) return 'stale' as const;
+      if (user.churchPortalId && user.churchPortalId !== churchPortalId) return 'other_church' as const;
+
+      await manager.getRepository(User).update(userId, { churchPortalId });
+      row.status = CHURCH_JOIN_REQUEST_STATUS.APPROVED;
+      row.resolvedAt = new Date();
+      await manager.getRepository(ChurchPortalJoinRequest).save(row);
+      return 'approved' as const;
+    });
+
+    if (outcome === 'no_request') {
+      throw new AppError('No pending request for this member.', StatusCodes.NOT_FOUND, 'NOT_FOUND');
+    }
+    if (outcome === 'stale' || outcome === 'other_church') {
+      // Clear it from the pastor's list; the member can ask again after leaving
+      await joinRepo.delete({ churchPortalId, userId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING });
+      throw new AppError(
+        outcome === 'stale'
+          ? 'This account no longer exists.'
+          : 'This person has already joined another church. They need to leave it in the app before joining yours.',
+        StatusCodes.CONFLICT,
+        outcome === 'stale' ? 'USER_NOT_FOUND' : 'ALREADY_IN_OTHER_CHURCH'
+      );
+    }
 
     const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
     const discount = await adminOrgPlanService.syncChurchPortalMemberDiscounts(churchPortalId);

@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { jwt } from '@/config/int-services';
 import { AppDataSource } from '@/config/data-source';
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
+import { ChurchPortal, CHURCH_PORTAL_STATUS } from '../entities/churchPortal.entity';
+
+export const PORTAL_SUSPENDED_MESSAGE = 'This church portal is suspended. Contact Spiriment support.';
 import { UnauthorizedError } from '@/common/errors';
 
 declare global {
@@ -35,6 +38,14 @@ export async function churchPortalAuthMiddleware(
 
     if (!portalUser || !portalUser.isActive) {
       throw new UnauthorizedError('Invalid or inactive church portal account');
+    }
+
+    // Suspension takes effect on the next request, not when the token runs out
+    const portalActive = await AppDataSource.getRepository(ChurchPortal).exist({
+      where: { id: portalUser.churchPortalId, status: CHURCH_PORTAL_STATUS.ACTIVE },
+    });
+    if (!portalActive) {
+      throw new UnauthorizedError(PORTAL_SUSPENDED_MESSAGE);
     }
 
     req.churchPortalUser = portalUser;

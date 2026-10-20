@@ -1,8 +1,10 @@
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
+import { ChurchPortalJoinRequest } from '../entities/churchPortalJoinRequest.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { NotFoundError, ForbiddenError } from '@/common/errors';
+import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
 
 export class ChurchPortalMembersService {
   async listMembers(
@@ -89,9 +91,18 @@ export class ChurchPortalMembersService {
     const member = await userRepo.findOne({ where: { id: userId, churchPortalId }, select: ['id'] });
     if (!member) throw new NotFoundError('Member not found in this church');
     await userRepo.update(userId, { churchPortalId: null, churchDiscountPercent: 0 });
+    // Without this, the old "approved" request let them rejoin with the code, unapproved
+    await AppDataSource.getRepository(ChurchPortalJoinRequest).delete({ churchPortalId, userId });
     const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
+    // The church stops paying for someone it removed (seat + church-billed plan)
+    const ended = await adminOrgPlanService.endChurchPaidAccessForPortal(userId, churchPortalId);
     await adminOrgPlanService.syncChurchPortalMemberDiscounts(churchPortalId);
-    return { message: 'Member removed from this church.' };
+    syncChurchCouponsInBackground([userId], 'removed from church');
+    return {
+      message: ended.downgraded
+        ? 'Member removed from this church. Their church-paid plan has ended.'
+        : 'Member removed from this church.',
+    };
   }
 
   async getMemberStreak(churchPortalId: string, userId: string) {

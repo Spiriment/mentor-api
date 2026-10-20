@@ -4,7 +4,8 @@ import { AppDataSource } from '@/config/data-source';
 import { jwt } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { AppError, NotFoundError, UnauthorizedError, ConflictError } from '@/common/errors';
-import { ChurchPortal } from '../entities/churchPortal.entity';
+import { ChurchPortal, CHURCH_PORTAL_STATUS } from '../entities/churchPortal.entity';
+import { PORTAL_SUSPENDED_MESSAGE } from '../middleware/churchPortalAuth.middleware';
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
 import { ChurchPortalRefreshToken } from '../entities/churchPortalRefreshToken.entity';
 import type { UpdateProfileInput } from '../validation/churchPortalAuth.validation';
@@ -45,10 +46,11 @@ export class ChurchPortalAuthService {
     const portalRepo = AppDataSource.getRepository(ChurchPortal);
 
     const portal = await portalRepo.findOne({
-      where: { id: churchPortalId, status: 'active' },
-      select: ['id', 'name', 'slug', 'logoUrl', 'joinCode'],
+      where: { id: churchPortalId },
+      select: ['id', 'name', 'slug', 'logoUrl', 'joinCode', 'status'],
     });
-    if (!portal) throw new UnauthorizedError('Church portal not found or inactive');
+    if (!portal) throw new UnauthorizedError('Church portal not found');
+    if (portal.status !== CHURCH_PORTAL_STATUS.ACTIVE) throw new UnauthorizedError(PORTAL_SUSPENDED_MESSAGE);
 
     const user = await userRepo.findOne({
       where: { email: email.toLowerCase(), churchPortalId },
@@ -111,6 +113,14 @@ export class ChurchPortalAuthService {
       select: ['id', 'email', 'role', 'isActive', 'churchPortalId'],
     });
     if (!user || !user.isActive) throw new UnauthorizedError('Account not found or inactive');
+
+    const portalActive = await AppDataSource.getRepository(ChurchPortal).exist({
+      where: { id: user.churchPortalId, status: CHURCH_PORTAL_STATUS.ACTIVE },
+    });
+    if (!portalActive) {
+      await tokenRepo.delete({ token: refreshToken });
+      throw new UnauthorizedError(PORTAL_SUSPENDED_MESSAGE);
+    }
 
     const accessToken = jwt.signChurchPortalAccessToken({
       portalUserId: user.id,

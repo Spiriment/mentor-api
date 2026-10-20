@@ -2,6 +2,7 @@ import Stripe = require('stripe');
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { AppError } from '@/common';
+import { isChurchCouponId, planChurchCouponUpdate } from '@/common/churchBilling';
 
 const TIER_PRICE_MAP: Record<string, string> = {
   basic:          process.env.STRIPE_PRICE_BASIC_MONTHLY  ?? '',
@@ -98,25 +99,84 @@ class StripeService {
   }
 
   async getOrCreatePercentageCoupon(discountPercent: number, promoCode: string): Promise<string> {
-    const id = this.normalizeCouponId(promoCode);
+    const baseId = this.normalizeCouponId(promoCode);
 
-    try {
-      const existing = await this.client.coupons.retrieve(id);
-      if (existing.valid && existing.percent_off === discountPercent) {
-        return existing.id;
-      }
-    } catch (err: any) {
-      if (err?.code !== 'resource_missing') throw err;
+    // Coupon IDs are permanent and their percent can't be edited. When a label's discount
+    // changes (a church passing 100 members, a family member's age bracket, an edited promo),
+    // re-creating the same ID fails with "already exists" and checkout breaks, so the new
+    // percent gets its own ID instead.
+    for (const id of [baseId, `${baseId}_${discountPercent}pct`]) {
+      const existing = await this.retrieveCoupon(id);
+      if (!existing) return this.createPercentCoupon(id, discountPercent, promoCode);
+      if (existing.valid && existing.percent_off === discountPercent) return existing.id;
     }
+    // Both IDs are taken by deleted/expired coupons
+    return this.createPercentCoupon(
+      `${baseId}_${discountPercent}pct_${Date.now().toString(36)}`,
+      discountPercent,
+      promoCode,
+    );
+  }
 
-    const coupon = await this.client.coupons.create({
-      id,
-      percent_off: discountPercent,
-      duration: 'forever',
-      name: `Promo: ${promoCode}`,
-      metadata: { promoCode },
+  private async retrieveCoupon(id: string) {
+    try {
+      return await this.client.coupons.retrieve(id);
+    } catch (err: any) {
+      if (err?.code === 'resource_missing') return null;
+      throw err;
+    }
+  }
+
+  private async createPercentCoupon(id: string, discountPercent: number, promoCode: string): Promise<string> {
+    try {
+      const coupon = await this.client.coupons.create({
+        id,
+        percent_off: discountPercent,
+        duration: 'forever',
+        name: `Promo: ${promoCode}`,
+        metadata: { promoCode },
+      });
+      return coupon.id;
+    } catch (err: any) {
+      // Two checkouts racing to create the same coupon: use the one that won
+      if (err?.code === 'resource_already_exists') {
+        const existing = await this.retrieveCoupon(id);
+        if (existing?.valid && existing.percent_off === discountPercent) return existing.id;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Replace the church coupon on a member's own Stripe subscription with the coupon they
+   * qualify for now (or remove it when that resolves to null). Other discounts are kept; subscriptions without a church coupon
+   * are left alone. Takes effect from the next invoice. Returns true when it changed anything.
+   */
+  async replaceChurchCoupon(
+    subscriptionId: string,
+    resolveDesiredCouponId: () => Promise<string | null>,
+    restore = false,
+  ): Promise<boolean> {
+    const sub = await this.client.subscriptions.retrieve(subscriptionId, { expand: ['discounts'] });
+    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return false;
+
+    const applied = (sub.discounts ?? [])
+      .flatMap((d) => (typeof d === 'string' ? [] : [d]))
+      .map((d) => ({
+        id: d.id,
+        couponId: typeof d.source?.coupon === 'string' ? d.source.coupon : d.source?.coupon?.id ?? null,
+      }));
+    if (!restore && !applied.some((d) => isChurchCouponId(d.couponId))) return false;
+
+    // Resolved only now, so subscriptions without a church coupon don't create coupons
+    const next = planChurchCouponUpdate(applied, await resolveDesiredCouponId(), restore);
+    if (!next) return false;
+
+    await this.client.subscriptions.update(subscriptionId, {
+      discounts: next.length > 0 ? next : '',
+      proration_behavior: 'none',
     });
-    return coupon.id;
+    return true;
   }
 
   /** @deprecated Use getOrCreatePercentageCoupon — kept as alias for callers */
@@ -142,6 +202,8 @@ class StripeService {
     invoicePdf: string | null;
     status: string;
     totalCents: number;
+    createdAt: string;
+    dueAt: string | null;
   }> {
     const positiveItems = params.lineItems.filter((item) => item.amountCents > 0);
     if (positiveItems.length === 0) {
@@ -189,6 +251,8 @@ class StripeService {
       invoicePdf: sent.invoice_pdf ?? null,
       status: sent.status ?? 'open',
       totalCents: sent.total ?? positiveItems.reduce((sum, i) => sum + i.amountCents, 0),
+      createdAt: new Date((sent.created ?? Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+      dueAt: sent.due_date ? new Date(sent.due_date * 1000).toISOString() : null,
     };
   }
 

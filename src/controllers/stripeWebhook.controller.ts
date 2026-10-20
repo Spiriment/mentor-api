@@ -103,6 +103,15 @@ function resolveStripeMrrCents(
   return 0;
 }
 
+/**
+ * Central church invoices (one-off, sent to the church's billing email). Their customer is
+ * found by email and can be an app user's own Stripe customer, so without this check a failed
+ * church payment would mark that person's personal subscription past due.
+ */
+function isChurchInvoice(invoice: any): boolean {
+  return invoice?.metadata?.planType === 'church' && !!invoice?.metadata?.orgPlanId;
+}
+
 async function releaseChurchMembershipIfNeeded(userId: string): Promise<void> {
   try {
     await adminOrgPlanService.releaseChurchMembership(userId);
@@ -368,8 +377,24 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         break;
       }
 
+      case 'invoice.paid':
+      case 'invoice.overdue':
+      case 'invoice.voided':
+      case 'invoice.marked_uncollectible': {
+        // Only central church invoices use these; personal subscriptions are handled above/below
+        const invoice = event.data.object as any;
+        if (isChurchInvoice(invoice)) {
+          await adminOrgPlanService.recordChurchInvoiceFromStripe(invoice, event.type);
+        }
+        break;
+      }
+
       case 'invoice.payment_failed': {
         const invoice = event.data.object as any;
+        if (isChurchInvoice(invoice)) {
+          await adminOrgPlanService.recordChurchInvoiceFromStripe(invoice, event.type);
+          break;
+        }
         const subscriptionId = extractStripeSubscriptionId(invoice);
         const customerId = extractStripeCustomerId(invoice);
 
@@ -416,6 +441,10 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as any;
+        if (isChurchInvoice(invoice)) {
+          await adminOrgPlanService.recordChurchInvoiceFromStripe(invoice, event.type);
+          break;
+        }
         const mrrCents = mrrCentsFromStripeInvoice(invoice);
         const subscriptionId: string | undefined =
           typeof invoice.subscription === 'string'
