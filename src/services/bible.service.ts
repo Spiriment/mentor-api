@@ -1,3 +1,4 @@
+import { pickTextFileset } from '@/common/bibleFilesets';
 import axios from 'axios';
 
 type CacheEntry<T> = {
@@ -537,7 +538,9 @@ export class BibleService {
         eng: ['ASV', 'KJV', 'WEB'], // English
         deu: ['LUTH', 'ELB'], // German - Luther, Elberfelder
         nld: ['NBV', 'HSV'], // Dutch - Nieuwe Bijbelvertaling, Herziene Statenvertaling
-        spa: ['RVR', 'NVI', 'RVA'], // Spanish - Reina Valera, Nueva Versión Internacional
+        // Spanish - Reina-Valera 1909 (SPARVC, complete in plain text) first. 'RVR'/'NVI'/'RVA'
+        // matched no Bible Brain edition, so the first listed edition was used instead.
+        spa: ['RVC', 'R02', 'RVR', 'NVI', 'RVA'],
         fra: ['LSG', 'BDS', 'S21'], // French - Louis Segond, Bible du Semeur
         ita: ['NR', 'CEI', 'LND'], // Italian - Nuova Riveduta, CEI
       };
@@ -872,6 +875,13 @@ export class BibleService {
           return isText;
         });
 
+        // Plain text for the right Testament wins (see pickTextFileset)
+        const plainId = pickTextFileset(languageResponse.filesets, isOldTestament);
+        if (plainId) {
+          this.setCache(cacheKey, plainId, 7 * 24 * 60 * 60 * 1000);
+          return plainId;
+        }
+
         if (textFilesets.length > 0) {
           console.log(
             `[Bible Brain] Found ${textFilesets.length} text filesets for ${language}`
@@ -991,6 +1001,12 @@ export class BibleService {
               console.log(
                 `[Bible Brain] Fetched ${filesets.length} filesets for ${language}`
               );
+            }
+
+            const plainId = pickTextFileset(filesets, isOldTestament);
+            if (plainId) {
+              this.setCache(cacheKey, plainId, 7 * 24 * 60 * 60 * 1000);
+              return plainId;
             }
 
             // Look for text filesets matching testament
