@@ -2,12 +2,16 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import path from 'path';
 
+// cPanel's Node.js app only offers "development" / "production" modes (which set NODE_ENV),
+// so the staging app sets APP_ENV=staging to load .env.staging. APP_ENV wins when present.
+// Never run staging in "production" mode: that would load .env.production (the prod database).
+const appEnv = process.env.APP_ENV || process.env.NODE_ENV;
 const envFile =
-  process.env.NODE_ENV === 'production'
+  appEnv === 'production'
     ? '.env.production'
-    : process.env.NODE_ENV === 'staging'
+    : appEnv === 'staging'
     ? '.env.staging'
-    : process.env.NODE_ENV === 'development'
+    : appEnv === 'development'
     ? '.env.development'
     : '.env';
 

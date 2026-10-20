@@ -23,8 +23,10 @@ export class Logger {
     ];
 
     // Only add file transport in production or when explicitly requested
+    // Staging runs in cPanel "development" mode with APP_ENV=staging — it needs log files too
     if (
       process.env.NODE_ENV === "production" ||
+      process.env.APP_ENV === "staging" ||
       process.env.ENABLE_FILE_LOGGING === "true"
     ) {
       const errorRotateTransport = new winston.transports.DailyRotateFile({
