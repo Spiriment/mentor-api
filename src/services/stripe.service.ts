@@ -226,33 +226,64 @@ class StripeService {
       customerId = created.id;
     }
 
-    for (const item of positiveItems) {
-      await this.client.invoiceItems.create({
-        customer: customerId,
-        amount: item.amountCents,
-        currency: 'eur',
-        description: item.description,
-      });
-    }
-
+    // Create the invoice first and attach each item to it. The old order (items, then invoice)
+    // breaks on this API version: new invoices exclude pending items by default, so the invoice
+    // came out empty and the items stayed pending on the customer, where Stripe would add them
+    // to that customer's next subscription invoice. This customer is found by email, so it can
+    // be an app user who also pays their own subscription.
+    const expectedCents = positiveItems.reduce((sum, i) => sum + i.amountCents, 0);
     const invoice = await this.client.invoices.create({
       customer: customerId,
       collection_method: 'send_invoice',
       days_until_due: params.daysUntilDue ?? 14,
       description: params.description,
       metadata: params.metadata ?? {},
-      auto_advance: true,
+      pending_invoice_items_behavior: 'exclude',
+      // Finalized below once every item is attached, not by Stripe's timer
+      auto_advance: false,
     });
 
-    const finalized = await this.client.invoices.finalizeInvoice(invoice.id);
-    const sent = await this.client.invoices.sendInvoice(finalized.id);
+    let sent: Awaited<ReturnType<typeof this.client.invoices.sendInvoice>>;
+    try {
+      for (const item of positiveItems) {
+        await this.client.invoiceItems.create({
+          customer: customerId,
+          invoice: invoice.id,
+          amount: item.amountCents,
+          currency: 'eur',
+          description: item.description,
+          // Prices are already discounted; a customer-level coupon must not apply twice
+          discountable: false,
+          metadata: { source: 'central_invoice', ...(params.metadata ?? {}) },
+        });
+      }
+
+      const draft = await this.client.invoices.retrieve(invoice.id);
+      if (draft.total !== expectedCents) {
+        throw new AppError(
+          `Invoice total mismatch (expected ${expectedCents} cents, Stripe has ${draft.total}); nothing was sent`,
+          500,
+        );
+      }
+
+      const finalized = await this.client.invoices.finalizeInvoice(invoice.id, { auto_advance: true });
+      sent = await this.client.invoices.sendInvoice(finalized.id);
+    } catch (err) {
+      // Don't leave a half-built draft (or its items) on the customer. Deleting a draft
+      // invoice deletes the items attached to it.
+      await this.client.invoices
+        .retrieve(invoice.id)
+        .then((inv) => (inv.status === 'draft' ? this.client.invoices.del(invoice.id) : undefined))
+        .catch(() => undefined);
+      throw err;
+    }
 
     return {
       invoiceId: sent.id,
       hostedInvoiceUrl: sent.hosted_invoice_url ?? null,
       invoicePdf: sent.invoice_pdf ?? null,
       status: sent.status ?? 'open',
-      totalCents: sent.total ?? positiveItems.reduce((sum, i) => sum + i.amountCents, 0),
+      totalCents: sent.total ?? expectedCents,
       createdAt: new Date((sent.created ?? Math.floor(Date.now() / 1000)) * 1000).toISOString(),
       dueAt: sent.due_date ? new Date(sent.due_date * 1000).toISOString() : null,
     };

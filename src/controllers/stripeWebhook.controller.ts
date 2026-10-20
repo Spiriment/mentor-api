@@ -18,6 +18,7 @@ import {
 } from '@/common/constants/subscriptionMrr';
 import {
   extractStripeCustomerId,
+  extractStripePeriodEnd,
   extractStripeSubscriptionId,
   resolvePaymentFailedTarget,
 } from '@/common/subscription/stripePaymentFailedResolver';
@@ -286,9 +287,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
         const stripePrice = stripeSub.items?.data?.[0]?.price;
         const billingInterval = inferBillingIntervalFromStripeInterval(stripePrice?.recurring?.interval);
         const mrrCents = resolveStripeMrrCents(stripeSub, tier, billingInterval);
-        const expiresAt = stripeSub.current_period_end
-          ? new Date((stripeSub.current_period_end as number) * 1000)
-          : null;
+        const expiresAt = extractStripePeriodEnd(stripeSub);
 
         if (memberUserId) {
           try {
@@ -446,10 +445,7 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
           break;
         }
         const mrrCents = mrrCentsFromStripeInvoice(invoice);
-        const subscriptionId: string | undefined =
-          typeof invoice.subscription === 'string'
-            ? invoice.subscription
-            : invoice.subscription?.id;
+        const subscriptionId = extractStripeSubscriptionId(invoice);
 
         if (subscriptionId) {
           const familyMember = await familyPlanService.findMemberByStripeSubscriptionId(subscriptionId);

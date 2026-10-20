@@ -2,9 +2,29 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   extractStripeCustomerId,
+  extractStripePeriodEnd,
   extractStripeSubscriptionId,
   resolvePaymentFailedTarget,
 } from './stripePaymentFailedResolver';
+
+describe('Stripe payload shapes across API versions', () => {
+  it('reads the subscription id from 2025-03-31+ invoices (parent.subscription_details)', () => {
+    assert.equal(
+      extractStripeSubscriptionId({ parent: { subscription_details: { subscription: 'sub_new' } } }),
+      'sub_new',
+    );
+    assert.equal(extractStripeSubscriptionId({ parent: null }), undefined);
+  });
+
+  it('reads the period end from the subscription or, on newer versions, its first item', () => {
+    assert.equal(extractStripePeriodEnd({ current_period_end: 1_800_000_000 })?.getTime(), 1_800_000_000_000);
+    assert.equal(
+      extractStripePeriodEnd({ items: { data: [{ current_period_end: 1_800_000_000 }] } })?.getTime(),
+      1_800_000_000_000,
+    );
+    assert.equal(extractStripePeriodEnd({}), null);
+  });
+});
 
 describe('stripePaymentFailedResolver', () => {
   it('extracts subscription and customer ids from string or object refs', () => {

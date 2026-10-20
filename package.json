@@ -11,6 +11,8 @@
     "start": "node -r tsconfig-paths/register dist/index.js",
     "repair:streaks": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/repairStreaksAfterOutage.js",
     "repair:streaks:apply": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/repairStreaksAfterOutage.js --apply",
+    "cleanup:invoice-items": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/cleanupOrphanInvoiceItems.js",
+    "cleanup:invoice-items:apply": "cross-env NODE_ENV=production node -r tsconfig-paths/register dist/scripts/cleanupOrphanInvoiceItems.js --apply",
     "start:dev": "cross-env NODE_ENV=development ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate -d src/config/data-source.ts",

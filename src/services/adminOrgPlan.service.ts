@@ -374,6 +374,22 @@ export class AdminOrgPlanService {
     if (!user) throw new AppError('User not found', 404);
     if (user.orgPlanId) throw new AppError('User is already assigned to an org plan', 409);
 
+    // Someone already paying for themselves would be charged twice (their own store/Stripe
+    // billing keeps running), or the church billed for a seat that never takes effect
+    const ownSub = await AppDataSource.getRepository(UserSubscription).findOne({ where: { userId } });
+    const paysOwnWay =
+      !!ownSub &&
+      ['stripe', 'stripe_family', 'revenuecat'].includes(ownSub.externalProvider ?? '') &&
+      ['active', 'past_due', 'trialing'].includes(ownSub.status) &&
+      ownSub.tier !== 'free';
+    if (paysOwnWay) {
+      const where = ownSub!.externalProvider === 'revenuecat' ? 'the App Store' : ownSub!.externalProvider === 'stripe_family' ? 'a family plan' : 'Stripe';
+      throw new AppError(
+        `This member already pays for their own ${ownSub!.tier} plan through ${where}. They need to cancel it (and let it run out) before the church can pay for them.`,
+        409,
+      );
+    }
+
     let discountPercent = CHURCH_DISCOUNT_PERCENT;
 
     await AppDataSource.transaction(async (manager) => {
