@@ -26,10 +26,16 @@ function vapidKey(): string | null {
   const pub = process.env.ADMIN_VAPID_PUBLIC_KEY ?? '';
   const priv = process.env.ADMIN_VAPID_PRIVATE_KEY ?? '';
   if (pub && priv) {
-    webpush.setVapidDetails(process.env.ADMIN_VAPID_SUBJECT || 'mailto:support@spiriment.com', pub, priv);
+    webpush.setVapidDetails(
+      process.env.ADMIN_VAPID_SUBJECT || 'mailto:support@spiriment.com',
+      pub,
+      priv,
+    );
     vapidPublicKey = pub;
   } else {
-    logger.warn('ADMIN_VAPID_PUBLIC_KEY / ADMIN_VAPID_PRIVATE_KEY not set — admin web push disabled');
+    logger.warn(
+      'ADMIN_VAPID_PUBLIC_KEY / ADMIN_VAPID_PRIVATE_KEY not set — admin web push disabled',
+    );
     vapidPublicKey = null;
   }
   return vapidPublicKey;
@@ -50,25 +56,39 @@ export class AdminAlertService {
    * Never throws and doesn't block the caller's work — call it with `void`, so a slow email
    * or a dead browser subscription can't fail a payment webhook or a ticket submission.
    */
-  async notify(event: AdminAlertEvent, payload: AdminAlertPayload): Promise<void> {
+  async notify(
+    event: AdminAlertEvent,
+    payload: AdminAlertPayload,
+  ): Promise<void> {
     try {
-      const admins = await AppDataSource.getRepository(AdminUser).find({ where: { isActive: true } });
+      const admins = await AppDataSource.getRepository(AdminUser).find({
+        where: { isActive: true },
+      });
       const targets = admins
         .map((admin) => ({ admin, channels: channelsFor(admin, event) }))
         .filter((t) => t.channels.length > 0);
       if (targets.length === 0) return;
 
-      const bellIds = targets.filter((t) => t.channels.includes('bell')).map((t) => t.admin.id);
+      const bellIds = targets
+        .filter((t) => t.channels.includes('bell'))
+        .map((t) => t.admin.id);
       if (bellIds.length) {
         const repo = AppDataSource.getRepository(AdminAlert);
         await repo.save(
           bellIds.map((adminUserId) =>
-            repo.create({ adminUserId, type: event, ...payload, link: payload.link ?? null }),
+            repo.create({
+              adminUserId,
+              type: event,
+              ...payload,
+              link: payload.link ?? null,
+            }),
           ),
         );
       }
 
-      const pushIds = targets.filter((t) => t.channels.includes('push')).map((t) => t.admin.id);
+      const pushIds = targets
+        .filter((t) => t.channels.includes('push'))
+        .map((t) => t.admin.id);
       if (pushIds.length && vapidKey()) await this.sendPush(pushIds, payload);
 
       for (const t of targets.filter((t) => t.channels.includes('email'))) {
@@ -90,7 +110,9 @@ export class AdminAlertService {
 
   /** Push a test notification to one admin's browsers; returns how many browsers it targeted. */
   async sendTestPush(adminId: string): Promise<number> {
-    const count = await AppDataSource.getRepository(AdminPushSubscription).count({
+    const count = await AppDataSource.getRepository(
+      AdminPushSubscription,
+    ).count({
       where: { adminUserId: adminId },
     });
     if (count > 0 && vapidKey()) {
@@ -106,12 +128,19 @@ export class AdminAlertService {
   private async sendPush(adminIds: string[], payload: AdminAlertPayload) {
     const repo = AppDataSource.getRepository(AdminPushSubscription);
     const subs = await repo.find({ where: { adminUserId: In(adminIds) } });
-    const message = JSON.stringify({ title: payload.title, body: payload.body, url: payload.link ?? '/' });
+    const message = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.link ?? '/',
+    });
     await Promise.all(
       subs.map(async (sub) => {
         try {
           await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
             message,
             { TTL: 60 * 60 * 24 },
           );

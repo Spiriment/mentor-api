@@ -18,8 +18,9 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
-  otp: z.string().min(4, 'OTP is required'),
+  otp: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code from the email'),
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  churchPortalId: z.string().uuid().optional(),
 });
 
 export const updateProfileSchema = z.object({

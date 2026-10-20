@@ -503,7 +503,7 @@ export class AdminOrgPlanService {
       syncChurchCouponsInBackground(
         removed.filter((id) => payers.has(id)),
         `church ${churchPortalId} reactivated`,
-        { restore: true, onDone: () => saveRemovedCoupons(null) },
+        { mode: 'restore', onDone: () => saveRemovedCoupons(null) },
       );
     } else if (before.discountPercent !== discountPercent) {
       // Crossing the 100-member line: move members' existing Stripe coupons to the new percent

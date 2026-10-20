@@ -4,15 +4,17 @@ import { User } from '@/database/entities/user.entity';
 import { UserSubscription } from '@/database/entities/userSubscription.entity';
 import { discountCouponLabel, getSubscriptionDiscount } from '@/common/constants/subscriptionPricing';
 import { logger } from '@/config/int-services';
+import type { ChurchCouponMode } from '@/common/churchBilling';
 import { stripeService } from './stripe.service';
 
 /**
  * The church discount is a "forever" Stripe coupon applied at checkout, so on its own it
  * would outlive church membership and never follow 5% → 10% changes. These keep members'
  * own Stripe subscriptions in line with what they qualify for now (from the next invoice).
- * Only subscriptions that already carry a church coupon are changed.
+ * By default only subscriptions that already carry a church coupon are changed; see
+ * ChurchCouponMode for joining ('join') and reactivation ('restore').
  */
-export async function syncChurchCouponForUser(userId: string, restore = false): Promise<boolean> {
+export async function syncChurchCouponForUser(userId: string, mode: ChurchCouponMode = 'sync'): Promise<boolean> {
   const sub = await AppDataSource.getRepository(UserSubscription).findOne({
     where: { userId },
     select: ['id', 'externalProvider', 'externalRef'],
@@ -30,14 +32,14 @@ export async function syncChurchCouponForUser(userId: string, restore = false): 
     return discount.percent !== null
       ? stripeService.getOrCreatePercentageCoupon(discount.percent, discountCouponLabel(discount.type, user.id))
       : null;
-  }, restore);
+  }, mode);
 }
 
 /** Fire-and-forget: Stripe being slow or down must not fail joining/leaving a church. */
 export function syncChurchCouponsInBackground(
   userIds: string[],
   reason: string,
-  opts: { restore?: boolean; onDone?: (changedUserIds: string[]) => Promise<void> } = {},
+  opts: { mode?: ChurchCouponMode; onDone?: (changedUserIds: string[]) => Promise<void> } = {},
 ): void {
   if (userIds.length === 0) {
     if (opts.onDone) void opts.onDone([]).catch(() => undefined);
@@ -47,7 +49,7 @@ export function syncChurchCouponsInBackground(
     const changedIds: string[] = [];
     for (const userId of userIds) {
       try {
-        if (await syncChurchCouponForUser(userId, opts.restore)) changedIds.push(userId);
+        if (await syncChurchCouponForUser(userId, opts.mode)) changedIds.push(userId);
       } catch (err) {
         logger.warn('Church coupon sync failed', {
           userId,

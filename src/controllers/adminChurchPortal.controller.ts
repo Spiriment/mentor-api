@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccessResponse } from '@/common/helpers';
 import { AdminChurchPortalService } from '@/services/adminChurchPortal.service';
+import { ChurchPortalMembersService } from '@/church-portal/services/churchPortalMembers.service';
+import { adminAuditService } from '@/services/adminAudit.service';
+import { assertAdminPermission } from '@/admin/middleware/requireAdminPermission.middleware';
 import {
   createChurchPortalSchema,
   updateChurchPortalSchema,
@@ -9,6 +12,8 @@ import {
 } from '@/validation/adminChurchPortals.validation';
 
 export class AdminChurchPortalController {
+  private readonly membersService = new ChurchPortalMembersService();
+
   constructor(private readonly service: AdminChurchPortalService) {}
 
   // ── Portals ──────────────────────────────────────────────────────────────
@@ -45,7 +50,21 @@ export class AdminChurchPortalController {
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = updateChurchPortalSchema.parse(req.body);
+      if (body.status !== undefined) {
+        await assertAdminPermission(req, 'church.suspend');
+      }
+      const before = body.status !== undefined ? await this.service.getPortal(req.params.portalId) : null;
       const result = await this.service.updatePortal(req.params.portalId, body);
+      if (before && before.status !== result.status) {
+        await adminAuditService.log({
+          adminUserId: req.admin!.id,
+          action: result.status === 'suspended' ? 'admin.church_portal.suspend' : 'admin.church_portal.reactivate',
+          targetType: 'church_portal',
+          targetId: result.id,
+          metadata: { name: result.name },
+          ip: req.ip ?? null,
+        });
+      }
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);
@@ -111,6 +130,24 @@ export class AdminChurchPortalController {
         page ? parseInt(page) : 1,
         limit ? parseInt(limit) : 20
       );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  removeMember = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await assertAdminPermission(req, 'church.remove_members');
+      const result = await this.membersService.removeMember(req.params.portalId, req.params.userId);
+      await adminAuditService.log({
+        adminUserId: req.admin!.id,
+        action: 'admin.church_portal.remove_member',
+        targetType: 'user',
+        targetId: req.params.userId,
+        metadata: { churchPortalId: req.params.portalId },
+        ip: req.ip ?? null,
+      });
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);

@@ -29,6 +29,10 @@ export class AdminUser extends BaseEntity {
   @Column({ name: 'notificationPreferences', type: 'json', nullable: true })
   notificationPreferences?: Record<string, Record<string, boolean>> | null;
 
+  /** Extra permissions granted to a support admin, see common/adminPermissions.ts */
+  @Column({ name: 'permissions', type: 'json', nullable: true })
+  permissions?: string[] | null;
+
   @Column({ name: 'firstName', type: 'varchar', length: 120, nullable: true })
   firstName?: string | null;
 

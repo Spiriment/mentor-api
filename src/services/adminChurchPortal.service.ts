@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { In, ILike } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
-import { jwt } from '@/config/int-services';
+import { jwt, logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { ChurchPortal, CHURCH_PORTAL_STATUS } from '@/church-portal/entities/churchPortal.entity';
 import { adminOrgPlanService } from './adminOrgPlan.service';
@@ -270,8 +270,17 @@ export class AdminChurchPortalService {
 
     await repo.update(saved.id, { inviteToken, inviteTokenExpiresAt });
 
-    // Send invite email
-    await this._sendInviteEmail(saved, portal, inviteToken);
+    // The account exists either way; a failed email must not look like a failed create
+    // (retrying would hit "already exists"), so report it and let the admin resend
+    let emailFailed = false;
+    try {
+      await this._sendInviteEmail(saved, portal, inviteToken);
+    } catch (err) {
+      emailFailed = true;
+      logger.error('Church portal invite email failed', err instanceof Error ? err : new Error(String(err)), {
+        portalUserId: saved.id,
+      });
+    }
 
     return {
       id: saved.id,
@@ -281,7 +290,10 @@ export class AdminChurchPortalService {
       role: saved.role,
       isActive: saved.isActive,
       createdAt: saved.createdAt,
-      message: `Invite email sent to ${saved.email}`,
+      emailFailed,
+      message: emailFailed
+        ? `Account created, but the invite email to ${saved.email} failed to send. Use "Resend invite".`
+        : `Invite email sent to ${saved.email}`,
     };
   }
 

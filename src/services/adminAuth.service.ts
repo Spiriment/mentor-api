@@ -1,3 +1,4 @@
+import { effectiveAdminPermissions } from '@/common/adminPermissions';
 import bcrypt from 'bcryptjs';
 import { AppDataSource } from '@/config/data-source';
 import { AdminUser, RefreshToken } from '@/database/entities';
@@ -102,6 +103,7 @@ export class AdminAuthService {
         id: admin.id,
         email: admin.email,
         role: admin.role,
+        permissions: effectiveAdminPermissions(admin),
         firstName: admin.firstName ?? null,
         lastName: admin.lastName ?? null,
         avatarUrl: admin.avatarUrl ?? null,
@@ -166,6 +168,7 @@ export class AdminAuthService {
         id: admin.id,
         email: admin.email,
         role: admin.role,
+        permissions: effectiveAdminPermissions(admin),
         firstName: admin.firstName ?? null,
         lastName: admin.lastName ?? null,
         avatarUrl: admin.avatarUrl ?? null,

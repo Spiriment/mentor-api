@@ -9,6 +9,7 @@ import {
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
+import { notifyMemberOfJoinDecision, notifyPastorsOfJoinRequest } from './churchPortalNotifications';
 
 function portalPreview(portal: ChurchPortal) {
   return {
@@ -105,6 +106,7 @@ export class ChurchPortalJoinRequestService {
       row.status = CHURCH_JOIN_REQUEST_STATUS.PENDING;
       row.resolvedAt = null;
       await joinRepo.save(row);
+      notifyPastorsOfJoinRequest(portal.id, appUserId);
       return pending;
     }
 
@@ -119,7 +121,9 @@ export class ChurchPortalJoinRequestService {
     } catch (err: any) {
       // Double tap: the other request created the row (unique churchPortalId + userId)
       if (err?.code !== 'ER_DUP_ENTRY') throw err;
+      return pending;
     }
+    notifyPastorsOfJoinRequest(portal.id, appUserId);
     return pending;
   }
 
@@ -272,6 +276,10 @@ export class ChurchPortalJoinRequestService {
 
     const { adminOrgPlanService } = await import('@/services/adminOrgPlan.service');
     const discount = await adminOrgPlanService.syncChurchPortalMemberDiscounts(churchPortalId);
+    // Already subscribed on Stripe before joining: give them the discount too (only when their
+    // subscription has no other discount, so nothing stacks). iOS prices can't be changed.
+    syncChurchCouponsInBackground([userId], 'joined church', { mode: 'join' });
+    notifyMemberOfJoinDecision(userId, portal.name, true);
 
     return {
       message: 'Member approved and linked to your church.',
@@ -295,6 +303,12 @@ export class ChurchPortalJoinRequestService {
     row.status = CHURCH_JOIN_REQUEST_STATUS.REJECTED;
     row.resolvedAt = new Date();
     await joinRepo.save(row);
+
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: churchPortalId },
+      select: ['id', 'name'],
+    });
+    notifyMemberOfJoinDecision(userId, portal?.name ?? 'Your church', false);
 
     return { message: 'Join request rejected.' };
   }

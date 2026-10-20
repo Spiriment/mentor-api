@@ -2,7 +2,7 @@ import Stripe = require('stripe');
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { AppError } from '@/common';
-import { isChurchCouponId, planChurchCouponUpdate } from '@/common/churchBilling';
+import { isChurchCouponId, planChurchCouponUpdate, type ChurchCouponMode } from '@/common/churchBilling';
 
 const TIER_PRICE_MAP: Record<string, string> = {
   basic:          process.env.STRIPE_PRICE_BASIC_MONTHLY  ?? '',
@@ -149,13 +149,14 @@ class StripeService {
 
   /**
    * Replace the church coupon on a member's own Stripe subscription with the coupon they
-   * qualify for now (or remove it when that resolves to null). Other discounts are kept; subscriptions without a church coupon
-   * are left alone. Takes effect from the next invoice. Returns true when it changed anything.
+   * qualify for now (or remove it when that resolves to null). Other discounts are kept;
+   * `mode` says whether a subscription without a church coupon may get one (see
+   * planChurchCouponUpdate). Takes effect from the next invoice. Returns true when it changed anything.
    */
   async replaceChurchCoupon(
     subscriptionId: string,
     resolveDesiredCouponId: () => Promise<string | null>,
-    restore = false,
+    mode: ChurchCouponMode = 'sync',
   ): Promise<boolean> {
     const sub = await this.client.subscriptions.retrieve(subscriptionId, { expand: ['discounts'] });
     if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return false;
@@ -166,10 +167,11 @@ class StripeService {
         id: d.id,
         couponId: typeof d.source?.coupon === 'string' ? d.source.coupon : d.source?.coupon?.id ?? null,
       }));
-    if (!restore && !applied.some((d) => isChurchCouponId(d.couponId))) return false;
+    const hasChurchCoupon = applied.some((d) => isChurchCouponId(d.couponId));
+    if (!hasChurchCoupon && (mode === 'sync' || (mode === 'join' && applied.length > 0))) return false;
 
-    // Resolved only now, so subscriptions without a church coupon don't create coupons
-    const next = planChurchCouponUpdate(applied, await resolveDesiredCouponId(), restore);
+    // Resolved only now, so subscriptions that won't change don't create coupons
+    const next = planChurchCouponUpdate(applied, await resolveDesiredCouponId(), mode);
     if (!next) return false;
 
     await this.client.subscriptions.update(subscriptionId, {

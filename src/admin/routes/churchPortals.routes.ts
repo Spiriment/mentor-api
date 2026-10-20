@@ -21,7 +21,7 @@ const ctrl = () => {
 // GET  /api/admin/church-portals           — list all portals
 // POST /api/admin/church-portals           — create a portal
 // GET  /api/admin/church-portals/:portalId — get portal detail
-// PATCH /api/admin/church-portals/:portalId — update portal
+// PATCH /api/admin/church-portals/:portalId — update portal (changing status needs church.suspend)
 
 router.get('/', (req, res, next) => ctrl().list(req, res, next));
 router.post('/', (req, res, next) => ctrl().create(req, res, next));
@@ -46,6 +46,8 @@ router.post('/:portalId/users/:userId/resend-invite', (req, res, next) => ctrl()
 // GET /api/admin/church-portals/:portalId/report   — activity report
 
 router.get('/:portalId/members', (req, res, next) => ctrl().listMembers(req, res, next));
+// Needs the church.remove_members permission (super admins always have it)
+router.delete('/:portalId/members/:userId', (req, res, next) => ctrl().removeMember(req, res, next));
 router.get('/:portalId/report', (req, res, next) => ctrl().getReport(req, res, next));
 
 export default router;

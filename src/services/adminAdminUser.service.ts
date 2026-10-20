@@ -6,6 +6,7 @@ import { ADMIN_ROLE } from '@/common/constants/adminRoles';
 import { AdminUser } from '@/database/entities/adminUser.entity';
 import { AdminAuthService } from './adminAuth.service';
 import { adminAuditService } from './adminAudit.service';
+import { isAdminPermission, readAdminPermissions } from '@/common/adminPermissions';
 
 const DEFAULT_PAGE = 1;
 const MAX_LIMIT = 100;
@@ -19,6 +20,8 @@ export class AdminAdminUserService {
       email: row.email,
       role: row.role,
       isActive: row.isActive,
+      /** Granted extras (support admins); super admins implicitly have all */
+      permissions: readAdminPermissions(row.permissions),
       firstName: row.firstName ?? null,
       lastName: row.lastName ?? null,
       createdAt: row.createdAt,
@@ -113,6 +116,47 @@ export class AdminAdminUserService {
       targetType: 'admin_user',
       targetId: saved.id,
       metadata: { email: saved.email, role: saved.role },
+      ip: ip ?? null,
+    });
+
+    return this.serialize(saved);
+  }
+
+  async setPermissions(
+    adminUserId: string,
+    permissions: string[],
+    actorAdminUserId: string,
+    ip?: string
+  ) {
+    if (!isUuid(adminUserId)) {
+      throw new AppError('Invalid admin user id', 400);
+    }
+    const row = await this.repo.findOne({ where: { id: adminUserId } });
+    if (!row) {
+      throw new AppError('Admin user not found', 404);
+    }
+    if (row.role === ADMIN_ROLE.SUPER_ADMIN) {
+      throw new AppError('Super admins already have every permission', 400);
+    }
+    const unknown = permissions.filter((p) => !isAdminPermission(p));
+    if (unknown.length) {
+      throw new AppError(`Unknown permission: ${unknown.join(', ')}`, 400);
+    }
+
+    const before = readAdminPermissions(row.permissions);
+    const next = readAdminPermissions(permissions);
+    row.permissions = next.length ? next : null;
+    const saved = await this.repo.save(row);
+
+    await adminAuditService.log({
+      adminUserId: actorAdminUserId,
+      action: 'admin.admin_user.set_permissions',
+      targetType: 'admin_user',
+      targetId: saved.id,
+      metadata: {
+        granted: next.filter((p) => !before.includes(p)),
+        revoked: before.filter((p) => !next.includes(p)),
+      },
       ip: ip ?? null,
     });
 

@@ -51,4 +51,8 @@ export class ChurchPortalUser extends BaseEntity {
 
   @Column({ name: 'inviteTokenExpiresAt', type: 'datetime', nullable: true, select: false })
   inviteTokenExpiresAt?: Date | null;
+
+  /** Wrong password-reset codes entered for the current code (it is burned at 5) */
+  @Column({ name: 'resetAttempts', type: 'int', default: 0, select: false })
+  resetAttempts?: number;
 }

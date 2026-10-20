@@ -1,0 +1,39 @@
+<div style="font-family: 'Poppins', Arial, sans-serif;">
+  <div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="margin: 0; color: #282828; font-size: 25px; line-height: 200%; font-weight: 700;">
+      <strong>Church portal password reset</strong>
+    </h1>
+  </div>
+
+  <div style="text-align: left; font-size: 15px; line-height: 150%; color: #000; margin: 20px 0;">
+    <p style="margin: 0;">
+      Hello <strong>{{name}}</strong>, use this code to reset your password for the
+      <strong>{{churchName}}</strong> church portal:
+    </p>
+  </div>
+
+  <div style="background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+    <div style="margin-bottom: 10px; font-size: 14px; color: #666; font-weight: 500;">Your reset code</div>
+    <span
+      style="font-weight: 600; font-size: 32px; color: #3A5A40; letter-spacing: 4px; display: inline-block; padding: 12px 24px; background: #ffffff; border-radius: 6px; border: 2px dashed #3A5A40;"
+    >{{otp}}</span>
+  </div>
+
+  <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 16px; margin: 20px 0;">
+    <p style="font-size: 14px; color: #856404; margin: 0;">
+      <strong>⏰ Important:</strong> This code expires in {{expiryMinutes}} minutes and stops working after
+      a few wrong tries.
+    </p>
+  </div>
+
+  <div style="background: #EEF3EC; border: 1px solid #CFDDCA; border-radius: 6px; padding: 16px; margin: 20px 0;">
+    <p style="font-size: 14px; color: #35502F; margin: 0;">
+      <strong>🔒 Security tip:</strong> Never share this code. If you didn't ask to reset your password, you
+      can ignore this email; your password stays the same.
+    </p>
+  </div>
+
+  <div style="font-size: 14px; color: #000; margin: 10px 0;">
+    <p style="margin: 0;">Warm regards,<br /><strong>Spiriment Team</strong></p>
+  </div>
+</div>

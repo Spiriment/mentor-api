@@ -21,18 +21,22 @@ export interface AppliedDiscount {
 /**
  * Discounts to set on a member's subscription so the church coupon matches what they qualify
  * for now (`desiredCouponId`, or null to drop it). Other discounts (promo codes) are kept.
- * Returns null when nothing should change — including when no church coupon is applied (unless
- * `restore`), so subscriptions that never had a church discount are never touched.
+ * Returns null when nothing should change. With no church coupon applied, `mode` decides:
+ *  - 'sync' (default): leave it alone, so subscriptions without a church discount are never touched
+ *  - 'join': add it only when the subscription has no discount at all (never stacks on a promo)
+ *  - 'restore': re-add one removed earlier (church suspended, then reactivated), keeping others
  */
+export type ChurchCouponMode = 'sync' | 'join' | 'restore';
+
 export function planChurchCouponUpdate(
   applied: AppliedDiscount[],
   desiredCouponId: string | null,
-  /** Re-add a church coupon that was removed earlier (church suspended, then reactivated) */
-  restore = false,
+  mode: ChurchCouponMode = 'sync',
 ): Array<{ discount: string } | { coupon: string }> | null {
   const church = applied.filter((d) => isChurchCouponId(d.couponId));
   if (church.length === 0) {
-    if (!restore || !isChurchCouponId(desiredCouponId)) return null;
+    if (mode === 'sync' || !isChurchCouponId(desiredCouponId)) return null;
+    if (mode === 'join' && applied.length > 0) return null;
     return [...applied.map((d) => ({ discount: d.id })), { coupon: desiredCouponId! }];
   }
   if (church.length === 1 && church[0].couponId === desiredCouponId) return null;

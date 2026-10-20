@@ -6,6 +6,7 @@ import { requireAdminRole } from '../middleware/requireAdminRole.middleware';
 import {
   adminAdminUsersCreateBodySchema,
   adminAdminUsersListQuerySchema,
+  adminAdminUsersPatchPermissionsSchema,
   adminAdminUsersPatchStatusSchema,
   adminAdminUsersResetPasswordSchema,
 } from '@/validation/adminAdminUsers.validation';
@@ -23,6 +24,12 @@ router.post(
   '/',
   validate(adminAdminUsersCreateBodySchema, 'body'),
   adminAdminUserController.post
+);
+router.get('/permissions', adminAdminUserController.listPermissions);
+router.patch(
+  '/:adminUserId/permissions',
+  validate(adminAdminUsersPatchPermissionsSchema, 'body'),
+  adminAdminUserController.patchPermissions
 );
 router.patch(
   '/:adminUserId/status',

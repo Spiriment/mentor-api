@@ -1,3 +1,4 @@
+import { ADMIN_PERMISSIONS } from '@/common/adminPermissions';
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccessResponse } from '@/common/helpers';
 import { adminAdminUserService } from '@/services/adminAdminUser.service';
@@ -34,6 +35,27 @@ export class AdminAdminUserController {
         req.ip
       );
       return sendSuccessResponse(res, created, 201);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  listPermissions = async (_req: Request, res: Response) => {
+    return sendSuccessResponse(
+      res,
+      Object.entries(ADMIN_PERMISSIONS).map(([key, p]) => ({ key, label: p.label, description: p.description })),
+    );
+  };
+
+  patchPermissions = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updated = await adminAdminUserService.setPermissions(
+        req.params.adminUserId,
+        req.body.permissions,
+        req.admin!.id,
+        req.ip
+      );
+      return sendSuccessResponse(res, updated);
     } catch (e) {
       next(e);
     }

@@ -3,6 +3,7 @@ import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ChurchPortal } from '../entities/churchPortal.entity';
+import { ChurchPortalJoinRequest, CHURCH_JOIN_REQUEST_STATUS } from '../entities/churchPortalJoinRequest.entity';
 
 export class ChurchPortalDashboardService {
   async getSummary(churchPortalId: string) {
@@ -14,9 +15,12 @@ export class ChurchPortalDashboardService {
       select: ['joinCode', 'name', 'slug'],
     });
 
-    const [totalMentors, totalMentees] = await Promise.all([
+    const [totalMentors, totalMentees, pendingJoinRequests] = await Promise.all([
       userRepo.count({ where: { churchPortalId, role: USER_ROLE.MENTOR } }),
       userRepo.count({ where: { churchPortalId, role: USER_ROLE.MENTEE } }),
+      AppDataSource.getRepository(ChurchPortalJoinRequest).count({
+        where: { churchPortalId, status: CHURCH_JOIN_REQUEST_STATUS.PENDING },
+      }),
     ]);
 
     const startOfWeek = new Date();
@@ -48,6 +52,7 @@ export class ChurchPortalDashboardService {
       totalMentees,
       weeklySessions,
       avgStreak,
+      pendingJoinRequests,
       joinCode: portalRow?.joinCode ?? null,
       portalName: portalRow?.name,
       portalSlug: portalRow?.slug,

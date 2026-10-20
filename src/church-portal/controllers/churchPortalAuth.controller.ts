@@ -89,7 +89,7 @@ export class ChurchPortalAuthController {
         body.email,
         body.otp,
         body.newPassword,
-        (req.body as any).churchPortalId
+        body.churchPortalId
       );
       res.status(StatusCodes.OK).json({ status: 'success', data: result });
     } catch (err) {

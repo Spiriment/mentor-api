@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { AppDataSource } from '@/config/data-source';
-import { jwt } from '@/config/int-services';
+import { jwt, logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
 import { AppError, NotFoundError, UnauthorizedError, ConflictError } from '@/common/errors';
 import { ChurchPortal, CHURCH_PORTAL_STATUS } from '../entities/churchPortal.entity';
@@ -12,6 +12,8 @@ import type { UpdateProfileInput } from '../validation/churchPortalAuth.validati
 
 const SALT_ROUNDS = 12;
 const OTP_EXPIRY_MINUTES = 15;
+const MAX_RESET_ATTEMPTS = 5;
+const INVITE_EXPIRY_HOURS = 48;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 export class ChurchPortalAuthService {
@@ -158,62 +160,99 @@ export class ChurchPortalAuthService {
   }
 
   async forgotPassword(email: string, churchPortalId: string) {
+    // Same answer whatever happens, so the form can't be used to discover pastor emails
+    const genericReply = { message: 'If that email belongs to a portal account, we have sent it instructions.' };
+
     const userRepo = AppDataSource.getRepository(ChurchPortalUser);
     const user = await userRepo.findOne({
       where: { email: email.toLowerCase(), churchPortalId },
-      select: ['id', 'email', 'firstName'],
+      select: ['id', 'email', 'firstName', 'lastName', 'role', 'isActive', 'churchPortalId', 'password'],
     });
+    const portal = user
+      ? await AppDataSource.getRepository(ChurchPortal).findOne({ where: { id: churchPortalId } })
+      : null;
+    if (!user || !user.isActive || !portal || portal.status !== CHURCH_PORTAL_STATUS.ACTIVE) {
+      return genericReply;
+    }
 
-    // Always return success to prevent email enumeration
-    if (!user) return { message: 'If that email exists, a reset code has been sent.' };
+    try {
+      if (!user.password) {
+        // Never finished the invite: the reset code would overwrite the invite link, so send a
+        // fresh invite instead
+        const inviteToken = jwt.signChurchPortalInviteToken(
+          { portalUserId: user.id, churchPortalId, email: user.email },
+          `${INVITE_EXPIRY_HOURS}h`
+        );
+        await userRepo.update(user.id, {
+          inviteToken,
+          inviteTokenExpiresAt: new Date(Date.now() + INVITE_EXPIRY_HOURS * 60 * 60 * 1000),
+        });
+        await this.sendInviteEmail(user, portal, inviteToken);
+        return genericReply;
+      }
 
-    const otp = crypto.randomInt(100000, 999999).toString();
-    const expiry = new Date();
-    expiry.setMinutes(expiry.getMinutes() + OTP_EXPIRY_MINUTES);
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      await userRepo.update(user.id, {
+        inviteToken: await bcrypt.hash(otp, 10),
+        inviteTokenExpiresAt: new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
+        resetAttempts: 0,
+      });
 
-    const hashedOtp = await bcrypt.hash(otp, 10);
-    await userRepo.update(user.id, {
-      inviteToken: hashedOtp,
-      inviteTokenExpiresAt: expiry,
-    });
-
-    await this.emailService.sendEmailWithTemplate({
-      to: user.email,
-      subject: 'Your Church Portal Password Reset Code',
-      partialName: 'otp-email',
-      templateData: {
-        name: user.firstName || 'Pastor',
-        otp,
-        expiryMinutes: OTP_EXPIRY_MINUTES,
-      },
-    });
-
-    return { message: 'If that email exists, a reset code has been sent.' };
+      await this.emailService.sendEmailWithTemplate({
+        to: user.email,
+        subject: 'Your church portal password reset code',
+        partialName: 'church-portal-reset-code',
+        templateData: {
+          name: user.firstName || 'Pastor',
+          churchName: portal.name,
+          otp,
+          expiryMinutes: OTP_EXPIRY_MINUTES,
+        },
+      });
+    } catch (err) {
+      logger.error('Church portal password reset email failed', err instanceof Error ? err : new Error(String(err)), {
+        portalUserId: user.id,
+      });
+    }
+    return genericReply;
   }
 
-  async resetPassword(email: string, otp: string, newPassword: string, churchPortalId: string) {
+  async resetPassword(email: string, otp: string, newPassword: string, churchPortalId?: string) {
     const userRepo = AppDataSource.getRepository(ChurchPortalUser);
     const user = await userRepo.findOne({
-      where: { email: email.toLowerCase(), churchPortalId },
-      select: ['id', 'inviteToken', 'inviteTokenExpiresAt'],
+      where: { email: email.toLowerCase(), ...(churchPortalId ? { churchPortalId } : {}) },
+      select: ['id', 'password', 'inviteToken', 'inviteTokenExpiresAt', 'resetAttempts'],
     });
 
-    if (!user || !user.inviteToken || !user.inviteTokenExpiresAt) {
+    // Only accounts that already have a password carry a reset code (others hold an invite link)
+    if (!user || !user.password || !user.inviteToken || !user.inviteTokenExpiresAt) {
       throw new AppError('Invalid or expired reset code', 400, 'INVALID_OTP');
     }
     if (user.inviteTokenExpiresAt < new Date()) {
-      throw new AppError('Reset code has expired', 400, 'OTP_EXPIRED');
+      throw new AppError('Reset code has expired. Request a new one.', 400, 'OTP_EXPIRED');
     }
 
     const valid = await bcrypt.compare(otp, user.inviteToken);
-    if (!valid) throw new AppError('Invalid reset code', 400, 'INVALID_OTP');
+    if (!valid) {
+      // A 6-digit code must not be guessable: burn it after a few wrong tries
+      const attempts = (user.resetAttempts ?? 0) + 1;
+      if (attempts >= MAX_RESET_ATTEMPTS) {
+        await userRepo.update(user.id, { inviteToken: null, inviteTokenExpiresAt: null, resetAttempts: 0 });
+        throw new AppError('Too many wrong codes. Request a new one.', 400, 'OTP_LOCKED');
+      }
+      await userRepo.update(user.id, { resetAttempts: attempts });
+      throw new AppError('Invalid reset code', 400, 'INVALID_OTP');
+    }
 
     const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
     await userRepo.update(user.id, {
       password: hashedPassword,
       inviteToken: null,
       inviteTokenExpiresAt: null,
+      resetAttempts: 0,
     });
+    // Sign out every other session, in case the old password was the problem
+    await AppDataSource.getRepository(ChurchPortalRefreshToken).delete({ churchPortalUserId: user.id });
 
     return { message: 'Password reset successfully.' };
   }
@@ -246,7 +285,7 @@ export class ChurchPortalAuthService {
         churchName: portal.name,
         role: portalUser.role,
         inviteUrl,
-        expiryHours: 48,
+        expiryHours: INVITE_EXPIRY_HOURS,
       },
     });
   }

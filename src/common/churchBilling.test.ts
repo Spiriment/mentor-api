@@ -35,12 +35,22 @@ describe('planChurchCouponUpdate', () => {
 
   it('restores a removed church coupon only in restore mode', () => {
     assert.equal(planChurchCouponUpdate([promo], 'spiriment_church-ab12cd34'), null);
-    assert.deepEqual(planChurchCouponUpdate([promo], 'spiriment_church-ab12cd34', true), [
+    assert.deepEqual(planChurchCouponUpdate([promo], 'spiriment_church-ab12cd34', 'restore'), [
       { discount: 'di_2' },
       { coupon: 'spiriment_church-ab12cd34' },
     ]);
     // Restore never adds a non-church discount (e.g. the member became a mentor meanwhile)
-    assert.equal(planChurchCouponUpdate([], 'spiriment_mentor-ab12cd34', true), null);
+    assert.equal(planChurchCouponUpdate([], 'spiriment_mentor-ab12cd34', 'restore'), null);
+  });
+
+  it('adds the church coupon on joining only when the subscription has no discount', () => {
+    assert.deepEqual(planChurchCouponUpdate([], 'spiriment_church-ab12cd34', 'join'), [
+      { coupon: 'spiriment_church-ab12cd34' },
+    ]);
+    // Never stacks on an existing promo / youth discount
+    assert.equal(planChurchCouponUpdate([promo], 'spiriment_church-ab12cd34', 'join'), null);
+    // A mentor's 30% outranks the church discount; joining doesn't add anything
+    assert.equal(planChurchCouponUpdate([], 'spiriment_mentor-ab12cd34', 'join'), null);
   });
 
   it('swaps to another discount type (e.g. youth) without duplicating a kept coupon', () => {

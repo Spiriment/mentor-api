@@ -23,3 +23,7 @@ export const adminAdminUsersPatchStatusSchema = z.object({
 export const adminAdminUsersResetPasswordSchema = z.object({
   password: z.string().min(12, 'Password must be at least 12 characters'),
 });
+
+export const adminAdminUsersPatchPermissionsSchema = z.object({
+  permissions: z.array(z.string().max(64)).max(50),
+});

@@ -3,6 +3,7 @@ import { AppDataSource } from '@/config/data-source';
 import { AppError } from '@/common';
 import { AdminUser } from '@/database/entities/adminUser.entity';
 import { adminAuditService } from './adminAudit.service';
+import { effectiveAdminPermissions } from '@/common/adminPermissions';
 
 export class AdminProfileService {
   private repo = AppDataSource.getRepository(AdminUser);
@@ -12,6 +13,7 @@ export class AdminProfileService {
       id: admin.id,
       email: admin.email,
       role: admin.role,
+      permissions: effectiveAdminPermissions(admin),
       isActive: admin.isActive,
       firstName: admin.firstName ?? null,
       lastName: admin.lastName ?? null,
