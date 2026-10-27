@@ -27,6 +27,7 @@ import {
   isValidTimeZone,
   type Slot,
 } from '@/common/sessionAvailability';
+import { planSessionUpdate, SessionUpdateError } from '@/common/sessionUpdateRules';
 import { Between, In } from 'typeorm';
 import {
   getEmailService,
@@ -399,22 +400,28 @@ export class SessionService {
         throw new AppError('Session not found', StatusCodes.NOT_FOUND);
       }
 
-      // Check if user has permission to update this session
-      if (session.mentorId !== userId && session.menteeId !== userId) {
-        throw new AppError(
-          'You do not have permission to update this session',
-          StatusCodes.FORBIDDEN
-        );
+      // Who may change what (see common/sessionUpdateRules) — this used to copy the body
+      // straight onto the session
+      let updates: Record<string, unknown>;
+      try {
+        updates = planSessionUpdate(session, userId, data as Record<string, unknown>);
+      } catch (error) {
+        if (error instanceof SessionUpdateError) {
+          throw new AppError(
+            error.message,
+            error.statusCode === 403 ? StatusCodes.FORBIDDEN : StatusCodes.BAD_REQUEST
+          );
+        }
+        throw error;
       }
 
-      // Update session fields
-      Object.assign(session, data);
+      Object.assign(session, updates);
       const updatedSession = await this.sessionRepository.save(session);
 
       logger.info('Session updated successfully', {
         sessionId,
         userId,
-        updatedFields: Object.keys(data),
+        updatedFields: Object.keys(updates),
       });
 
       return updatedSession;

@@ -30,6 +30,37 @@ export interface UpdateSessionReviewDTO {
   nextSessionFocus?: string;
 }
 
+/** Just the names of the people involved, never the whole user record */
+function personSummary(user: any) {
+  return user ? { id: user.id, firstName: user.firstName, lastName: user.lastName } : undefined;
+}
+
+/** For the mentor and mentee of the session */
+function participantView(review: SessionReview) {
+  const session: any = (review as any).session;
+  return {
+    ...review,
+    mentee: personSummary((review as any).mentee),
+    mentor: personSummary((review as any).mentor),
+    session: session
+      ? { id: session.id, scheduledAt: session.scheduledAt, duration: session.duration, status: session.status, title: session.title }
+      : undefined,
+  };
+}
+
+/** What anyone browsing a mentor's profile may see */
+function publicReviewView(review: SessionReview) {
+  return {
+    id: review.id,
+    mentorId: review.mentorId,
+    rating: review.rating,
+    reviewText: review.reviewText,
+    createdAt: review.createdAt,
+    publishedAt: (review as any).publishedAt,
+    mentee: personSummary((review as any).mentee),
+  };
+}
+
 export class SessionReviewService {
   private sessionReviewRepository = AppDataSource.getRepository(SessionReview);
   private sessionRepository = AppDataSource.getRepository(Session);
@@ -182,7 +213,7 @@ export class SessionReviewService {
         relations: ['mentee', 'mentor', 'session'],
       });
 
-      return review;
+      return review ? (participantView(review) as unknown as SessionReview) : null;
     } catch (error: any) {
       logger.error('Error getting review by session ID', error);
       throw error;
@@ -192,18 +223,19 @@ export class SessionReviewService {
   /**
    * Get a review by ID
    */
-  async getReviewById(reviewId: string): Promise<SessionReview> {
+  async getReviewById(reviewId: string, viewerId?: string): Promise<SessionReview> {
     try {
       const review = await this.sessionReviewRepository.findOne({
         where: { id: reviewId },
         relations: ['mentee', 'mentor', 'session'],
       });
 
-      if (!review) {
+      // Only the two people in the session (it had no check at all)
+      if (!review || (review.menteeId !== viewerId && review.mentorId !== viewerId)) {
         throw new AppError('Review not found', StatusCodes.NOT_FOUND);
       }
 
-      return review;
+      return participantView(review) as unknown as SessionReview;
     } catch (error: any) {
       logger.error('Error getting review by ID', error);
       throw error;
@@ -237,7 +269,15 @@ export class SessionReviewService {
         skip: offset,
       });
 
-      return { reviews, total };
+      // Other viewers (mentees browsing a profile) get only the public testimonial: this
+      // used to return every review in full — other mentees' private summaries and
+      // learnings, their whole user record, and the session with the mentor's notes
+      return {
+        reviews: reviews.map((r) =>
+          isSelfView ? participantView(r) : publicReviewView(r)
+        ) as unknown as SessionReview[],
+        total,
+      };
     } catch (error: any) {
       logger.error('Error getting mentor reviews', error);
       throw error;
@@ -250,9 +290,15 @@ export class SessionReviewService {
   async getMenteeReviews(
     menteeId: string,
     limit: number = 20,
-    offset: number = 0
+    offset: number = 0,
+    viewerId?: string
   ): Promise<{ reviews: SessionReview[]; total: number }> {
     try {
+      // A mentee's own reviews only (any user could list anyone's)
+      if (viewerId !== menteeId) {
+        throw new AppError('You can only view your own reviews', StatusCodes.FORBIDDEN);
+      }
+
       const [reviews, total] = await this.sessionReviewRepository.findAndCount({
         where: { menteeId },
         relations: ['mentor', 'session'],
@@ -261,7 +307,7 @@ export class SessionReviewService {
         skip: offset,
       });
 
-      return { reviews, total };
+      return { reviews: reviews.map(participantView) as unknown as SessionReview[], total };
     } catch (error: any) {
       logger.error('Error getting mentee reviews', error);
       throw error;

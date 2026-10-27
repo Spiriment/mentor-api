@@ -373,42 +373,9 @@ export class SessionController {
         throw new AppError('Invalid session status', StatusCodes.BAD_REQUEST);
       }
 
+      // Time window, allowed transitions and startedAt/endedAt are enforced in
+      // SessionService.updateSession (common/sessionUpdateRules)
       const updateData: UpdateSessionDTO = { status };
-
-      // If trying to start a session (set to IN_PROGRESS), validate the scheduled time
-      if (status === SESSION_STATUS.IN_PROGRESS) {
-        // Get the session to check scheduled time
-        const existingSession = await this.sessionService.getSessionById(
-          sessionId,
-          user.id
-        );
-
-        if (!existingSession) {
-          throw new AppError('Session not found', StatusCodes.NOT_FOUND);
-        }
-
-        // Check if current time is before scheduled time (with 5 min early buffer)
-        const now = new Date();
-        const scheduledAt = new Date(existingSession.scheduledAt);
-        const earlyJoinBuffer = 5 * 60 * 1000; // 5 minutes
-
-        if (now.getTime() < scheduledAt.getTime() - earlyJoinBuffer) {
-          const timeUntilSession = Math.floor(
-            (scheduledAt.getTime() - now.getTime() - earlyJoinBuffer) / 1000 / 60
-          );
-          throw new AppError(
-            `Session cannot be joined yet. You can join in ${timeUntilSession + 1} minute(s).`,
-            StatusCodes.FORBIDDEN
-          );
-        }
-
-        // Only set startedAt once — first participant to join wins
-        if (!existingSession.startedAt) {
-          updateData.startedAt = new Date();
-        }
-      } else if (status === SESSION_STATUS.COMPLETED) {
-        updateData.endedAt = new Date();
-      }
 
       const session = await this.sessionService.updateSession(
         sessionId,

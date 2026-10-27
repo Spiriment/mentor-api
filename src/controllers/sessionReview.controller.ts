@@ -100,7 +100,7 @@ export class SessionReviewController {
   ): Promise<void> {
     try {
       const { reviewId } = req.params;
-      const review = await sessionReviewService.getReviewById(reviewId);
+      const review = await sessionReviewService.getReviewById(reviewId, (req as any).user?.id);
 
       res.status(StatusCodes.OK).json({
         success: true,
@@ -168,7 +168,8 @@ export class SessionReviewController {
       const result = await sessionReviewService.getMenteeReviews(
         menteeId,
         limit,
-        offset
+        offset,
+        (req as any).user?.id
       );
 
       res.status(StatusCodes.OK).json({
