@@ -19,6 +19,14 @@ import { StatusCodes } from 'http-status-codes';
 import { USER_ROLE } from '@/common/constants';
 import { format, addMinutes, subMinutes } from 'date-fns';
 import { toZonedTime, format as formatTz } from 'date-fns-tz';
+import {
+  availabilityWindows,
+  dayRange,
+  fitsAvailability,
+  generateSlots,
+  isValidTimeZone,
+  type Slot,
+} from '@/common/sessionAvailability';
 import { Between, In } from 'typeorm';
 import {
   getEmailService,
@@ -135,7 +143,11 @@ export class SessionService {
         );
       }
 
-      await new SubscriptionService(new EmailService(null)).assertSessionQuotaAvailable(data.menteeId);
+      await new SubscriptionService(new EmailService(null)).assertSessionQuotaAvailable(
+        data.menteeId,
+        undefined,
+        data.scheduledAt
+      );
 
       const subscriptionService = new SubscriptionService(new EmailService(null));
 
@@ -148,6 +160,7 @@ export class SessionService {
           await subscriptionService.assertSessionQuotaAvailable(
             data.menteeId,
             transactionalEntityManager,
+            data.scheduledAt,
           );
 
           // CRITICAL: Ensure the scheduled time is in the future
@@ -160,7 +173,9 @@ export class SessionService {
           }
 
           // Check if mentor is available at the requested time with duration overlap checking
-          const duration = data.duration || SESSION_DURATION.ONE_HOUR;
+          // Default to the mentor's own session length (what the slot list offers)
+          const duration =
+            data.duration || ((await this.mentorSessionMinutes(data.mentorId)) as SESSION_DURATION);
           const isAvailable = await this.isMentorAvailable(
             data.mentorId,
             data.scheduledAt,
@@ -612,6 +627,7 @@ export class SessionService {
     try {
       const session = await this.sessionRepository.findOne({
         where: { id: sessionId },
+        relations: ['mentor', 'mentee'],
       });
 
       if (!session) {
@@ -653,6 +669,44 @@ export class SessionService {
         reason,
       });
 
+      // Tell the other person; cancelling used to be silent, so they could still turn up
+      const cancelledByMentor = session.mentorId === userId;
+      const other = cancelledByMentor ? session.mentee : session.mentor;
+      const canceller = cancelledByMentor ? session.mentor : session.mentee;
+      if (other) {
+        const when = formatSessionTime(session.scheduledAt, other.timezone);
+        const body = `${formatUserName(canceller)} cancelled your session on ${when}.${reason ? ` "${reason}"` : ''}`;
+        try {
+          await getAppNotificationService().createNotification({
+            userId: other.id,
+            type: AppNotificationType.SESSION_DECLINED,
+            title: 'Session cancelled',
+            message: body,
+            data: {
+              sessionId: session.id,
+              mentorId: session.mentorId,
+              menteeId: session.menteeId,
+            },
+          });
+        } catch (error: any) {
+          logger.error('Failed to notify about cancelled session', error);
+        }
+        try {
+          if (other.pushToken) {
+            await pushNotificationService.sendToUser({
+              userId: other.id,
+              pushToken: other.pushToken,
+              title: '❌ Session cancelled',
+              body,
+              data: { type: 'session_status_update', status: 'cancelled', sessionId: session.id },
+              channelId: 'session-reminders',
+            });
+          }
+        } catch (error: any) {
+          logger.error('Failed to push cancelled session', error);
+        }
+      }
+
       return updatedSession;
     } catch (error: any) {
       logger.error('Error cancelling session', error);
@@ -672,290 +726,158 @@ export class SessionService {
     return start1 < end2 && start2 < end1;
   }
 
+  /** Mentor moved a pending request to a new time: confirm it there and tell the mentee */
+  private async applyMentorReschedule(
+    session: Session,
+    newTime: Date,
+    message?: string
+  ): Promise<Session> {
+    session.previousScheduledAt = session.scheduledAt;
+    session.scheduledAt = newTime;
+    session.status = SESSION_STATUS.CONFIRMED;
+    session.rescheduleRequestedAt = undefined as any;
+    session.requestedScheduledAt = undefined as any;
+    session.rescheduleMessage = message;
+    const updated = await this.sessionRepository.save(session);
+
+    const mentorName = formatUserName(session.mentor);
+    const timeForMentee = formatSessionTime(newTime, session.mentee?.timezone);
+    logger.info('Mentor moved a pending session to a new time', {
+      sessionId: session.id,
+      newScheduledAt: newTime.toISOString(),
+    });
+
+    try {
+      await getAppNotificationService().createNotification({
+        userId: session.menteeId,
+        type: AppNotificationType.SESSION_RESCHEDULED,
+        title: 'Session moved to a new time',
+        message: `${mentorName} couldn't make your requested time and booked your session for ${timeForMentee}.${message ? ` "${message}"` : ''}`,
+        data: {
+          sessionId: session.id,
+          mentorId: session.mentorId,
+          scheduledAt: newTime.toISOString(),
+        },
+      });
+    } catch (error: any) {
+      logger.error('Failed to notify mentee of mentor reschedule', error);
+    }
+    try {
+      if (session.mentee?.pushToken) {
+        await pushNotificationService.sendToUser({
+          userId: session.menteeId,
+          pushToken: session.mentee.pushToken,
+          title: '📅 Session moved',
+          body: `${mentorName} booked your session for ${timeForMentee}.`,
+          data: { type: 'session_status_update', status: 'rescheduled', sessionId: session.id },
+          channelId: 'session-reminders',
+        });
+      }
+    } catch (error: any) {
+      logger.error('Failed to push mentor reschedule', error);
+    }
+    return updated;
+  }
+
   /**
    * Check if mentor is available at a specific time with duration
    */
   async isMentorAvailable(
     mentorId: string,
     requestedTime: Date,
-    requestedDuration?: SESSION_DURATION
+    requestedDuration?: SESSION_DURATION,
+    /** The session being rescheduled, so it doesn't clash with itself */
+    excludeSessionId?: string
   ): Promise<boolean> {
     try {
-      // Get all availability records to determine mentor's timezone
-      // We'll use the first availability's timezone, or default to UTC
-      const allAvailabilities = await this.availabilityRepository.find({
-        where: {
-          mentorId,
-          status: AVAILABILITY_STATUS.AVAILABLE,
-        },
-      });
-
-      // Get mentor's timezone from availability records (use first one found, or default to UTC)
-      const mentorTimezone =
-        allAvailabilities.length > 0 && allAvailabilities[0].timezone
-          ? allAvailabilities[0].timezone
-          : 'UTC';
-
-      // Convert requested UTC time to mentor's timezone
-      const requestedTimeInMentorTz = toZonedTime(
-        requestedTime,
-        mentorTimezone
-      );
-
-      // Extract day of week and time in mentor's timezone
-      const dayOfWeek = requestedTimeInMentorTz.getDay() as DAY_OF_WEEK;
-      const timeString = formatTz(requestedTimeInMentorTz, 'HH:mm:ss', {
-        timeZone: mentorTimezone,
-      });
-
-      // Get date string in mentor's timezone (YYYY-MM-DD)
-      const requestedDateString = formatTz(
-        requestedTimeInMentorTz,
-        'yyyy-MM-dd',
-        { timeZone: mentorTimezone }
-      );
-
-      logger.info('Checking mentor availability', {
-        mentorId,
-        requestedTime: requestedTime.toISOString(),
-        mentorTimezone,
-        requestedTimeInMentorTz: requestedTimeInMentorTz.toISOString(),
-        dayOfWeek,
-        timeString,
-        requestedDateString,
-      });
-
-      logger.info('Found availability records', {
-        mentorId,
-        count: allAvailabilities.length,
-        availabilities: allAvailabilities.map((a) => ({
-          id: a.id,
-          dayOfWeek: a.dayOfWeek,
-          isRecurring: a.isRecurring,
-          specificDate: a.specificDate,
-          startTime: a.startTime,
-          endTime: a.endTime,
-        })),
-      });
-
-      let availability = await this.availabilityRepository
-        .createQueryBuilder('availability')
-        .where('availability.mentorId = :mentorId', { mentorId })
-        .andWhere('availability.status = :status', {
-          status: AVAILABILITY_STATUS.AVAILABLE,
-        })
-        .andWhere('availability.isRecurring = :isRecurring', {
-          isRecurring: false,
-        })
-        .andWhere('DATE(availability.specificDate) = :requestedDate', {
-          requestedDate: requestedDateString,
-        })
-        .getOne();
-
-      logger.info('Specific date availability check', {
-        mentorId,
-        requestedDateString,
-        found: !!availability,
-        availabilityId: availability?.id,
-      });
-
-      // If no specific date availability, check for recurring availability
-      if (!availability) {
-        availability = await this.availabilityRepository.findOne({
-          where: {
-            mentorId,
-            dayOfWeek: dayOfWeek,
-            status: AVAILABILITY_STATUS.AVAILABLE,
-            isRecurring: true,
-          },
-        });
-
-        logger.info('Recurring availability check', {
-          mentorId,
-          dayOfWeek,
-          found: !!availability,
-          availabilityId: availability?.id,
-        });
-      }
-
-      if (!availability) {
-        logger.warn('No availability found for mentor', {
-          mentorId,
-          requestedTime: requestedTime.toISOString(),
-          dayOfWeek,
-          requestedDateString,
-        });
-        return false;
-      }
-
-      // Calculate requested session end time in mentor's timezone
       const duration = requestedDuration || SESSION_DURATION.ONE_HOUR;
       const requestedEndTime = addMinutes(requestedTime, duration);
-      const requestedEndTimeInMentorTz = toZonedTime(
-        requestedEndTime,
-        mentorTimezone
-      );
-      const requestedEndTimeString = formatTz(
-        requestedEndTimeInMentorTz,
-        'HH:mm:ss',
-        { timeZone: mentorTimezone }
-      );
 
-      logger.info('Found availability, checking time range', {
+      // Same rules the slot list uses (see common/sessionAvailability)
+      const records = await this.availabilityRepository.find({
+        where: { mentorId, status: AVAILABILITY_STATUS.AVAILABLE },
+      });
+      const windows = availabilityWindows(
+        records,
+        subMinutes(requestedTime, 24 * 60),
+        addMinutes(requestedEndTime, 24 * 60)
+      );
+      if (!fitsAvailability(windows, requestedTime, requestedEndTime)) {
+        logger.warn('Requested time is outside the mentor\'s availability', {
+          mentorId,
+          requestedTime: requestedTime.toISOString(),
+          duration,
+        });
+        return false;
+      }
+
+      const busy = await this.mentorBusyRanges(
         mentorId,
-        availabilityId: availability.id,
-        availabilityStartTime: availability.startTime,
-        availabilityEndTime: availability.endTime,
-        requestedStartTimeString: timeString,
-        requestedEndTimeString,
-        duration,
-      });
-
-      // Check if requested session START time is within available hours
-      if (timeString < availability.startTime) {
-        logger.warn('Requested start time before available hours', {
-          mentorId,
-          requestedTimeString: timeString,
-          availabilityStartTime: availability.startTime,
-        });
-        return false;
-      }
-
-      // Check if requested session END time is within available hours
-      if (requestedEndTimeString > availability.endTime) {
-        logger.warn('Requested end time after available hours', {
-          mentorId,
-          requestedEndTimeString,
-          availabilityEndTime: availability.endTime,
-        });
-        return false;
-      }
-
-      // Check for breaks - check if session overlaps with any break period
-      if (availability.breaks) {
-        for (const breakPeriod of availability.breaks) {
-          // Check if session start time is within break
-          if (
-            timeString >= breakPeriod.startTime &&
-            timeString <= breakPeriod.endTime
-          ) {
-            logger.warn('Session start time conflicts with break', {
-              mentorId,
-              requestedTimeString: timeString,
-              breakStart: breakPeriod.startTime,
-              breakEnd: breakPeriod.endTime,
-            });
-            return false;
-          }
-          // Check if session end time is within break
-          if (
-            requestedEndTimeString >= breakPeriod.startTime &&
-            requestedEndTimeString <= breakPeriod.endTime
-          ) {
-            logger.warn('Session end time conflicts with break', {
-              mentorId,
-              requestedEndTimeString,
-              breakStart: breakPeriod.startTime,
-              breakEnd: breakPeriod.endTime,
-            });
-            return false;
-          }
-          // Check if session spans across a break
-          if (
-            timeString < breakPeriod.startTime &&
-            requestedEndTimeString > breakPeriod.endTime
-          ) {
-            logger.warn('Session spans across break period', {
-              mentorId,
-              requestedTimeString: timeString,
-              requestedEndTimeString,
-              breakStart: breakPeriod.startTime,
-              breakEnd: breakPeriod.endTime,
-            });
-            return false;
-          }
-        }
-      }
-
-      // Check for overlapping sessions (scheduled or confirmed) using time ranges
-      const activeStatuses = [
-        SESSION_STATUS.SCHEDULED,
-        SESSION_STATUS.CONFIRMED,
-        SESSION_STATUS.IN_PROGRESS,
-      ];
-
-      const existingSessions = await this.sessionRepository.find({
-        where: {
-          mentorId,
-          status: In(activeStatuses),
-        },
-      });
-
-      // Check if any existing session overlaps with requested time range
-      for (const existingSession of existingSessions) {
-        const existingStart = new Date(existingSession.scheduledAt);
-        const existingEnd = addMinutes(existingStart, existingSession.duration);
-
-        if (
-          this.doTimeRangesOverlap(
-            requestedTime,
-            requestedEndTime,
-            existingStart,
-            existingEnd
-          )
-        ) {
-          return false;
-        }
-      }
-
-      // Check for overlapping group sessions
-      const groupSessionRepository = AppDataSource.getRepository(GroupSession);
-      const startOfDay = new Date(requestedTime);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const endOfDay = new Date(requestedTime);
-      endOfDay.setUTCHours(23, 59, 59, 999);
-
-      const existingGroupSessions = await groupSessionRepository
-        .createQueryBuilder('gs')
-        .where('gs.mentorId = :mentorId', { mentorId })
-        .andWhere('gs.status IN (:...statuses)', {
-          statuses: ['invites_sent', 'confirmed', 'in_progress'],
-        })
-        .andWhere('gs.scheduledAt BETWEEN :startOfDay AND :endOfDay', {
-          startOfDay,
-          endOfDay,
-        })
-        .getMany();
-
-      // Check if any existing group session overlaps with requested time range
-      for (const existingGroupSession of existingGroupSessions) {
-        const existingStart = new Date(existingGroupSession.scheduledAt);
-        const existingEnd = addMinutes(existingStart, existingGroupSession.duration);
-
-        if (
-          this.doTimeRangesOverlap(
-            requestedTime,
-            requestedEndTime,
-            existingStart,
-            existingEnd
-          )
-        ) {
-          logger.warn('Requested time conflicts with group session', {
-            mentorId,
-            requestedTime: requestedTime.toISOString(),
-            groupSessionId: existingGroupSession.id,
-            groupSessionStart: existingStart.toISOString(),
-            groupSessionEnd: existingEnd.toISOString(),
-          });
-          return false;
-        }
-      }
-
-      return true;
+        requestedTime,
+        requestedEndTime,
+        excludeSessionId
+      );
+      return !busy.some((b) =>
+        this.doTimeRangesOverlap(requestedTime, requestedEndTime, b.start, b.end)
+      );
     } catch (error: any) {
       logger.error('Error checking mentor availability', error);
       throw error;
     }
+  }
+
+  /** The mentor's active 1:1 and group sessions overlapping [from, to) */
+  private async mentorBusyRanges(
+    mentorId: string,
+    from: Date,
+    to: Date,
+    excludeSessionId?: string
+  ): Promise<Array<{ start: Date; end: Date }>> {
+    const activeStatuses = [
+      SESSION_STATUS.SCHEDULED,
+      SESSION_STATUS.CONFIRMED,
+      SESSION_STATUS.IN_PROGRESS,
+    ];
+    // Sessions last at most a few hours; widen the lookup so ones starting earlier are seen
+    const lookFrom = subMinutes(from, 24 * 60);
+    const sessions = await this.sessionRepository.find({
+      where: {
+        mentorId,
+        status: In(activeStatuses),
+        scheduledAt: Between(lookFrom, to),
+      },
+    });
+    const groupSessions = await AppDataSource.getRepository(GroupSession)
+      .createQueryBuilder('gs')
+      .where('gs.mentorId = :mentorId', { mentorId })
+      .andWhere('gs.status IN (:...statuses)', {
+        statuses: ['invites_sent', 'confirmed', 'in_progress'],
+      })
+      .andWhere('gs.scheduledAt BETWEEN :lookFrom AND :to', { lookFrom, to })
+      .getMany();
+
+    return [
+      ...sessions
+        .filter((s) => s.id !== excludeSessionId)
+        .map((s) => ({
+          start: new Date(s.scheduledAt),
+          end: addMinutes(new Date(s.scheduledAt), s.duration),
+        })),
+      ...groupSessions.map((g) => ({
+        start: new Date(g.scheduledAt),
+        end: addMinutes(new Date(g.scheduledAt), g.duration),
+      })),
+    ].filter((r) => r.end > from && r.start < to);
+  }
+
+  /** Session length the mentor offers (profile setting), used for slots and bookings */
+  async mentorSessionMinutes(mentorId: string): Promise<number> {
+    const profile = await AppDataSource.getRepository(MentorProfile).findOne({
+      where: { userId: mentorId },
+      select: ['id', 'sessionDuration'],
+    });
+    const minutes = Number(profile?.sessionDuration);
+    return [30, 45, 60].includes(minutes) ? minutes : SESSION_DURATION.ONE_HOUR;
   }
 
   /**
@@ -1117,192 +1039,45 @@ export class SessionService {
   /**
    * Get available time slots for a mentor on a specific date
    */
+  /**
+   * Bookable slots on calendar day `date` ("YYYY-MM-DD") in `viewerTimeZone` (the mentee's
+   * zone). Each slot carries its exact start (`startsAt`) plus "HH:mm" in that zone. Older
+   * app builds don't send a zone and read `time` as their local time; for them the mentor's
+   * zone is used, which is right whenever mentor and mentee share a zone (they used to get
+   * UTC, which was wrong for everyone outside UTC).
+   */
   async getAvailableSlots(
     mentorId: string,
-    date: Date
-  ): Promise<Array<{ time: string; available: boolean }>> {
+    date: string,
+    viewerTimeZone?: string
+  ): Promise<Slot[]> {
     try {
-      const dayOfWeek = date.getUTCDay();
-      const dateString = date.toISOString().split('T')[0];
+      const records = await this.availabilityRepository.find({
+        where: { mentorId, status: AVAILABILITY_STATUS.AVAILABLE },
+      });
+      if (records.length === 0) return [];
 
-      logger.info('getAvailableSlots called', {
+      const mentorTimeZone = records.find((r) => isValidTimeZone(r.timezone))?.timezone || 'UTC';
+      const displayTimeZone = isValidTimeZone(viewerTimeZone) ? viewerTimeZone : mentorTimeZone;
+      const range = dayRange(date, displayTimeZone);
+      const windows = availabilityWindows(records, range.start, range.end);
+      if (windows.length === 0) return [];
+
+      const slotMinutes = await this.mentorSessionMinutes(mentorId);
+      const busy = await this.mentorBusyRanges(
         mentorId,
-        requestedDate: date.toISOString(),
-        dayOfWeek,
-        dateString
+        range.start,
+        addMinutes(range.end, slotMinutes)
+      );
+
+      return generateSlots({
+        windows,
+        slotMinutes,
+        busy,
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        displayTimeZone,
       });
-
-      // 1. Check for specific date availability (overrides recurring)
-      let availability = await this.availabilityRepository
-        .createQueryBuilder('availability')
-        .where('availability.mentorId = :mentorId', { mentorId })
-        .andWhere('availability.status = :status', {
-          status: AVAILABILITY_STATUS.AVAILABLE,
-        })
-        .andWhere('availability.isRecurring = :isRecurring', {
-          isRecurring: false,
-        })
-        .andWhere('DATE(availability.specificDate) = :date', {
-          date: dateString,
-        })
-        .getOne();
-
-      // 2. If no specific date, check for recurring availability
-      if (!availability) {
-        availability = await this.availabilityRepository.findOne({
-          where: {
-            mentorId,
-            dayOfWeek: dayOfWeek, // Use number now that column is converted to INT
-            status: AVAILABILITY_STATUS.AVAILABLE,
-            isRecurring: true,
-          },
-        });
-      }
-
-      logger.info('Availability record search result', {
-        found: !!availability,
-        availabilityId: availability?.id,
-        dayOfWeekUsed: dayOfWeek.toString(),
-        startTime: availability?.startTime,
-        endTime: availability?.endTime
-      });
-
-      if (!availability) {
-        return [];
-      }
-
-      const slots: Array<{ time: string; available: boolean }> = [];
-      const startTime = new Date(`1970-01-01T${availability.startTime}Z`);
-      const endTime = new Date(`1970-01-01T${availability.endTime}Z`);
-      const slotDuration = availability.slotDuration;
-      const activeStatuses = [
-        SESSION_STATUS.SCHEDULED,
-        SESSION_STATUS.CONFIRMED,
-        SESSION_STATUS.IN_PROGRESS,
-      ];
-
-      // Fetch overlapping sessions for this specific date once (outside the loop)
-      const startOfDay = new Date(date);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setUTCHours(23, 59, 59, 999);
-
-      const overlappingSessions = await this.sessionRepository.find({
-        where: {
-          mentorId,
-          status: In(activeStatuses),
-          scheduledAt: Between(startOfDay, endOfDay),
-        },
-      });
-
-      // Fetch overlapping group sessions for this specific date
-      const groupSessionRepository = AppDataSource.getRepository(GroupSession);
-      const overlappingGroupSessions = await groupSessionRepository
-        .createQueryBuilder('gs')
-        .where('gs.mentorId = :mentorId', { mentorId })
-        .andWhere('gs.status IN (:...statuses)', {
-          statuses: ['invites_sent', 'confirmed', 'in_progress'],
-        })
-        .andWhere('gs.scheduledAt BETWEEN :startOfDay AND :endOfDay', {
-          startOfDay,
-          endOfDay,
-        })
-        .getMany();
-
-      let currentTime = new Date(startTime);
-      while (currentTime < endTime) {
-        const timeString = currentTime.toISOString().slice(11, 16); // HH:MM format
-
-        // Check if this time slot is in a break
-        let isInBreak = false;
-        if (availability.breaks) {
-          for (const breakPeriod of availability.breaks) {
-            if (
-              timeString >= breakPeriod.startTime.slice(0, 5) &&
-              timeString < breakPeriod.endTime.slice(0, 5)
-            ) {
-              isInBreak = true;
-              break;
-            }
-          }
-        }
-
-        // Check if there's already a session overlapping with this time slot
-        const sessionDateTime = new Date(date);
-        sessionDateTime.setUTCHours(
-          currentTime.getUTCHours(),
-          currentTime.getUTCMinutes(),
-          0,
-          0
-        );
-        const slotEndTime = addMinutes(sessionDateTime, slotDuration);
-        let hasOverlap = false;
-        for (const existingSession of overlappingSessions) {
-          const existingStart = new Date(existingSession.scheduledAt);
-          const existingEnd = addMinutes(
-            existingStart,
-            existingSession.duration
-          );
-
-          if (
-            this.doTimeRangesOverlap(
-              sessionDateTime,
-              slotEndTime,
-              existingStart,
-              existingEnd
-            )
-          ) {
-            hasOverlap = true;
-            break;
-          }
-        }
-
-        // Check for group session overlaps
-        if (!hasOverlap) {
-          for (const existingGroupSession of overlappingGroupSessions) {
-            const existingStart = new Date(existingGroupSession.scheduledAt);
-            const existingEnd = addMinutes(
-              existingStart,
-              existingGroupSession.duration
-            );
-
-            if (
-              this.doTimeRangesOverlap(
-                sessionDateTime,
-                slotEndTime,
-                existingStart,
-                existingEnd
-              )
-            ) {
-              hasOverlap = true;
-              break;
-            }
-          }
-        }
-
-        // Check if the slot is in the past
-        const isPast = sessionDateTime <= new Date();
-
-        if (isPast || hasOverlap || isInBreak) {
-          logger.info('Slot unavailable details', {
-            time: timeString,
-            isPast,
-            hasOverlap,
-            isInBreak,
-            sessionDateTime: sessionDateTime.toISOString(),
-            now: new Date().toISOString()
-          });
-        }
-
-        slots.push({
-          time: timeString,
-          available: !isInBreak && !hasOverlap && !isPast,
-        });
-
-        currentTime.setUTCMinutes(currentTime.getUTCMinutes() + slotDuration);
-      }
-
-      return slots;
     } catch (error: any) {
       logger.error('Error getting available slots', error);
       throw error;
@@ -1536,11 +1311,20 @@ export class SessionService {
         throw new AppError('Session not found', StatusCodes.NOT_FOUND);
       }
 
-      // Only mentee can request reschedule
-      if (session.menteeId !== userId) {
+      // The mentee requests a new time (the mentor then accepts or declines it). The mentor
+      // can move a still-pending request straight to a time that suits them ("Decline &
+      // Reschedule" in the app); that used to be refused for every mentor.
+      const byMentor = session.mentorId === userId;
+      if (!byMentor && session.menteeId !== userId) {
         throw new AppError(
           'Only the mentee can request to reschedule this session',
           StatusCodes.FORBIDDEN
+        );
+      }
+      if (byMentor && session.status !== SESSION_STATUS.SCHEDULED) {
+        throw new AppError(
+          'You can only propose a new time for a pending session request',
+          StatusCodes.BAD_REQUEST
         );
       }
 
@@ -1578,7 +1362,8 @@ export class SessionService {
       const isAvailable = await this.isMentorAvailable(
         session.mentorId,
         newScheduledAtDate,
-        session.duration
+        session.duration,
+        session.id // moving it by less than its length must not clash with itself
       );
 
       if (!isAvailable) {
@@ -1699,6 +1484,10 @@ export class SessionService {
           'You already have a group session scheduled at the requested time',
           StatusCodes.CONFLICT
         );
+      }
+
+      if (byMentor) {
+        return this.applyMentorReschedule(session, newScheduledAtDate, message);
       }
 
       // Store the reschedule request details
@@ -1870,7 +1659,8 @@ export class SessionService {
           const isAvailable = await this.isMentorAvailable(
             currentSession.mentorId,
             currentSession.requestedScheduledAt,
-            currentSession.duration
+            currentSession.duration,
+            currentSession.id
           );
 
           if (!isAvailable) {

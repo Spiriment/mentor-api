@@ -90,8 +90,9 @@ router.post(
 // Reschedule session (mentee only)
 router.post(
   '/:sessionId/reschedule',
-  requireRole(['mentee']),
-  requireSubscription('pro'),
+  // Mentees request a new time; mentors may move a pending request (see rescheduleSession)
+  requireRole(['mentee', 'mentor']),
+  requireSubscription('pro', { exemptRoles: ['mentor'] }),
   sessionController.rescheduleSession
 );
 

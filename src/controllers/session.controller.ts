@@ -269,20 +269,18 @@ export class SessionController {
   ) => {
     try {
       const { mentorId, date } = req.params;
-      const requestedDate = new Date(date);
-
-      if (isNaN(requestedDate.getTime())) {
+      // Calendar day in the viewer's zone (?tz=Area/City, sent by current app builds)
+      const day = String(date).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || isNaN(new Date(`${day}T00:00:00Z`).getTime())) {
         throw new AppError('Invalid date format', StatusCodes.BAD_REQUEST);
       }
+      const tz = typeof req.query.tz === 'string' ? req.query.tz : undefined;
 
-      const slots = await this.sessionService.getAvailableSlots(
-        mentorId,
-        requestedDate
-      );
+      const slots = await this.sessionService.getAvailableSlots(mentorId, day, tz);
 
       return sendSuccessResponse(res, {
         mentorId,
-        date: requestedDate.toISOString().split('T')[0],
+        date: day,
         slots,
         message: 'Available slots retrieved successfully',
       });
@@ -655,7 +653,8 @@ export class SessionController {
         throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
       }
 
-      if (user.role !== 'mentee') {
+      // Mentors may move a pending request; the service enforces who can do what
+      if (user.role !== 'mentee' && user.role !== 'mentor') {
         throw new AppError(
           'Only mentees can request to reschedule sessions',
           StatusCodes.FORBIDDEN
@@ -696,7 +695,10 @@ export class SessionController {
 
       return sendSuccessResponse(res, {
         session,
-        message: 'Session reschedule request sent to mentor',
+        message:
+          user.role === 'mentor'
+            ? 'Session moved to the new time; the mentee has been notified'
+            : 'Session reschedule request sent to mentor',
       });
     } catch (error: any) {
       this.logger.error('Error requesting session reschedule', error);

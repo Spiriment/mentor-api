@@ -148,9 +148,18 @@ export class SubscriptionService {
     };
   }
 
-  private async countSessionsThisMonth(userId: string, manager?: EntityManager): Promise<number> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  /**
+   * Sessions in the calendar month containing `inMonthOf` (default: this month). Bounded at
+   * both ends: it used to count everything from the 1st onwards, so a session booked for
+   * next month used up this month's allowance (Pro has 1 a month).
+   */
+  private async countSessionsThisMonth(
+    userId: string,
+    manager?: EntityManager,
+    inMonthOf: Date = new Date(),
+  ): Promise<number> {
+    const startOfMonth = new Date(inMonthOf.getFullYear(), inMonthOf.getMonth(), 1);
+    const startOfNextMonth = new Date(inMonthOf.getFullYear(), inMonthOf.getMonth() + 1, 1);
 
     const runQuery = manager
       ? manager.query.bind(manager)
@@ -160,8 +169,8 @@ export class SubscriptionService {
       `SELECT COUNT(*) as cnt FROM sessions
        WHERE (menteeId = ? OR mentorId = ?)
          AND status IN ('completed','in_progress','scheduled','confirmed')
-         AND scheduledAt >= ?`,
-      [userId, userId, startOfMonth],
+         AND scheduledAt >= ? AND scheduledAt < ?`,
+      [userId, userId, startOfMonth, startOfNextMonth],
     );
     return parseInt(result[0]?.cnt ?? '0', 10);
   }
@@ -170,7 +179,12 @@ export class SubscriptionService {
     return TIER_RANK[userTier] >= TIER_RANK[required];
   }
 
-  async assertSessionQuotaAvailable(userId: string, manager?: EntityManager): Promise<void> {
+  /** `forSessionAt`: the new session's time; it counts against that month's allowance */
+  async assertSessionQuotaAvailable(
+    userId: string,
+    manager?: EntityManager,
+    forSessionAt?: Date,
+  ): Promise<void> {
     const subRepo = manager ? manager.getRepository(UserSubscription) : this.subRepo;
     const sub = manager
       ? await subRepo.findOne({
@@ -186,7 +200,7 @@ export class SubscriptionService {
       throw new AppError('Your plan does not include mentorship sessions', StatusCodes.FORBIDDEN);
     }
 
-    const used = await this.countSessionsThisMonth(userId, manager);
+    const used = await this.countSessionsThisMonth(userId, manager, forSessionAt);
     if (used >= allowed) {
       throw new AppError(
         `Monthly session limit reached (${allowed} per month)`,
