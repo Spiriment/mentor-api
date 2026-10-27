@@ -307,6 +307,30 @@ export class ChatService {
     return conversations;
   }
 
+  /**
+   * Whether two users may call each other: they share an active conversation, or a 1:1 /
+   * group session. Calls used to be relayed to anyone by user id.
+   */
+  async usersAreConnected(userA: string, userB: string): Promise<boolean> {
+    if (!userA || !userB || userA === userB) return false;
+    const shared = await this.participantRepository
+      .createQueryBuilder('p1')
+      .innerJoin(
+        ConversationParticipant,
+        'p2',
+        'p2.conversationId = p1.conversationId AND p2.userId = :userB AND p2.status = :active',
+        { userB, active: PARTICIPANT_STATUS.ACTIVE }
+      )
+      .where('p1.userId = :userA AND p1.status = :active', { userA, active: PARTICIPANT_STATUS.ACTIVE })
+      .getCount();
+    if (shared > 0) return true;
+    const [session] = await this.dataSource.query(
+      `SELECT 1 FROM sessions WHERE (mentorId = ? AND menteeId = ?) OR (mentorId = ? AND menteeId = ?) LIMIT 1`,
+      [userA, userB, userB, userA]
+    );
+    return !!session;
+  }
+
   async isUserParticipant(
     userId: string,
     conversationId: string
@@ -357,6 +381,34 @@ export class ChatService {
       `Message ${savedMessage.id} created in conversation ${data.conversationId}`
     );
     return this.enrichMessage(fullMessage!);
+  }
+
+  /**
+   * createMessage, but a retry carrying the same metadata.clientMessageId (made on the phone)
+   * returns the message already saved instead of a duplicate. The app resends over REST
+   * when the socket doesn't confirm in time, and the first attempt may have got through.
+   */
+  async createMessageOnce(
+    data: CreateMessageData
+  ): Promise<{ message: Message; duplicate: boolean }> {
+    const clientMessageId = (data.metadata as any)?.clientMessageId;
+    if (typeof clientMessageId === 'string' && clientMessageId) {
+      const existing = await this.messageRepository
+        .createQueryBuilder('message')
+        .where('message.conversationId = :conversationId', { conversationId: data.conversationId })
+        .andWhere('message.senderId = :senderId', { senderId: data.senderId })
+        .andWhere('message.sentAt > :since', { since: new Date(Date.now() - 60 * 60 * 1000) })
+        .andWhere("JSON_UNQUOTE(JSON_EXTRACT(message.metadata, '$.clientMessageId')) = :clientMessageId", { clientMessageId })
+        .getOne();
+      if (existing) {
+        const full = await this.messageRepository.findOne({
+          where: { id: existing.id },
+          relations: ['sender', 'conversation'],
+        });
+        return { message: await this.enrichMessage(full!), duplicate: true };
+      }
+    }
+    return { message: await this.createMessage(data), duplicate: false };
   }
 
   async createCallLog(data: {
@@ -452,6 +504,11 @@ export class ChatService {
       .where('message.conversationId = :conversationId', { conversationId })
       // Filter out private messages not belonging to the user
       .andWhere("(JSON_VALUE(message.metadata, '$.isPrivate') IS NULL OR message.senderId = :userId)", { userId })
+      // Messages this user deleted "for me"
+      .andWhere(
+        "(message.metadata IS NULL OR JSON_CONTAINS(message.metadata, JSON_QUOTE(:userId), '$.hiddenFor') IS NULL OR JSON_CONTAINS(message.metadata, JSON_QUOTE(:userId), '$.hiddenFor') = 0)",
+        { userId }
+      )
       .orderBy('message.sentAt', 'DESC');
 
     if (beforeMessageId) {
@@ -478,6 +535,14 @@ export class ChatService {
   }
 
   async markMessageAsRead(messageId: string, userId: string): Promise<void> {
+    // Only the other person in the conversation can mark a message read (anyone could, and
+    // a sender marking their own message turned on the read receipt)
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+      select: ['id', 'conversationId', 'senderId'],
+    });
+    if (!message || message.senderId === userId) return;
+    if (!(await this.isUserParticipant(userId, message.conversationId))) return;
     await this.messageRepository.update(
       { id: messageId },
       {
@@ -485,6 +550,13 @@ export class ChatService {
         readAt: new Date(),
       }
     );
+  }
+
+  /** Reactions and similar actions are for people in the conversation only */
+  private async assertParticipantOfMessage(message: Message, userId: string): Promise<void> {
+    if (!(await this.isUserParticipant(userId, message.conversationId))) {
+      throw new Error('Not authorized for this conversation');
+    }
   }
 
   async markMessageAsDelivered(messageId: string): Promise<void> {
@@ -580,6 +652,7 @@ export class ChatService {
       where: { id: messageId },
     });
     if (!message) throw new Error('Message not found');
+    await this.assertParticipantOfMessage(message, userId);
 
     const metadata = message.metadata || {};
     const reactions = metadata.reactions || {};
@@ -597,6 +670,7 @@ export class ChatService {
       where: { id: messageId },
     });
     if (!message) throw new Error('Message not found');
+    await this.assertParticipantOfMessage(message, userId);
 
     const metadata = message.metadata || {};
     const reactions = metadata.reactions || {};
@@ -628,12 +702,15 @@ export class ChatService {
         content: 'This message was deleted',
       });
     } else {
-      // For 'me', we'll treat it as a soft delete IF it's the sender, 
-      // or just mark as deleted without changing content.
-      if (message.senderId === userId) {
-        await this.messageRepository.update(messageId, {
-          deletedAt: new Date(),
-        });
+      // Hide it for this person only. It used to set deletedAt on the sender's own messages
+      // (a global flag the app doesn't filter on) and do nothing on anyone else's, so the
+      // message came back on the next load either way.
+      await this.assertParticipantOfMessage(message, userId);
+      const metadata = message.metadata || {};
+      const hiddenFor: string[] = Array.isArray(metadata.hiddenFor) ? metadata.hiddenFor : [];
+      if (!hiddenFor.includes(userId)) {
+        metadata.hiddenFor = [...hiddenFor, userId];
+        await this.messageRepository.update(messageId, { metadata });
       }
     }
   }

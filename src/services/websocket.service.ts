@@ -200,8 +200,9 @@ export class WebSocketService {
     });
 
     // Handle message sending
-    socket.on('send-message', async (data) => {
-      await this.handleSendMessage(socket, data);
+    // Current app builds pass an acknowledgement callback so they know the message was saved
+    socket.on('send-message', async (data, ack?: (res: any) => void) => {
+      await this.handleSendMessage(socket, data, typeof ack === 'function' ? ack : undefined);
     });
 
     // Handle typing indicators
@@ -339,7 +340,11 @@ export class WebSocketService {
     logger.info(`User ${socket.userId} left conversation ${conversationId}`);
   }
 
-  private async handleSendMessage(socket: AuthenticatedSocket, data: any) {
+  private async handleSendMessage(
+    socket: AuthenticatedSocket,
+    data: any,
+    ack?: (res: { ok: boolean; message?: any; error?: string }) => void
+  ) {
     try {
       const { conversationId, content, type = 'text', metadata } = data;
 
@@ -352,17 +357,20 @@ export class WebSocketService {
         socket.emit('error', {
           message: 'Not authorized to send messages to this conversation',
         });
+        ack?.({ ok: false, error: 'Not authorized to send messages to this conversation' });
         return;
       }
 
-      // Create message
-      const message = await this.chatService.createMessage({
+      // Create message (a retry of one already saved returns it instead of a duplicate)
+      const { message, duplicate } = await this.chatService.createMessageOnce({
         conversationId,
         senderId: socket.userId!,
         content,
         type,
         metadata,
       });
+      ack?.({ ok: true, message });
+      if (duplicate) return; // already broadcast and notified the first time
 
       // Send confirmation to sender immediately (single tick - sent)
       socket.emit('message-sent', {
@@ -453,6 +461,7 @@ export class WebSocketService {
     } catch (error: any) {
       logger.error('Error sending message:', error);
       socket.emit('error', { message: 'Failed to send message' });
+      ack?.({ ok: false, error: 'Failed to send message' });
     }
   }
 
@@ -487,7 +496,8 @@ export class WebSocketService {
 
       // Notify other participants that message was read
       const message = await this.chatService.getMessageById(messageId);
-      if (message) {
+      // Only broadcast a real read (by the other person) — the service ignores the rest
+      if (message && message.senderId !== socket.userId && message.status === 'read') {
         socket
           .to(`conversation:${message.conversationId}`)
           .emit('message-read', {
@@ -631,8 +641,26 @@ export class WebSocketService {
 
   // Call handling methods
   private async handleCallInvite(socket: AuthenticatedSocket, data: any) {
-    const { targetUserId, sessionId, conversationId, callerName, callerImage, isSessionCall } = data;
+    const { targetUserId, sessionId, conversationId, callerImage, isSessionCall } = data;
     logger.info(`Call invite from ${socket.userId} to ${targetUserId}`);
+
+    // Only people who share a conversation or session can ring each other (anyone could
+    // ring anyone by user id, under any name they liked)
+    try {
+      if (!(await this.chatService.usersAreConnected(socket.userId!, targetUserId))) {
+        logger.warn('Blocked call invite between unconnected users', {
+          from: socket.userId,
+          to: targetUserId,
+        });
+        socket.emit('error', { message: 'You can only call your mentor or mentees' });
+        return;
+      }
+    } catch (error: any) {
+      logger.error('Call invite check failed', error);
+      return;
+    }
+    // The caller's real name, never one supplied by the client
+    const callerName = `${socket.user?.firstName || ''} ${socket.user?.lastName || ''}`.trim();
 
     // Derive conversationId if not provided
     const finalConversationId = conversationId || this.deriveConversationId(sessionId, socket.userId!, targetUserId);
@@ -644,7 +672,7 @@ export class WebSocketService {
       // User is online - send via WebSocket
       this.io.to(`user:${targetUserId}`).emit('call-invite', {
         callerId: socket.userId,
-        callerName: callerName || `${socket.user?.firstName} ${socket.user?.lastName || ''}`.trim(),
+        callerName,
         callerImage: callerImage,
         sessionId,
         conversationId: finalConversationId,

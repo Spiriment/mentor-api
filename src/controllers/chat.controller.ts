@@ -256,7 +256,13 @@ export class ChatController {
         metadata: metadata || null,
       };
 
-      const message = await chatService.createMessage(messageData);
+      // A retry of a message already saved (app resends when the socket didn't confirm)
+      // gets that message back instead of a duplicate
+      const { message, duplicate } = await chatService.createMessageOnce(messageData);
+      if (duplicate) {
+        res.status(201).json({ success: true, data: message, message: 'Message sent successfully' });
+        return;
+      }
 
       // Update conversation last message (only for non-private messages)
       if (!metadata?.isPrivate) {
@@ -276,6 +282,31 @@ export class ChatController {
       } catch (wsError: any) {
         // Don't fail the REST response if WebSocket broadcast fails
         logger.warn('Failed to broadcast message via WebSocket:', wsError);
+      }
+
+      // Push to the others who aren't in the chat right now. Only the socket path did
+      // this, so messages sent while the sender's socket was down arrived silently.
+      if (!metadata?.isPrivate) {
+        void (async () => {
+          try {
+            const { pushNotificationService } = require('@/services/pushNotification.service');
+            const participants = await chatService.getConversationParticipants(resolvedConversationId);
+            const sender = (req as any).user;
+            const senderName = `${sender?.firstName || ''} ${sender?.lastName || ''}`.trim() || 'New message';
+            for (const p of participants) {
+              if (p.userId === userId || p.isOnline || !p.user?.pushToken) continue;
+              await pushNotificationService.sendNewMessageNotification(
+                p.user.pushToken,
+                p.userId,
+                senderName,
+                content,
+                { conversationId: resolvedConversationId, senderId: userId }
+              );
+            }
+          } catch (pushError: any) {
+            logger.warn('Failed to push REST-sent message:', pushError);
+          }
+        })();
       }
 
       res.status(201).json({

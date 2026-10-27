@@ -66,6 +66,8 @@ export class Message extends BaseEntity {
     };
     editedAt?: Date;
     originalContent?: string;
+    /** User ids who deleted this message "for me" (hidden only for them) */
+    hiddenFor?: string[];
   };
 
   @Column({
