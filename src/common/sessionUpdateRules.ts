@@ -28,6 +28,8 @@ export interface SessionSnapshot {
   duration: number;
   startedAt?: Date | null;
   endedAt?: Date | null;
+  mentorJoinedAt?: Date | null;
+  menteeJoinedAt?: Date | null;
   mentorId: string;
   menteeId: string;
 }
@@ -69,9 +71,18 @@ export function planSessionUpdate(
     }
   }
 
+  // Each join is reported as status in_progress (by every app version): remember who came
+  const recordJoin = () => {
+    if (isMentor && !session.mentorJoinedAt) updates.mentorJoinedAt = now;
+    if (isMentee && !session.menteeJoinedAt) updates.menteeJoinedAt = now;
+  };
+
   const target = data.status as SESSION_STATUS | undefined;
   if (target === undefined || target === session.status) {
-    if (target === SESSION_STATUS.IN_PROGRESS && !session.startedAt) updates.startedAt = now;
+    if (target === SESSION_STATUS.IN_PROGRESS) {
+      if (!session.startedAt) updates.startedAt = now;
+      recordJoin();
+    }
     return updates;
   }
 
@@ -101,6 +112,7 @@ export function planSessionUpdate(
     updates.status = SESSION_STATUS.IN_PROGRESS;
     // First join wins; rejoining used to reset it and shorten the recorded call
     if (!session.startedAt) updates.startedAt = now;
+    recordJoin();
     return updates;
   }
 

@@ -84,6 +84,14 @@ export class Session {
   @Column({ type: 'datetime', nullable: true })
   startedAt?: Date;
 
+  /** First time the mentor joined the call (see common/sessionUpdateRules) */
+  @Column({ type: 'datetime', nullable: true })
+  mentorJoinedAt?: Date | null;
+
+  /** First time the mentee joined the call */
+  @Column({ type: 'datetime', nullable: true })
+  menteeJoinedAt?: Date | null;
+
   @Column({ type: 'datetime', nullable: true })
   endedAt?: Date;
 

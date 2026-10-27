@@ -24,6 +24,16 @@ describe('session update rules', () => {
     fails(() => planSessionUpdate(base, 'mentee', { status: 'in_progress' }, minutes(76)), /already ended/);
   });
 
+  it('records who joined, once each', () => {
+    const u = planSessionUpdate(base, 'mentee', { status: 'in_progress' }, minutes(1));
+    assert.deepEqual(u.menteeJoinedAt, minutes(1));
+    assert.equal(u.mentorJoinedAt, undefined);
+    const running = { ...base, status: SESSION_STATUS.IN_PROGRESS, startedAt: minutes(1), menteeJoinedAt: minutes(1) };
+    const m = planSessionUpdate(running, 'mentor', { status: 'in_progress' }, minutes(3));
+    assert.deepEqual(m.mentorJoinedAt, minutes(3));
+    assert.equal(m.menteeJoinedAt, undefined); // already recorded
+  });
+
   it('keeps the first start time when someone rejoins', () => {
     const running = { ...base, status: SESSION_STATUS.IN_PROGRESS, startedAt: minutes(1) };
     const u = planSessionUpdate(running, 'mentor', { status: 'in_progress', startedAt: minutes(20).toISOString() }, minutes(20));

@@ -59,6 +59,21 @@ export class SessionAutoUpdateService {
 
       for (const session of staleSessions) {
         try {
+          // Who actually joined is recorded on each join (mentorJoinedAt / menteeJoinedAt).
+          // When we have it, use it: the startedAt rule below counts from the first joiner
+          // to now, so one person waiting alone for two minutes became "completed".
+          // Sessions from before those columns existed fall through to the old rules.
+          if (session.mentorJoinedAt || session.menteeJoinedAt) {
+            const bothJoined = !!session.mentorJoinedAt && !!session.menteeJoinedAt;
+            session.status = bothJoined ? SESSION_STATUS.COMPLETED : SESSION_STATUS.NO_SHOW;
+            session.endedAt = session.endedAt || new Date();
+            await this.sessionRepo.save(session);
+            logger.info(
+              `Stale session ${session.id}: mentor ${session.mentorJoinedAt ? 'joined' : 'absent'}, mentee ${session.menteeJoinedAt ? 'joined' : 'absent'}. Marking as ${session.status}.`
+            );
+            continue;
+          }
+
           // If the session has a startedAt, it means at least one participant joined.
           // Use actual duration to determine outcome.
           if (session.startedAt) {
