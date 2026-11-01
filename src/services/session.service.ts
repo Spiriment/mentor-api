@@ -98,6 +98,15 @@ export interface CreateAvailabilityDTO {
   notes?: string;
 }
 
+/** Ends a reschedule request (accepted, declined or replaced). Null, not undefined: save() skips undefined */
+function clearRescheduleRequest(session: Session): void {
+  session.previousScheduledAt = null;
+  session.rescheduleRequestedAt = null;
+  session.requestedScheduledAt = null;
+  session.rescheduleReason = null;
+  session.rescheduleMessage = null;
+}
+
 export class SessionService {
   private sessionRepository = AppDataSource.getRepository(Session);
   private availabilityRepository =
@@ -739,12 +748,11 @@ export class SessionService {
     newTime: Date,
     message?: string
   ): Promise<Session> {
+    clearRescheduleRequest(session);
     session.previousScheduledAt = session.scheduledAt;
     session.scheduledAt = newTime;
     session.status = SESSION_STATUS.CONFIRMED;
-    session.rescheduleRequestedAt = undefined as any;
-    session.requestedScheduledAt = undefined as any;
-    session.rescheduleMessage = message;
+    session.rescheduleMessage = message ?? null;
     const updated = await this.sessionRepository.save(session);
 
     const mentorName = formatUserName(session.mentor);
@@ -1791,11 +1799,7 @@ export class SessionService {
           // Update session with new time within transaction
           currentSession.scheduledAt = currentSession.requestedScheduledAt;
           currentSession.status = SESSION_STATUS.CONFIRMED;
-          currentSession.rescheduleRequestedAt = undefined;
-          currentSession.requestedScheduledAt = undefined;
-          currentSession.previousScheduledAt = undefined;
-          currentSession.rescheduleReason = undefined;
-          currentSession.rescheduleMessage = undefined;
+          clearRescheduleRequest(currentSession);
           currentSession.reminders = {}; // Reset reminder flags for the new time
 
           return await sessionRepository.save(currentSession);
@@ -1926,10 +1930,9 @@ export class SessionService {
       const scheduledTimeFormatted = formatSessionTime(session.scheduledAt, session.mentee?.timezone);
 
       // Clear reschedule request data (keep original time)
-      session.previousScheduledAt = undefined;
-      session.rescheduleRequestedAt = undefined;
-      session.rescheduleReason = undefined;
-      session.rescheduleMessage = undefined;
+      // Used to leave requestedScheduledAt set (and, with undefined, nothing was cleared at
+      // all), so the mentee's app kept saying "Reschedule Pending" and blocked Join
+      clearRescheduleRequest(session);
 
       const updatedSession = await this.sessionRepository.save(session);
 

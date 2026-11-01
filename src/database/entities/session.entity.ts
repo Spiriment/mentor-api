@@ -168,20 +168,22 @@ export class Session {
   @Column({ default: false })
   mentorConfirmed!: boolean;
 
+  // Reschedule request fields. Clear them with null (see clearRescheduleRequest in
+  // session.service): save() skips undefined, which left declined requests "pending".
   @Column({ type: 'datetime', nullable: true, select: false })
-  previousScheduledAt?: Date;
+  previousScheduledAt?: Date | null;
 
   @Column({ type: 'datetime', nullable: true, select: false })
-  rescheduleRequestedAt?: Date;
+  rescheduleRequestedAt?: Date | null;
 
   @Column({ type: 'datetime', nullable: true })
-  requestedScheduledAt?: Date;
+  requestedScheduledAt?: Date | null;
 
   @Column({ type: 'text', nullable: true, select: false })
-  rescheduleReason?: string;
+  rescheduleReason?: string | null;
 
   @Column({ type: 'text', nullable: true, select: false })
-  rescheduleMessage?: string;
+  rescheduleMessage?: string | null;
 
   @CreateDateColumn()
   createdAt!: Date;
