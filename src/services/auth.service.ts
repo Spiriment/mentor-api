@@ -41,6 +41,14 @@ import { FileUploadService } from '@/core/fileUpload.service';
 import { StatusCodes } from 'http-status-codes';
 import { OAuth2Client } from 'google-auth-library';
 import appleSigninAuth from 'apple-signin-auth';
+import { randomInt } from 'crypto';
+
+/** How long an emailed sign-in code works */
+const OTP_VALID_MINUTES = 10;
+/** A resend keeps the current code if it still has this long left (else a fresh one) */
+const OTP_REUSE_MIN_REMAINING_MS = 2 * 60 * 1000;
+/** Requests closer together than this don't send another email */
+const OTP_RESEND_MIN_INTERVAL_MS = 20 * 1000;
 
 export class AuthService {
   private logger: Logger;
@@ -100,7 +108,7 @@ export class AuthService {
   }
 
   private generateEmailVerificationToken(): string {
-    return generateOTP(6).toString();
+    return randomInt(100000, 1000000).toString();
   }
 
   register = async (data: RegisterDTO): Promise<any> => {
@@ -609,50 +617,37 @@ export class AuthService {
       },
     });
 
-    const verificationToken = this.generateEmailVerificationToken();
-    const tokenExpiry = addMinutes(new Date(), 10);
-
-    // If user exists and is verified, treat this as a login request
-    if (existingUser && existingUser.isEmailVerified) {
-      // Generate and send OTP for login
-      await this.UserRepository.update(existingUser.id, {
-        otpToken: verificationToken,
-        otpTokenExpiry: tokenExpiry,
-      });
-
-      // Send OTP email for login (non-blocking - don't await)
-      this.emailService.sendEmailVerificationEmail(
-        data.email,
-        existingUser.firstName || 'User',
-        verificationToken,
-        false
-      ).then(() => {
-      this.logger.info('Login OTP sent to existing user', { email: data.email });
-      }).catch((emailError: any) => {
-        // Log email error but don't fail login - user can request OTP again
-        const errorObj = emailError instanceof Error ? emailError : new Error(String(emailError));
-        this.logger.error('Failed to send login OTP email', errorObj, {
-          email: data.email,
-          errorCode: emailError.code,
-        });
-      });
-
+    // Asking again ("Resend code") keeps a code that is still valid, so an email that
+    // arrives late still works instead of being replaced by a newer code
+    const now = new Date();
+    const stillValid =
+      !!existingUser?.otpToken &&
+      !!existingUser.otpTokenExpiry &&
+      existingUser.otpTokenExpiry.getTime() - now.getTime() > OTP_REUSE_MIN_REMAINING_MS;
+    const verificationToken = stillValid
+      ? existingUser!.otpToken!
+      : this.generateEmailVerificationToken();
+    const tokenExpiry = addMinutes(now, OTP_VALID_MINUTES);
+    const isLogin = !!existingUser?.isEmailVerified;
+    // Same code asked for again within seconds (double tap): the email is already on its
+    // way, and shared hosting caps emails per hour
+    const lastSentAt = existingUser?.otpTokenExpiry
+      ? existingUser.otpTokenExpiry.getTime() - OTP_VALID_MINUTES * 60000
+      : 0;
+    if (stillValid && now.getTime() - lastSentAt < OTP_RESEND_MIN_INTERVAL_MS) {
       return {
         message: 'Verification code sent to your email',
-        isExistingUser: true,
-        isEmailVerified: true,
+        isExistingUser: isLogin,
+        isEmailVerified: isLogin,
       };
     }
 
-    // New user or unverified user - registration flow
-    if (existingUser && !existingUser.isEmailVerified) {
-      // Update existing user with new OTP
+    if (existingUser) {
       await this.UserRepository.update(existingUser.id, {
         otpToken: verificationToken,
         otpTokenExpiry: tokenExpiry,
       });
     } else {
-      // Create new user
       const User = this.UserRepository.create({
         email: data.email,
         otpToken: verificationToken,
@@ -660,32 +655,38 @@ export class AuthService {
         isEmailVerified: false,
         timezone: 'UTC', // Explicitly set timezone to avoid database issues
       });
-
       await this.UserRepository.save(User);
     }
 
-    // Send OTP email for registration (non-blocking - don't await)
-    // This allows the API to respond immediately while email is sent in background
-    this.emailService.sendEmailVerificationEmail(
-      data.email,
-      existingUser?.firstName || 'User',
-      verificationToken,
-      false
-    ).then(() => {
-    this.logger.info('Registration OTP sent successfully', { email: data.email });
-    }).catch((emailError: any) => {
-      // Log email error but don't fail registration - user can request OTP again
-      const errorObj = emailError instanceof Error ? emailError : new Error(String(emailError));
-      this.logger.error('Failed to send registration OTP email', errorObj, {
-        email: data.email,
-        errorCode: emailError.code,
+    // Sent in the background so the app gets an answer right away; the email service
+    // retries transient SMTP failures itself
+    this.emailService
+      .sendEmailVerificationEmail(
+        data.email,
+        existingUser?.firstName || 'User',
+        verificationToken,
+        isLogin
+      )
+      .then(() => {
+        this.logger.info(isLogin ? 'Login OTP sent' : 'Registration OTP sent', {
+          email: data.email,
+          reusedCode: stillValid,
+        });
+      })
+      .catch((emailError: any) => {
+        const errorObj = emailError instanceof Error ? emailError : new Error(String(emailError));
+        this.logger.error('Failed to send OTP email', errorObj, {
+          email: data.email,
+          isLogin,
+          errorCode: emailError?.code,
+          responseCode: emailError?.responseCode,
+        });
       });
-    });
 
     return {
       message: 'Verification code sent to your email',
-      isExistingUser: false,
-      isEmailVerified: false,
+      isExistingUser: isLogin,
+      isEmailVerified: isLogin,
     };
   };
 

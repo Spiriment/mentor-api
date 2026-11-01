@@ -27,6 +27,15 @@ import {
 
 dotenv.config();
 
+const OTP_SEND_ATTEMPTS = 3;
+
+/** Network trouble or a temporary (4xx) SMTP reply; not bad credentials or a rejected address */
+function isTransientSmtpError(error: any): boolean {
+  if (['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNRESET', 'EDNS'].includes(error?.code)) return true;
+  const status = Number(error?.responseCode);
+  return status >= 400 && status < 500;
+}
+
 export class EmailService {
   private transporter: nodemailer.Transporter;
   private logger: Logger;
@@ -454,20 +463,37 @@ export class EmailService {
     });
 
     try {
-      // Send email with template
-      await this.sendEmailWithTemplate({
-        to,
-        subject: isLogin
-          ? 'Login Verification Code - Spiriment'
-          : 'Email Verification - Spiriment',
-        partialName: 'email-verification',
-        templateData: {
-          title: isLogin ? 'Login Verification' : 'Email Verification',
-          userName,
-          verificationCode,
-          isLogin,
-        },
-      });
+      const send = () =>
+        this.sendEmailWithTemplate({
+          to,
+          // The code in the subject shows in the inbox preview and lock-screen banner, so
+          // people can type it without opening (or finding) the email
+          subject: `${verificationCode} is your Spiriment ${isLogin ? 'login' : 'verification'} code`,
+          partialName: 'email-verification',
+          templateData: {
+            title: isLogin ? 'Login Verification' : 'Email Verification',
+            userName,
+            verificationCode,
+            isLogin,
+          },
+        });
+      // A sign-in code that never arrives locks the person out: retry the hiccups shared
+      // mail servers have (timeouts, dropped connections, 4xx "try again later")
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await send();
+          break;
+        } catch (error: any) {
+          if (attempt >= OTP_SEND_ATTEMPTS || !isTransientSmtpError(error)) throw error;
+          this.logger.warn('Retrying verification email', {
+            to,
+            attempt,
+            errorCode: error?.code,
+            responseCode: error?.responseCode,
+          });
+          await new Promise((r) => setTimeout(r, attempt * 3000));
+        }
+      }
 
       this.logger.info('✅ Email verification sent successfully', {
         to,
