@@ -403,16 +403,21 @@ export class AdminChurchPortalService {
   private async _sendInviteEmail(user: ChurchPortalUser, portal: ChurchPortal, inviteToken: string) {
     const baseUrl = process.env.CHURCH_PORTAL_URL || 'https://admin.spiriment.com';
     const inviteUrl = `${baseUrl}/church/${portal.slug}/accept-invite?token=${inviteToken}`;
+    const loginUrl = `${baseUrl}/church/${portal.slug}/login`;
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ');
 
     await this.emailService.sendEmailWithTemplate({
       to: user.email,
       subject: `You've been invited to manage ${portal.name} on Spiriment`,
       partialName: 'church-portal-invite',
       templateData: {
-        name: user.firstName || 'Pastor',
+        name: fullName || 'Pastor',
         churchName: portal.name,
         role: user.role,
         inviteUrl,
+        loginUrl,
+        email: user.email,
+        joinCode: portal.joinCode ?? null,
         expiryHours: INVITE_TOKEN_EXPIRY_HOURS,
       },
     });

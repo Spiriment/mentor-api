@@ -9,8 +9,9 @@
     <p style="margin: 0 0 12px 0;">Hello <strong>{{name}}</strong>,</p>
     <p style="margin: 0;">
       You've been added as a <strong>{{role}}</strong> for <strong>{{churchName}}</strong> on Spiriment.
-      The church portal shows your members' mentorship sessions and Bible reading, and lets you approve
-      people who ask to join your church in the app.
+      The church portal shows your members' mentorship sessions and Bible reading, lets you approve
+      people who ask to join your church in the app, and lets you manage the members your church pays for
+      and its invoices.
     </p>
   </div>
 
@@ -24,12 +25,25 @@
   <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 16px; margin: 20px 0;">
     <p style="font-size: 14px; color: #856404; margin: 0;">
       <strong>⏰ Important:</strong> This link expires in {{expiryHours}} hours. If it has expired, ask
-      Spiriment support to send a new invite.
+      <a href="mailto:support@spiriment.com" style="color: #856404;">Spiriment support</a> to send a new invite.
     </p>
   </div>
 
   <div style="font-size: 13px; color: #555; margin: 20px 0; word-break: break-all;">
     <p style="margin: 0;">If the button doesn't work, paste this link into your browser:<br />{{inviteUrl}}</p>
+  </div>
+
+  <div style="font-size: 15px; line-height: 150%; color: #000; margin: 20px 0;">
+    <p style="margin: 0 0 8px 0;"><strong>After you set your password</strong></p>
+    <p style="margin: 0 0 8px 0;">
+      Sign in at <a href="{{loginUrl}}" style="color: #3A5A40;">{{loginUrl}}</a> with <strong>{{email}}</strong>.
+    </p>
+    {{#if joinCode}}
+    <p style="margin: 0;">
+      Share your church code, <strong>{{joinCode}}</strong>, with your members. They enter it in the Spiriment
+      app to join {{churchName}}.
+    </p>
+    {{/if}}
   </div>
 
   <div style="font-size: 14px; color: #000; margin: 10px 0;">
