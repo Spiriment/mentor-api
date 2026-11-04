@@ -13,6 +13,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ConflictError, NotFoundError } from '@/common/errors';
 import { generateUniqueJoinCode } from '@/church-portal/utils/joinCode';
+import { getMentorStats } from '@/church-portal/services/churchPortalActivity.service';
 import { buildInviteEmail, describeInvite, hashInviteToken, INVITE_EXPIRY_HOURS } from '@/church-portal/utils/inviteToken';
 import type {
   CreateChurchPortalInput,
@@ -422,8 +423,10 @@ export class AdminChurchPortalService {
       skip: (page - 1) * limit,
     });
 
+    const mentorStats = await getMentorStats(users.filter((u) => u.role === USER_ROLE.MENTOR).map((u) => u.id));
+
     return {
-      data: users,
+      data: users.map((u) => ({ ...u, menteeCount: mentorStats.get(u.id)?.menteeCount ?? null })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

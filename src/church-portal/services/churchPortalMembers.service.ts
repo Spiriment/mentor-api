@@ -3,6 +3,7 @@ import { In } from 'typeorm';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
+import { StudyProgress } from '@/database/entities/studyProgress.entity';
 import { adminQuizService } from '@/services/adminQuiz.service';
 import { ChurchPortalJoinRequest } from '../entities/churchPortalJoinRequest.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
@@ -98,14 +99,19 @@ export class ChurchPortalMembersService {
     const base = { ...user, ...stats, completedSessions: sessionCount };
     if (!includePrivate) return base;
 
-    const [spiritualProfile, quiz] = await Promise.all([
+    const [spiritualProfile, quiz, studyPaths] = await Promise.all([
       isMentor
         ? AppDataSource.getRepository(MentorProfile).findOne({ where: { userId }, select: MENTOR_PROFILE_FIELDS })
         : AppDataSource.getRepository(MenteeProfile).findOne({ where: { userId }, select: MENTEE_PROFILE_FIELDS }),
       adminQuizService.getUserQuizActivity(userId, RECENT_QUIZ_ATTEMPTS),
+      AppDataSource.getRepository(StudyProgress).find({
+        where: { userId },
+        select: ['id', 'pathId', 'currentDay', 'totalDays', 'completedChapters', 'completedPathIds', 'lastStudiedAt'],
+        order: { lastStudiedAt: 'DESC' },
+      }),
     ]);
 
-    return { ...base, spiritualProfile, quiz };
+    return { ...base, spiritualProfile, quiz, studyPaths };
   }
 
   async getMemberSessions(churchPortalId: string, userId: string, page = 1, limit = 20) {

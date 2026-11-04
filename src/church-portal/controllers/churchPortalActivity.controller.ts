@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { ForbiddenError } from '@/common/errors';
+import { CHURCH_PORTAL_USER_ROLE } from '../entities/churchPortalUser.entity';
 import { ChurchPortalActivityService } from '../services/churchPortalActivity.service';
 
 export class ChurchPortalActivityController {
@@ -35,6 +37,23 @@ export class ChurchPortalActivityController {
         timeFilter
       );
       res.status(StatusCodes.OK).json({ status: 'success', ...data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getQuizzes = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (req.churchPortalUser!.role !== CHURCH_PORTAL_USER_ROLE.PASTOR) {
+        throw new ForbiddenError('Only pastors can see members\' quiz results.');
+      }
+      const { page, limit } = req.query as Record<string, string>;
+      const data = await this.activityService.getQuizzes(
+        req.churchPortalUser!.churchPortalId,
+        page ? parseInt(page) : 1,
+        limit ? parseInt(limit) : 20
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {
       next(err);
     }

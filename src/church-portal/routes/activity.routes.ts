@@ -11,6 +11,7 @@ export function createChurchPortalActivityRoutes(controller: ChurchPortalActivit
   router.get('/mentees', controller.getMentees);
   router.get('/sessions', controller.getSessions);
   router.get('/bible-reading', controller.getBibleReading);
+  router.get('/quizzes', controller.getQuizzes);
 
   return router;
 }

@@ -4,6 +4,7 @@ import { logger } from '@/config/int-services';
 import { User } from '@/database/entities/user.entity';
 import { getEmailService } from '@/services/emailHelper';
 import { pushNotificationService } from '@/services/pushNotification.service';
+import { buildJoinDecisionEmail } from '../utils/joinDecisionEmail';
 import { ChurchPortal } from '../entities/churchPortal.entity';
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
 import { ChurchPortalJoinRequest, CHURCH_JOIN_REQUEST_STATUS } from '../entities/churchPortalJoinRequest.entity';
@@ -81,13 +82,24 @@ export function notifyPastorsOfJoinRequest(churchPortalId: string, requesterUser
   );
 }
 
-/** Push the member the pastor's decision. Fire-and-forget. */
+/** Email and push the member the pastor's decision. Fire-and-forget. */
 export function notifyMemberOfJoinDecision(userId: string, churchName: string, approved: boolean): void {
   void (async () => {
     const user = await AppDataSource.getRepository(User).findOne({
       where: { id: userId },
-      select: ['id', 'pushToken', 'pushNotificationsEnabled'],
+      select: ['id', 'email', 'firstName', 'pushToken', 'pushNotificationsEnabled'],
     });
+    // Separate from the push, so members without the app's notifications still find out
+    if (user?.email) {
+      await getEmailService()
+        .sendEmailWithTemplate(buildJoinDecisionEmail({ email: user.email, firstName: user.firstName }, churchName, approved))
+        .catch((err) =>
+          logger.warn('Church join decision email failed', {
+            userId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+    }
     if (!user?.pushToken || user.pushNotificationsEnabled === false) return;
     await pushNotificationService.sendToUser({
       userId,

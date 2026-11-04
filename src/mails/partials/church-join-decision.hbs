@@ -1,0 +1,30 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="margin: 0; color: #1F2A22; font-size: 24px; line-height: 130%; font-weight: 600;">
+      {{#if approved}}Welcome to {{churchName}}{{else}}Your request to join {{churchName}}{{/if}}
+    </h1>
+  </div>
+
+  <div style="text-align: left; font-size: 15px; line-height: 150%; color: #000; margin: 20px 0;">
+    <p style="margin: 0 0 12px 0;">Hello <strong>{{name}}</strong>,</p>
+    {{#if approved}}
+    <p style="margin: 0;">
+      Your pastor approved your request to join <strong>{{churchName}}</strong> on Spiriment. Your church
+      discount now applies to new subscriptions.
+    </p>
+    {{else}}
+    <p style="margin: 0 0 12px 0;">
+      <strong>{{churchName}}</strong> didn't approve your request to join on Spiriment, so your church
+      discount won't apply.
+    </p>
+    <p style="margin: 0;">
+      If you think this is a mistake, please check the church code with your pastor and try again. You can
+      keep using Spiriment as usual.
+    </p>
+    {{/if}}
+  </div>
+
+  <div style="font-size: 14px; color: #000; margin: 10px 0;">
+    <p style="margin: 0;">Warm regards,<br /><strong>Spiriment Team</strong></p>
+  </div>
+</div>

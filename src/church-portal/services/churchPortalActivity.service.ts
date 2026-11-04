@@ -2,6 +2,8 @@ import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
+import { QuizAttempt } from '@/database/entities/quizAttempt.entity';
+import { QuizStreak } from '@/database/entities/quizStreak.entity';
 import { USER_ROLE } from '@/common/constants';
 
 /** Completed sessions and active mentees per mentor */
@@ -147,6 +149,68 @@ export class ChurchPortalActivityService {
 
     return {
       data: sessions,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /** Every member's quiz activity, most active first (pastors only; the controller enforces it) */
+  async getQuizzes(churchPortalId: string, page = 1, limit = 20) {
+    const ds = AppDataSource;
+    const scoreSql = 'a.score * 100.0 / NULLIF(a.total, 0)';
+
+    const [total, summary, rows] = await Promise.all([
+      ds.getRepository(User).count({ where: { churchPortalId } }),
+      ds
+        .createQueryBuilder()
+        .from(QuizAttempt, 'a')
+        .innerJoin(User, 'u', 'u.id = a.userId')
+        .select('COUNT(*)', 'totalAttempts')
+        .addSelect('COUNT(DISTINCT a.userId)', 'activeMembers')
+        .addSelect(`AVG(${scoreSql})`, 'avgScore')
+        .where('u.churchPortalId = :churchPortalId', { churchPortalId })
+        .getRawOne<{ totalAttempts: string; activeMembers: string; avgScore: string | null }>(),
+      ds
+        .createQueryBuilder()
+        .from(User, 'u')
+        .leftJoin(QuizAttempt, 'a', 'a.userId = u.id')
+        .leftJoin(QuizStreak, 's', 's.userId = u.id')
+        .select('u.id', 'id')
+        .addSelect('u.firstName', 'firstName')
+        .addSelect('u.lastName', 'lastName')
+        .addSelect('u.email', 'email')
+        .addSelect('u.role', 'role')
+        .addSelect('COUNT(a.id)', 'quizzesTaken')
+        .addSelect(`AVG(${scoreSql})`, 'avgScore')
+        .addSelect('MAX(a.completedAt)', 'lastQuizAt')
+        .addSelect('MAX(s.currentStreak)', 'quizStreak')
+        .where('u.churchPortalId = :churchPortalId', { churchPortalId })
+        .groupBy('u.id')
+        .orderBy('quizzesTaken', 'DESC')
+        .addOrderBy('u.firstName', 'ASC')
+        .limit(limit)
+        .offset((page - 1) * limit)
+        .getRawMany(),
+    ]);
+
+    const roundPct = (value: string | null | undefined) => (value != null ? Math.round(parseFloat(value)) : null);
+
+    return {
+      summary: {
+        totalAttempts: parseInt(summary?.totalAttempts ?? '0', 10),
+        activeMembers: parseInt(summary?.activeMembers ?? '0', 10),
+        avgScorePct: roundPct(summary?.avgScore),
+      },
+      members: rows.map((r) => ({
+        id: r.id,
+        firstName: r.firstName ?? null,
+        lastName: r.lastName ?? null,
+        email: r.email,
+        role: r.role,
+        quizzesTaken: parseInt(r.quizzesTaken, 10),
+        avgScorePct: roundPct(r.avgScore),
+        lastQuizAt: r.lastQuizAt ?? null,
+        quizStreak: r.quizStreak != null ? parseInt(r.quizStreak, 10) : 0,
+      })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
