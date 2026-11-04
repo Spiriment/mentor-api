@@ -9,6 +9,7 @@ export function createChurchPortalAuthRoutes(controller: ChurchPortalAuthControl
   router.post('/login', controller.login);
   router.post('/logout', controller.logout);
   router.post('/refresh', controller.refreshToken);
+  router.post('/invite-info', controller.inviteInfo);
   router.post('/accept-invite', controller.acceptInvite);
   router.post('/forgot-password', controller.forgotPassword);
   router.post('/reset-password', controller.resetPassword);

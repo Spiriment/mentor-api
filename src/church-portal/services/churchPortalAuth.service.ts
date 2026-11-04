@@ -9,11 +9,11 @@ import { PORTAL_SUSPENDED_MESSAGE } from '../middleware/churchPortalAuth.middlew
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
 import { ChurchPortalRefreshToken } from '../entities/churchPortalRefreshToken.entity';
 import type { UpdateProfileInput } from '../validation/churchPortalAuth.validation';
+import { buildInviteEmail, hashInviteToken, inviteTokenMatches, INVITE_EXPIRY_HOURS } from '../utils/inviteToken';
 
 const SALT_ROUNDS = 12;
 const OTP_EXPIRY_MINUTES = 15;
 const MAX_RESET_ATTEMPTS = 5;
-const INVITE_EXPIRY_HOURS = 48;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 export class ChurchPortalAuthService {
@@ -134,7 +134,23 @@ export class ChurchPortalAuthService {
     return { accessToken };
   }
 
-  async acceptInvite(inviteToken: string, password: string) {
+  /** Who an unused invite link is for, so the page can welcome them before they set a password */
+  async getInviteInfo(inviteToken: string) {
+    const user = await this.findPendingInvite(inviteToken);
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: user.churchPortalId },
+      select: ['id', 'name'],
+    });
+    return {
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      email: user.email,
+      role: user.role,
+      churchName: portal?.name ?? null,
+    };
+  }
+
+  private async findPendingInvite(inviteToken: string) {
     const decoded = jwt.verifyChurchPortalInviteToken(inviteToken);
 
     const userRepo = AppDataSource.getRepository(ChurchPortalUser);
@@ -145,8 +161,16 @@ export class ChurchPortalAuthService {
 
     if (!user) throw new NotFoundError('Account not found');
     if (user.password) throw new ConflictError('Account already activated — please log in');
-    if (!user.inviteToken || user.inviteToken !== inviteToken) throw new UnauthorizedError('Invalid invite link');
+    if (!inviteTokenMatches(user.inviteToken, inviteToken)) {
+      throw new UnauthorizedError('This invite link is no longer valid — ask Spiriment support for a new one');
+    }
     if (user.inviteTokenExpiresAt && user.inviteTokenExpiresAt < new Date()) throw new UnauthorizedError('Invite link has expired — contact your administrator');
+    return user;
+  }
+
+  async acceptInvite(inviteToken: string, password: string) {
+    const user = await this.findPendingInvite(inviteToken);
+    const userRepo = AppDataSource.getRepository(ChurchPortalUser);
 
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     await userRepo.update(user.id, {
@@ -184,7 +208,7 @@ export class ChurchPortalAuthService {
           `${INVITE_EXPIRY_HOURS}h`
         );
         await userRepo.update(user.id, {
-          inviteToken,
+          inviteToken: hashInviteToken(inviteToken),
           inviteTokenExpiresAt: new Date(Date.now() + INVITE_EXPIRY_HOURS * 60 * 60 * 1000),
         });
         await this.sendInviteEmail(user, portal, inviteToken);
@@ -274,19 +298,6 @@ export class ChurchPortalAuthService {
   }
 
   async sendInviteEmail(portalUser: ChurchPortalUser, portal: ChurchPortal, inviteToken: string) {
-    const inviteUrl = `${process.env.CHURCH_PORTAL_URL || 'https://admin.spiriment.com'}/church/${portal.slug}/accept-invite?token=${inviteToken}`;
-
-    await this.emailService.sendEmailWithTemplate({
-      to: portalUser.email,
-      subject: `You've been invited to manage ${portal.name} on Spiriment`,
-      partialName: 'church-portal-invite',
-      templateData: {
-        name: portalUser.firstName || 'Pastor',
-        churchName: portal.name,
-        role: portalUser.role,
-        inviteUrl,
-        expiryHours: INVITE_EXPIRY_HOURS,
-      },
-    });
+    await this.emailService.sendEmailWithTemplate(buildInviteEmail(portalUser, portal, inviteToken));
   }
 }

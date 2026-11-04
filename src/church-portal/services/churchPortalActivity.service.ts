@@ -1,109 +1,107 @@
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
-import { MentorshipRequest } from '@/database/entities/mentorshipRequest.entity';
+import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entities/mentorshipRequest.entity';
 import { USER_ROLE } from '@/common/constants';
+
+/** Completed sessions and active mentees per mentor */
+export async function getMentorStats(mentorIds: string[]) {
+  const stats = new Map<string, { completedSessions: number; menteeCount: number }>();
+  if (mentorIds.length === 0) return stats;
+
+  const [sessionCounts, menteeCounts] = await Promise.all([
+    AppDataSource.getRepository(Session)
+      .createQueryBuilder('s')
+      .select('s.mentorId', 'mentorId')
+      .addSelect('COUNT(*)', 'count')
+      .where('s.mentorId IN (:...mentorIds)', { mentorIds })
+      .andWhere('s.status = :status', { status: SESSION_STATUS.COMPLETED })
+      .groupBy('s.mentorId')
+      .getRawMany(),
+    AppDataSource.getRepository(MentorshipRequest)
+      .createQueryBuilder('mr')
+      .select('mr.mentorId', 'mentorId')
+      .addSelect('COUNT(*)', 'count')
+      .where('mr.mentorId IN (:...mentorIds)', { mentorIds })
+      .andWhere('mr.status = :status', { status: MENTORSHIP_REQUEST_STATUS.ACCEPTED })
+      .groupBy('mr.mentorId')
+      .getRawMany(),
+  ]);
+
+  const sessions = new Map(sessionCounts.map((r) => [r.mentorId, parseInt(r.count, 10)]));
+  const mentees = new Map(menteeCounts.map((r) => [r.mentorId, parseInt(r.count, 10)]));
+  for (const id of mentorIds) {
+    stats.set(id, { completedSessions: sessions.get(id) ?? 0, menteeCount: mentees.get(id) ?? 0 });
+  }
+  return stats;
+}
+
+/** Last completed session and current mentor per mentee (the most recently accepted, if several) */
+export async function getMenteeStats(menteeIds: string[]) {
+  const stats = new Map<
+    string,
+    {
+      lastSessionAt: Date | string | null;
+      assignedMentor: { id: string; firstName: string; lastName: string } | null;
+    }
+  >();
+  if (menteeIds.length === 0) return stats;
+
+  const [lastSessions, assignedMentors] = await Promise.all([
+    AppDataSource.getRepository(Session)
+      .createQueryBuilder('s')
+      .select('s.menteeId', 'menteeId')
+      .addSelect('MAX(s.scheduledAt)', 'lastSessionAt')
+      .where('s.menteeId IN (:...menteeIds)', { menteeIds })
+      .andWhere('s.status = :status', { status: SESSION_STATUS.COMPLETED })
+      .groupBy('s.menteeId')
+      .getRawMany(),
+    AppDataSource.getRepository(MentorshipRequest)
+      .createQueryBuilder('mr')
+      .innerJoin(User, 'mentor', 'mentor.id = mr.mentorId')
+      .select('mr.menteeId', 'menteeId')
+      .addSelect('mentor.id', 'mentorId')
+      .addSelect('mentor.firstName', 'mentorFirstName')
+      .addSelect('mentor.lastName', 'mentorLastName')
+      .where('mr.menteeId IN (:...menteeIds)', { menteeIds })
+      .andWhere('mr.status = :status', { status: MENTORSHIP_REQUEST_STATUS.ACCEPTED })
+      .orderBy('mr.updatedAt', 'ASC')
+      .getRawMany(),
+  ]);
+
+  const lastSession = new Map(lastSessions.map((r) => [r.menteeId, r.lastSessionAt]));
+  // Oldest first, so the most recent mentor wins
+  const mentor = new Map(
+    assignedMentors.map((r) => [
+      r.menteeId,
+      { id: r.mentorId, firstName: r.mentorFirstName, lastName: r.mentorLastName },
+    ]),
+  );
+  for (const id of menteeIds) {
+    stats.set(id, { lastSessionAt: lastSession.get(id) ?? null, assignedMentor: mentor.get(id) ?? null });
+  }
+  return stats;
+}
 
 export class ChurchPortalActivityService {
   async getMentors(churchPortalId: string) {
-    const userRepo = AppDataSource.getRepository(User);
-    const sessionRepo = AppDataSource.getRepository(Session);
-
-    const mentors = await userRepo.find({
+    const mentors = await AppDataSource.getRepository(User).find({
       where: { churchPortalId, role: USER_ROLE.MENTOR },
       select: ['id', 'firstName', 'lastName', 'email', 'currentStreak', 'lastActiveAt', 'createdAt'],
       order: { lastActiveAt: 'DESC' },
     });
-
-    const mentorIds = mentors.map((m) => m.id);
-    if (mentorIds.length === 0) return [];
-
-    const [sessionCounts, menteeCounts] = await Promise.all([
-      sessionRepo
-        .createQueryBuilder('s')
-        .select('s.mentorId', 'mentorId')
-        .addSelect('COUNT(*)', 'count')
-        .where('s.mentorId IN (:...mentorIds)', { mentorIds })
-        .andWhere('s.status = :status', { status: SESSION_STATUS.COMPLETED })
-        .groupBy('s.mentorId')
-        .getRawMany(),
-
-      userRepo
-        .createQueryBuilder('u')
-        .select('u.churchPortalId') // placeholder — mentee count via mentorship requests
-        .getRawMany()
-        .then(() =>
-          // Count mentees per mentor via accepted mentorship requests
-          AppDataSource.getRepository(MentorshipRequest)
-            .createQueryBuilder('mr')
-            .select('mr.mentorId', 'mentorId')
-            .addSelect('COUNT(*)', 'count')
-            .where('mr.mentorId IN (:...mentorIds)', { mentorIds })
-            .andWhere('mr.status = :status', { status: 'accepted' })
-            .groupBy('mr.mentorId')
-            .getRawMany()
-        ),
-    ]);
-
-    const sessionMap = Object.fromEntries(sessionCounts.map((r) => [r.mentorId, parseInt(r.count)]));
-    const menteeMap = Object.fromEntries(menteeCounts.map((r) => [r.mentorId, parseInt(r.count)]));
-
-    return mentors.map((m) => ({
-      ...m,
-      completedSessions: sessionMap[m.id] || 0,
-      menteeCount: menteeMap[m.id] || 0,
-    }));
+    const stats = await getMentorStats(mentors.map((m) => m.id));
+    return mentors.map((m) => ({ ...m, ...stats.get(m.id) }));
   }
 
   async getMentees(churchPortalId: string) {
-    const userRepo = AppDataSource.getRepository(User);
-    const sessionRepo = AppDataSource.getRepository(Session);
-
-    const mentees = await userRepo.find({
+    const mentees = await AppDataSource.getRepository(User).find({
       where: { churchPortalId, role: USER_ROLE.MENTEE },
       select: ['id', 'firstName', 'lastName', 'email', 'currentStreak', 'lastActiveAt', 'createdAt'],
       order: { lastActiveAt: 'DESC' },
     });
-
-    if (mentees.length === 0) return [];
-
-    const menteeIds = mentees.map((m) => m.id);
-
-    const [lastSessions, assignedMentors] = await Promise.all([
-      sessionRepo
-        .createQueryBuilder('s')
-        .select('s.menteeId', 'menteeId')
-        .addSelect('MAX(s.scheduledAt)', 'lastSessionAt')
-        .where('s.menteeId IN (:...menteeIds)', { menteeIds })
-        .andWhere('s.status = :status', { status: SESSION_STATUS.COMPLETED })
-        .groupBy('s.menteeId')
-        .getRawMany(),
-
-      AppDataSource.getRepository(MentorshipRequest)
-        .createQueryBuilder('mr')
-        .innerJoin(User, 'mentor', 'mentor.id = mr.mentorId')
-        .select('mr.menteeId', 'menteeId')
-        .addSelect('mentor.id', 'mentorId')
-        .addSelect('mentor.firstName', 'mentorFirstName')
-        .addSelect('mentor.lastName', 'mentorLastName')
-        .where('mr.menteeId IN (:...menteeIds)', { menteeIds })
-        .andWhere('mr.status = :status', { status: 'accepted' })
-        .getRawMany(),
-    ]);
-
-    const lastSessionMap = Object.fromEntries(lastSessions.map((r) => [r.menteeId, r.lastSessionAt]));
-    const mentorMap = Object.fromEntries(
-      assignedMentors.map((r) => [
-        r.menteeId,
-        { id: r.mentorId, firstName: r.mentorFirstName, lastName: r.mentorLastName },
-      ])
-    );
-
-    return mentees.map((m) => ({
-      ...m,
-      lastSessionAt: lastSessionMap[m.id] || null,
-      assignedMentor: mentorMap[m.id] || null,
-    }));
+    const stats = await getMenteeStats(mentees.map((m) => m.id));
+    return mentees.map((m) => ({ ...m, ...stats.get(m.id) }));
   }
 
   async getSessions(

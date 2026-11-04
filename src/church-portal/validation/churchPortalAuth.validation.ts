@@ -11,6 +11,10 @@ export const acceptInviteSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
+export const inviteInfoSchema = z.object({
+  inviteToken: z.string().min(1, 'Invite token is required'),
+});
+
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
   churchPortalId: z.string().uuid('Invalid church portal ID'),

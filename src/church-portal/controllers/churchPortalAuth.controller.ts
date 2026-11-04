@@ -4,6 +4,7 @@ import { ChurchPortalAuthService } from '../services/churchPortalAuth.service';
 import {
   loginSchema,
   acceptInviteSchema,
+  inviteInfoSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   updateProfileSchema,
@@ -56,6 +57,16 @@ export class ChurchPortalAuthController {
     try {
       const body = refreshTokenSchema.parse(req.body);
       const result = await this.authService.refreshToken(body.refreshToken);
+      res.status(StatusCodes.OK).json({ status: 'success', data: result });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  inviteInfo = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = inviteInfoSchema.parse(req.body);
+      const result = await this.authService.getInviteInfo(body.inviteToken);
       res.status(StatusCodes.OK).json({ status: 'success', data: result });
     } catch (err) {
       next(err);

@@ -13,6 +13,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ConflictError, NotFoundError } from '@/common/errors';
 import { generateUniqueJoinCode } from '@/church-portal/utils/joinCode';
+import { buildInviteEmail, hashInviteToken, INVITE_EXPIRY_HOURS } from '@/church-portal/utils/inviteToken';
 import type {
   CreateChurchPortalInput,
   UpdateChurchPortalInput,
@@ -20,7 +21,6 @@ import type {
   ListChurchPortalsQuery,
 } from '@/validation/adminChurchPortals.validation';
 
-const INVITE_TOKEN_EXPIRY_HOURS = 48;
 /** Portal admin login older than this is considered stale (ops health). */
 export const CHURCH_PORTAL_LOGIN_STALE_DAYS = 14;
 const SEAT_NEAR_FULL_PCT = 80;
@@ -262,13 +262,13 @@ export class AdminChurchPortalService {
 
     const inviteToken = jwt.signChurchPortalInviteToken(
       { portalUserId: saved.id, churchPortalId: portalId, email: saved.email },
-      `${INVITE_TOKEN_EXPIRY_HOURS}h`
+      `${INVITE_EXPIRY_HOURS}h`
     );
 
     const inviteTokenExpiresAt = new Date();
-    inviteTokenExpiresAt.setHours(inviteTokenExpiresAt.getHours() + INVITE_TOKEN_EXPIRY_HOURS);
+    inviteTokenExpiresAt.setHours(inviteTokenExpiresAt.getHours() + INVITE_EXPIRY_HOURS);
 
-    await repo.update(saved.id, { inviteToken, inviteTokenExpiresAt });
+    await repo.update(saved.id, { inviteToken: hashInviteToken(inviteToken), inviteTokenExpiresAt });
 
     // The account exists either way; a failed email must not look like a failed create
     // (retrying would hit "already exists"), so report it and let the admin resend
@@ -327,12 +327,12 @@ export class AdminChurchPortalService {
 
     const inviteToken = jwt.signChurchPortalInviteToken(
       { portalUserId: user.id, churchPortalId: portalId, email: user.email },
-      `${INVITE_TOKEN_EXPIRY_HOURS}h`
+      `${INVITE_EXPIRY_HOURS}h`
     );
     const inviteTokenExpiresAt = new Date();
-    inviteTokenExpiresAt.setHours(inviteTokenExpiresAt.getHours() + INVITE_TOKEN_EXPIRY_HOURS);
+    inviteTokenExpiresAt.setHours(inviteTokenExpiresAt.getHours() + INVITE_EXPIRY_HOURS);
 
-    await repo.update(user.id, { inviteToken, inviteTokenExpiresAt });
+    await repo.update(user.id, { inviteToken: hashInviteToken(inviteToken), inviteTokenExpiresAt });
     await this._sendInviteEmail(user, portal, inviteToken);
 
     return { message: `Invite resent to ${user.email}` };
@@ -401,25 +401,6 @@ export class AdminChurchPortalService {
   }
 
   private async _sendInviteEmail(user: ChurchPortalUser, portal: ChurchPortal, inviteToken: string) {
-    const baseUrl = process.env.CHURCH_PORTAL_URL || 'https://admin.spiriment.com';
-    const inviteUrl = `${baseUrl}/church/${portal.slug}/accept-invite?token=${inviteToken}`;
-    const loginUrl = `${baseUrl}/church/${portal.slug}/login`;
-    const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ');
-
-    await this.emailService.sendEmailWithTemplate({
-      to: user.email,
-      subject: `You've been invited to manage ${portal.name} on Spiriment`,
-      partialName: 'church-portal-invite',
-      templateData: {
-        name: fullName || 'Pastor',
-        churchName: portal.name,
-        role: user.role,
-        inviteUrl,
-        loginUrl,
-        email: user.email,
-        joinCode: portal.joinCode ?? null,
-        expiryHours: INVITE_TOKEN_EXPIRY_HOURS,
-      },
-    });
+    await this.emailService.sendEmailWithTemplate(buildInviteEmail(user, portal, inviteToken));
   }
 }

@@ -5,6 +5,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { NotFoundError, ForbiddenError } from '@/common/errors';
 import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
+import { getMenteeStats, getMentorStats } from './churchPortalActivity.service';
 
 export class ChurchPortalMembersService {
   async listMembers(
@@ -31,8 +32,12 @@ export class ChurchPortalMembersService {
       skip: (page - 1) * limit,
     });
 
+    const ids = users.map((u) => u.id);
+    const stats =
+      role === 'mentor' ? await getMentorStats(ids) : role === 'mentee' ? await getMenteeStats(ids) : null;
+
     return {
-      data: users,
+      data: stats ? users.map((u) => ({ ...u, ...stats.get(u.id) })) : users,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -61,7 +66,11 @@ export class ChurchPortalMembersService {
         : { menteeId: userId, status: SESSION_STATUS.COMPLETED },
     });
 
-    return { ...user, completedSessions: sessionCount };
+    const stats = isMentor
+      ? (await getMentorStats([userId])).get(userId)
+      : (await getMenteeStats([userId])).get(userId);
+
+    return { ...user, ...stats, completedSessions: sessionCount };
   }
 
   async getMemberSessions(churchPortalId: string, userId: string, page = 1, limit = 20) {
