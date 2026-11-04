@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildInviteEmail, hashInviteToken, inviteTokenMatches } from './inviteToken';
+import { buildInviteEmail, describeInvite, hashInviteToken, inviteTokenMatches } from './inviteToken';
 
 const LONG_TOKEN = `header.payload.${'s'.repeat(640)}`;
 
@@ -43,5 +43,35 @@ describe('buildInviteEmail', () => {
     );
     assert.equal(templateData.name, 'Pastor');
     assert.equal(templateData.joinCode, null);
+  });
+});
+
+describe('describeInvite', () => {
+  const now = new Date('2026-11-04T12:00:00Z');
+  const later = new Date('2026-11-05T12:00:00Z');
+  const earlier = new Date('2026-11-03T12:00:00Z');
+  const token = hashInviteToken('tok');
+
+  it('is pending until the link expires, and works out when it was sent', () => {
+    const result = describeInvite({ isActive: false, inviteToken: token, inviteTokenExpiresAt: later }, now);
+    assert.equal(result.inviteStatus, 'pending');
+    assert.equal(result.inviteSentAt?.toISOString(), '2026-11-03T12:00:00.000Z');
+  });
+
+  it('is expired after that', () => {
+    const result = describeInvite({ isActive: false, inviteToken: token, inviteTokenExpiresAt: earlier }, now);
+    assert.equal(result.inviteStatus, 'expired');
+  });
+
+  it('treats a token cut off by the old column as expired, since the link cannot work', () => {
+    const result = describeInvite({ isActive: false, inviteToken: 'x'.repeat(255), inviteTokenExpiresAt: later }, now);
+    assert.equal(result.inviteStatus, 'expired');
+  });
+
+  it('is accepted or deactivated once a password is set, ignoring reset codes', () => {
+    const resetCode = { inviteToken: '$2a$10$hash', inviteTokenExpiresAt: later };
+    assert.equal(describeInvite({ password: 'x', isActive: true, ...resetCode }, now).inviteStatus, 'accepted');
+    assert.equal(describeInvite({ password: 'x', isActive: false, ...resetCode }, now).inviteStatus, 'deactivated');
+    assert.equal(describeInvite({ password: 'x', isActive: true, ...resetCode }, now).inviteSentAt, null);
   });
 });

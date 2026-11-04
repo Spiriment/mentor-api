@@ -45,12 +45,13 @@ export class ChurchPortalMembersController {
 
   listMembers = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { role, page, limit } = req.query as Record<string, string>;
+      const { role, page, limit, search } = req.query as Record<string, string>;
       const data = await this.membersService.listMembers(
         req.churchPortalUser!.churchPortalId,
         role as 'mentor' | 'mentee' | undefined,
         page ? parseInt(page) : 1,
-        limit ? parseInt(limit) : 20
+        limit ? parseInt(limit) : 20,
+        typeof search === 'string' ? search : undefined
       );
       res.status(StatusCodes.OK).json({ status: 'success', ...data });
     } catch (err) {
@@ -62,7 +63,8 @@ export class ChurchPortalMembersController {
     try {
       const data = await this.membersService.getMember(
         req.churchPortalUser!.churchPortalId,
-        req.params.userId
+        req.params.userId,
+        req.churchPortalUser!.role === CHURCH_PORTAL_USER_ROLE.PASTOR
       );
       res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {

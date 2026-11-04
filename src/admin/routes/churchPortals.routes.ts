@@ -27,6 +27,8 @@ const ctrl = () => {
 // PATCH /api/admin/church-portals/:portalId — update portal (changing status needs church.suspend)
 
 router.get('/', (req, res, next) => ctrl().list(req, res, next));
+// GET /api/admin/church-portals/invites — everyone invited to any church (before /:portalId)
+router.get('/invites', (req, res, next) => ctrl().listInvites(req, res, next));
 router.post('/', (req, res, next) => ctrl().create(req, res, next));
 router.get('/:portalId', (req, res, next) => ctrl().getById(req, res, next));
 router.patch('/:portalId', (req, res, next) => ctrl().update(req, res, next));
@@ -43,6 +45,7 @@ router.post('/:portalId/users', (req, res, next) => ctrl().createUser(req, res, 
 router.patch('/:portalId/users/:userId/deactivate', (req, res, next) => ctrl().deactivateUser(req, res, next));
 router.patch('/:portalId/users/:userId/reactivate', (req, res, next) => ctrl().reactivateUser(req, res, next));
 router.post('/:portalId/users/:userId/resend-invite', (req, res, next) => ctrl().resendInvite(req, res, next));
+router.delete('/:portalId/users/:userId/invite', (req, res, next) => ctrl().cancelInvite(req, res, next));
 
 // ── App Members ────────────────────────────────────────────────────────────
 // GET /api/admin/church-portals/:portalId/members  — list app users in this church

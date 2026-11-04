@@ -1,5 +1,9 @@
 import { AppDataSource } from '@/config/data-source';
+import { In } from 'typeorm';
 import { User } from '@/database/entities/user.entity';
+import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
+import { MentorProfile } from '@/database/entities/mentorProfile.entity';
+import { adminQuizService } from '@/services/adminQuiz.service';
 import { ChurchPortalJoinRequest } from '../entities/churchPortalJoinRequest.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
@@ -7,30 +11,50 @@ import { NotFoundError, ForbiddenError } from '@/common/errors';
 import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
 import { getMenteeStats, getMentorStats } from './churchPortalActivity.service';
 
+// Allowlists: signatures, agreements and internal admin notes must never reach a church
+const MENTEE_PROFILE_FIELDS: (keyof MenteeProfile)[] = [
+  'spiritualGoals', 'spiritualGrowthAreas', 'bibleTopics', 'christianExperience', 'bibleReadingFrequency',
+  'scriptureConfidence', 'currentMentorship', 'learningPreference', 'mentorshipFormat', 'mentorExpectations',
+  'churchDenomination', 'churchName', 'currentBook', 'currentChapter', 'completedChapters', 'studyDays',
+];
+const MENTOR_PROFILE_FIELDS: (keyof MentorProfile)[] = [
+  'christianExperience', 'christianJourney', 'scriptureTeaching', 'currentMentoring', 'churchAffiliation',
+  'leadershipRoles', 'maturityDefinition', 'menteeCapacity', 'mentorshipFormat', 'menteeCalling',
+  'spiritualExpertise', 'currentBook', 'currentChapter', 'completedChapters', 'studyDays',
+];
+const RECENT_QUIZ_ATTEMPTS = 10;
+
 export class ChurchPortalMembersService {
   async listMembers(
     churchPortalId: string,
     role?: 'mentor' | 'mentee',
     page = 1,
-    limit = 20
+    limit = 20,
+    search?: string
   ) {
-    const userRepo = AppDataSource.getRepository(User);
+    const qb = AppDataSource.getRepository(User)
+      .createQueryBuilder('u')
+      .select([
+        'u.id', 'u.firstName', 'u.lastName', 'u.email', 'u.role',
+        'u.currentStreak', 'u.longestStreak', 'u.lastActiveAt',
+        'u.isOnboardingComplete', 'u.createdAt',
+      ])
+      .where('u.churchPortalId = :churchPortalId', { churchPortalId })
+      .orderBy('u.createdAt', 'DESC')
+      .take(limit)
+      .skip((page - 1) * limit);
 
-    const where: Record<string, any> = { churchPortalId };
-    if (role === 'mentor') where.role = USER_ROLE.MENTOR;
-    if (role === 'mentee') where.role = USER_ROLE.MENTEE;
+    if (role === 'mentor') qb.andWhere('u.role = :role', { role: USER_ROLE.MENTOR });
+    if (role === 'mentee') qb.andWhere('u.role = :role', { role: USER_ROLE.MENTEE });
 
-    const [users, total] = await userRepo.findAndCount({
-      where,
-      select: [
-        'id', 'firstName', 'lastName', 'email', 'role',
-        'currentStreak', 'longestStreak', 'lastActiveAt',
-        'isOnboardingComplete', 'createdAt',
-      ],
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: (page - 1) * limit,
-    });
+    const term = search?.trim().replace(/[\\%_]/g, '\\$&');
+    if (term) {
+      qb.andWhere("(CONCAT_WS(' ', u.firstName, u.lastName) LIKE :term OR u.email LIKE :term)", {
+        term: `%${term}%`,
+      });
+    }
+
+    const [users, total] = await qb.getManyAndCount();
 
     const ids = users.map((u) => u.id);
     const stats =
@@ -42,7 +66,8 @@ export class ChurchPortalMembersService {
     };
   }
 
-  async getMember(churchPortalId: string, userId: string) {
+  /** `includePrivate` adds the spiritual profile and quiz activity (pastors only; callers enforce it) */
+  async getMember(churchPortalId: string, userId: string, includePrivate = false) {
     const userRepo = AppDataSource.getRepository(User);
 
     const user = await userRepo.findOne({
@@ -70,7 +95,17 @@ export class ChurchPortalMembersService {
       ? (await getMentorStats([userId])).get(userId)
       : (await getMenteeStats([userId])).get(userId);
 
-    return { ...user, ...stats, completedSessions: sessionCount };
+    const base = { ...user, ...stats, completedSessions: sessionCount };
+    if (!includePrivate) return base;
+
+    const [spiritualProfile, quiz] = await Promise.all([
+      isMentor
+        ? AppDataSource.getRepository(MentorProfile).findOne({ where: { userId }, select: MENTOR_PROFILE_FIELDS })
+        : AppDataSource.getRepository(MenteeProfile).findOne({ where: { userId }, select: MENTEE_PROFILE_FIELDS }),
+      adminQuizService.getUserQuizActivity(userId, RECENT_QUIZ_ATTEMPTS),
+    ]);
+
+    return { ...base, spiritualProfile, quiz };
   }
 
   async getMemberSessions(churchPortalId: string, userId: string, page = 1, limit = 20) {
@@ -89,8 +124,22 @@ export class ChurchPortalMembersService {
       skip: (page - 1) * limit,
     });
 
+    const otherIds = [...new Set(sessions.map((s) => (isMentor ? s.menteeId : s.mentorId)))];
+    const others = otherIds.length
+      ? await userRepo.find({ where: { id: In(otherIds) }, select: ['id', 'firstName', 'lastName'] })
+      : [];
+    const otherById = new Map(others.map((u) => [u.id, u]));
+
     return {
-      data: sessions,
+      data: sessions.map((s) => {
+        const other = otherById.get(isMentor ? s.menteeId : s.mentorId);
+        return {
+          ...s,
+          otherParty: other
+            ? { id: other.id, firstName: other.firstName ?? null, lastName: other.lastName ?? null }
+            : null,
+        };
+      }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

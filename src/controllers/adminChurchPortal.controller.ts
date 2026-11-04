@@ -8,6 +8,7 @@ import {
   createChurchPortalSchema,
   updateChurchPortalSchema,
   createChurchPortalUserSchema,
+  resendChurchPortalInviteSchema,
   listChurchPortalsQuerySchema,
 } from '@/validation/adminChurchPortals.validation';
 
@@ -110,9 +111,46 @@ export class AdminChurchPortalController {
     }
   };
 
+  listInvites = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.service.listInvites();
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
   resendInvite = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.resendInvite(req.params.portalId, req.params.userId);
+      const { email } = resendChurchPortalInviteSchema.parse(req.body ?? {});
+      const result = await this.service.resendInvite(req.params.portalId, req.params.userId, email);
+      if (result.emailChangedFrom) {
+        await adminAuditService.log({
+          adminUserId: req.admin!.id,
+          action: 'admin.church_portal.change_invite_email',
+          targetType: 'church_portal_user',
+          targetId: req.params.userId,
+          metadata: { churchPortalId: req.params.portalId, from: result.emailChangedFrom, to: result.email },
+          ip: req.ip ?? null,
+        });
+      }
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  cancelInvite = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.service.cancelInvite(req.params.portalId, req.params.userId);
+      await adminAuditService.log({
+        adminUserId: req.admin!.id,
+        action: 'admin.church_portal.cancel_invite',
+        targetType: 'church_portal_user',
+        targetId: req.params.userId,
+        metadata: { churchPortalId: req.params.portalId, email: result.email },
+        ip: req.ip ?? null,
+      });
       return sendSuccessResponse(res, result);
     } catch (e) {
       next(e);

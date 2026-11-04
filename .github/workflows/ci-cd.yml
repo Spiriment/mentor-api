@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: 🚚 Get latest code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v3
@@ -48,6 +50,61 @@ jobs:
           local-dir: ./deploy/
           server-dir: ${{ github.ref == 'refs/heads/main' && './' || '../' }}
           log-level: verbose
+
+      # A new dependency isn't on the server until "Run NPM Install" in cPanel, so restarting
+      # now would take the API down. Anything unclear (e.g. a force push) also skips the restart.
+      - name: 🔍 Decide whether to restart
+        id: restart
+        if: github.ref == 'refs/heads/main'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- package-lock.json 2>/dev/null; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Not restarting: dependencies may have changed. Run NPM Install and restart the app in cPanel."
+          fi
+
+      # Uploaded last, so the restart never happens with only some of the new files in place.
+      # Passenger restarts every app in this folder (both API domains) on its next request.
+      - name: 🧾 Prepare restart file
+        if: steps.restart.outputs.needed == 'true'
+        run: |
+          mkdir -p restart
+          echo "$GITHUB_SHA $(date -u +%FT%TZ)" > restart/restart.txt
+
+      - name: 🔄 Restart API
+        if: steps.restart.outputs.needed == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./restart/
+          server-dir: ./tmp/
+          state-name: .ftp-deploy-restart-state.json
+
+      # Fails the run if the new code didn't come back up, so a bad deploy shows up in red.
+      - name: 🩺 Check the API came back
+        if: steps.restart.outputs.needed == 'true'
+        run: |
+          for attempt in $(seq 1 12); do
+            sleep 10
+            body=$(curl -s -m 20 https://api.spiriment.com/health || true)
+            status=$(echo "$body" | jq -r '.status // empty' 2>/dev/null || true)
+            uptime=$(echo "$body" | jq -r '.uptime // 999999' 2>/dev/null || echo 999999)
+            if [ "$status" = "ok" ] && [ "${uptime%.*}" -lt 300 ]; then
+              echo "API healthy after restart (uptime ${uptime}s)"
+              # Wake the other domain too, so it picks up the new code straight away
+              curl -s -m 20 -o /dev/null https://api.paxify.org/health || true
+              exit 0
+            fi
+            echo "Attempt $attempt: status='$status' uptime='$uptime'"
+          done
+          echo "::error::API did not come back healthy on the new code. Check the app in cPanel."
+          exit 1
 
       - name: 📝 Log deployment
         run: |

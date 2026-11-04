@@ -13,7 +13,7 @@ import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
 import { USER_ROLE } from '@/common/constants';
 import { ConflictError, NotFoundError } from '@/common/errors';
 import { generateUniqueJoinCode } from '@/church-portal/utils/joinCode';
-import { buildInviteEmail, hashInviteToken, INVITE_EXPIRY_HOURS } from '@/church-portal/utils/inviteToken';
+import { buildInviteEmail, describeInvite, hashInviteToken, INVITE_EXPIRY_HOURS } from '@/church-portal/utils/inviteToken';
 import type {
   CreateChurchPortalInput,
   UpdateChurchPortalInput,
@@ -35,6 +35,19 @@ type PortalHealth = {
   portalLoginStale: boolean;
   hasPortalAdmins: boolean;
 };
+
+const MAX_LISTED_INVITES = 500;
+
+const PORTAL_USER_FIELDS: (keyof ChurchPortalUser)[] = [
+  'id', 'churchPortalId', 'email', 'firstName', 'lastName', 'role', 'isActive', 'lastLoginAt', 'createdAt',
+  'password', 'inviteToken', 'inviteTokenExpiresAt',
+];
+
+/** Secrets are only loaded to work out the invite's status; they never leave here */
+function toPortalUserRow(user: ChurchPortalUser) {
+  const { password: _password, inviteToken: _token, inviteTokenExpiresAt: _expires, ...row } = user;
+  return { ...row, ...describeInvite(user) };
+}
 
 export class AdminChurchPortalService {
   constructor(private readonly emailService: EmailService) {}
@@ -233,12 +246,30 @@ export class AdminChurchPortalService {
 
   async listPortalUsers(portalId: string) {
     await this._requirePortal(portalId);
-    const repo = AppDataSource.getRepository(ChurchPortalUser);
-    return repo.find({
+    const users = await AppDataSource.getRepository(ChurchPortalUser).find({
       where: { churchPortalId: portalId },
-      select: ['id', 'email', 'firstName', 'lastName', 'role', 'isActive', 'lastLoginAt', 'createdAt'],
+      select: PORTAL_USER_FIELDS,
       order: { createdAt: 'DESC' },
     });
+    return users.map(toPortalUserRow);
+  }
+
+  /** Everyone invited to any church, newest first */
+  async listInvites() {
+    const users = await AppDataSource.getRepository(ChurchPortalUser).find({
+      select: PORTAL_USER_FIELDS,
+      order: { createdAt: 'DESC' },
+      take: MAX_LISTED_INVITES,
+    });
+    const portalIds = [...new Set(users.map((u) => u.churchPortalId))];
+    const portals = portalIds.length
+      ? await AppDataSource.getRepository(ChurchPortal).find({
+          where: { id: In(portalIds) },
+          select: ['id', 'name', 'slug'],
+        })
+      : [];
+    const byId = new Map(portals.map((p) => [p.id, { id: p.id, name: p.name, slug: p.slug }]));
+    return users.map((u) => ({ ...toPortalUserRow(u), portal: byId.get(u.churchPortalId) ?? null }));
   }
 
   async createPortalUser(portalId: string, data: CreateChurchPortalUserInput) {
@@ -246,7 +277,13 @@ export class AdminChurchPortalService {
     const repo = AppDataSource.getRepository(ChurchPortalUser);
 
     const existing = await repo.findOne({ where: { email: data.email.toLowerCase() } });
-    if (existing) throw new ConflictError('A portal user with this email already exists');
+    if (existing) {
+      throw new ConflictError(
+        existing.churchPortalId === portalId
+          ? `${existing.email} has already been added to this church. Find it in the list to resend or fix the invite.`
+          : `${existing.email} is already an admin of another church. Each email can only belong to one church.`
+      );
+    }
 
     // Generate a signed invite JWT (48h expiry)
     const tempUser = repo.create({
@@ -315,7 +352,8 @@ export class AdminChurchPortalService {
     return { message: 'Portal user reactivated' };
   }
 
-  async resendInvite(portalId: string, userId: string) {
+  /** Sends a fresh link (the old one stops working), to a corrected address if one is given */
+  async resendInvite(portalId: string, userId: string, newEmail?: string) {
     const portal = await this._requirePortal(portalId);
     const repo = AppDataSource.getRepository(ChurchPortalUser);
     const user = await repo.findOne({
@@ -324,6 +362,16 @@ export class AdminChurchPortalService {
     });
     if (!user) throw new NotFoundError('Portal user not found');
     if (user.password) throw new ConflictError('User has already accepted the invite and set their password');
+
+    const previousEmail = user.email;
+    const email = newEmail?.trim().toLowerCase();
+    if (email && email !== user.email) {
+      if (await repo.findOne({ where: { email } })) {
+        throw new ConflictError('A portal user with this email already exists');
+      }
+      await repo.update(user.id, { email });
+      user.email = email;
+    }
 
     const inviteToken = jwt.signChurchPortalInviteToken(
       { portalUserId: user.id, churchPortalId: portalId, email: user.email },
@@ -335,7 +383,25 @@ export class AdminChurchPortalService {
     await repo.update(user.id, { inviteToken: hashInviteToken(inviteToken), inviteTokenExpiresAt });
     await this._sendInviteEmail(user, portal, inviteToken);
 
-    return { message: `Invite resent to ${user.email}` };
+    return {
+      message: `Invite resent to ${user.email}`,
+      email: user.email,
+      emailChangedFrom: user.email !== previousEmail ? previousEmail : null,
+    };
+  }
+
+  /** Removes an invite nobody accepted (e.g. a mistyped address), which also kills its link */
+  async cancelInvite(portalId: string, userId: string) {
+    await this._requirePortal(portalId);
+    const repo = AppDataSource.getRepository(ChurchPortalUser);
+    const user = await repo.findOne({
+      where: { id: userId, churchPortalId: portalId },
+      select: ['id', 'email', 'password'],
+    });
+    if (!user) throw new NotFoundError('Portal user not found');
+    if (user.password) throw new ConflictError('This invite was already accepted. Deactivate the account instead.');
+    await repo.delete(user.id);
+    return { message: `Invite to ${user.email} cancelled`, email: user.email };
   }
 
   // ── App Members in this portal ──────────────────────────────────────────

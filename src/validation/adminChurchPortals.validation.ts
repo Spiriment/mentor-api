@@ -34,6 +34,10 @@ export const createChurchPortalUserSchema = z.object({
   role: z.enum(['pastor', 'deacon', 'leader']).optional().default('pastor'),
 });
 
+export const resendChurchPortalInviteSchema = z.object({
+  email: z.string().trim().email().optional(),
+});
+
 export const listChurchPortalsQuerySchema = z.object({
   page: z.coerce.number().min(1).optional().default(1),
   limit: z.coerce.number().min(1).max(100).optional().default(20),
