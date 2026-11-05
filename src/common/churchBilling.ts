@@ -109,6 +109,71 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
+// ─── Who the invoice is addressed to ─────────────────────────────────────────
+
+/** The church's invoicing details, kept on the plan (metadata.billingDetails) */
+export interface ChurchBillingDetails {
+  legalName: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  postalCode: string | null;
+  city: string | null;
+  /** ISO 3166-1 alpha-2, which is what Stripe requires */
+  country: string | null;
+  vatNumber: string | null;
+}
+
+const BILLING_DETAIL_KEYS: (keyof ChurchBillingDetails)[] = [
+  'legalName', 'addressLine1', 'addressLine2', 'postalCode', 'city', 'country', 'vatNumber',
+];
+
+export function readBillingDetails(metadata: Record<string, unknown> | null | undefined): ChurchBillingDetails {
+  const raw = (metadata?.billingDetails ?? {}) as Record<string, unknown>;
+  return Object.fromEntries(
+    BILLING_DETAIL_KEYS.map((key) => {
+      const value = raw[key];
+      return [key, typeof value === 'string' && value.trim() ? value.trim() : null];
+    }),
+  ) as unknown as ChurchBillingDetails;
+}
+
+export function hasBillingDetails(details: ChurchBillingDetails): boolean {
+  return BILLING_DETAIL_KEYS.some((key) => details[key] !== null);
+}
+
+export interface InvoiceBillTo {
+  name: string;
+  /** Null when there's no street address yet; a saved address is cleared in that case */
+  address: {
+    line1: string;
+    line2?: string;
+    postal_code?: string;
+    city?: string;
+    country?: string;
+  } | null;
+  customFields: Array<{ name: string; value: string }>;
+}
+
+/**
+ * What the invoice shows as the buyer. An invoice still goes out without an address, so a church
+ * that hasn't filled this in yet doesn't miss a month; it's addressed to the church's name.
+ */
+export function buildInvoiceBillTo(details: ChurchBillingDetails, fallbackName: string): InvoiceBillTo {
+  return {
+    name: details.legalName ?? fallbackName,
+    address: details.addressLine1
+      ? {
+          line1: details.addressLine1,
+          ...(details.addressLine2 ? { line2: details.addressLine2 } : {}),
+          ...(details.postalCode ? { postal_code: details.postalCode } : {}),
+          ...(details.city ? { city: details.city } : {}),
+          ...(details.country ? { country: details.country } : {}),
+        }
+      : null,
+    customFields: details.vatNumber ? [{ name: 'Customer VAT number', value: details.vatNumber }] : [],
+  };
+}
+
 // ─── Automatic monthly invoices ──────────────────────────────────────────────
 
 export interface AutoInvoiceSettings {

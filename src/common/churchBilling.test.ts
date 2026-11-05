@@ -8,8 +8,59 @@ import {
   MAX_INVOICE_RECORDS,
   isAutoInvoiceDue,
   readAutoInvoiceSettings,
+  readBillingDetails,
+  hasBillingDetails,
+  buildInvoiceBillTo,
   type ChurchInvoiceRecord,
 } from './churchBilling';
+
+describe('church billing details', () => {
+  it('reads saved details and treats blanks and junk as missing', () => {
+    const details = readBillingDetails({
+      billingDetails: { legalName: ' Secret Place ', city: '  ', country: 'NL', vatNumber: 12 },
+    });
+    assert.equal(details.legalName, 'Secret Place');
+    assert.equal(details.city, null);
+    assert.equal(details.country, 'NL');
+    assert.equal(details.vatNumber, null);
+  });
+
+  it('knows when nothing has been filled in', () => {
+    assert.equal(hasBillingDetails(readBillingDetails(null)), false);
+    assert.equal(hasBillingDetails(readBillingDetails({ billingDetails: { city: 'Den Haag' } })), true);
+  });
+
+  it('addresses the invoice to the legal name and full address, with the VAT number', () => {
+    const billTo = buildInvoiceBillTo(
+      readBillingDetails({
+        billingDetails: {
+          legalName: 'Stichting Secret Place',
+          addressLine1: 'Kerkstraat 1',
+          postalCode: '2500 AA',
+          city: 'Den Haag',
+          country: 'NL',
+          vatNumber: 'NL123456789B01',
+        },
+      }),
+      'Secret Place',
+    );
+    assert.equal(billTo.name, 'Stichting Secret Place');
+    assert.deepEqual(billTo.address, {
+      line1: 'Kerkstraat 1',
+      postal_code: '2500 AA',
+      city: 'Den Haag',
+      country: 'NL',
+    });
+    assert.deepEqual(billTo.customFields, [{ name: 'Customer VAT number', value: 'NL123456789B01' }]);
+  });
+
+  it('falls back to the church name with no address when nothing is saved', () => {
+    const billTo = buildInvoiceBillTo(readBillingDetails(null), 'Secret Place');
+    assert.equal(billTo.name, 'Secret Place');
+    assert.equal(billTo.address, null);
+    assert.deepEqual(billTo.customFields, []);
+  });
+});
 
 describe('planChurchCouponUpdate', () => {
   const church5 = { id: 'di_1', couponId: 'spiriment_church-ab12cd34' };

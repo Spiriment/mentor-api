@@ -59,7 +59,7 @@ export function buildInviteEmail(
     subject: `You've been invited to manage ${portal.name} on Spiriment`,
     partialName: 'church-portal-invite',
     templateData: {
-      name: fullName || 'Pastor',
+      name: fullName || (user.role === 'pastor' ? 'Pastor' : 'there'),
       churchName: portal.name,
       role: user.role,
       inviteUrl: `${portalUrl}/accept-invite?token=${inviteToken}`,

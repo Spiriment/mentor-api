@@ -242,17 +242,57 @@ class StripeService {
   }
 
   /**
+   * Keeps one Stripe customer for an organisation, so its legal name and address never land on
+   * a customer found by email, which can be a person's own subscription account. Recreated if
+   * the saved one was deleted in Stripe. Returns the customer's id.
+   */
+  async upsertOrganisationCustomer(params: {
+    existingId?: string | null;
+    email: string;
+    name: string;
+    address: { line1: string; line2?: string; postal_code?: string; city?: string; country?: string } | null;
+    metadata: Record<string, string>;
+  }): Promise<string> {
+    if (params.existingId) {
+      try {
+        const updated = await this.client.customers.update(params.existingId, {
+          email: params.email,
+          name: params.name,
+          address: params.address ?? '',
+        });
+        if (!(updated as { deleted?: boolean }).deleted) return updated.id;
+      } catch (err) {
+        if ((err as { code?: string }).code !== 'resource_missing') throw err;
+      }
+    }
+    const created = await this.client.customers.create({
+      email: params.email,
+      name: params.name,
+      ...(params.address ? { address: params.address } : {}),
+      metadata: { ...params.metadata, source: 'central_invoice' },
+    });
+    return created.id;
+  }
+
+  /**
    * Create a one-off Stripe invoice, email it to the customer for payment.
    * Amounts are in cents (EUR).
+   *
+   * `taxRateId` must be a tax-inclusive rate: amounts already include VAT, so an exclusive one
+   * changes the total and the check below stops the invoice before anything is sent.
    */
   async createAndSendInvoice(params: {
     email: string;
     name?: string | null;
     userId?: string | null;
+    /** Bill this customer instead of finding one by email */
+    customerId?: string;
     description: string;
     lineItems: Array<{ description: string; amountCents: number }>;
     metadata?: Record<string, string>;
     daysUntilDue?: number;
+    customFields?: Array<{ name: string; value: string }>;
+    taxRateId?: string;
   }): Promise<{
     invoiceId: string;
     hostedInvoiceUrl: string | null;
@@ -267,8 +307,11 @@ class StripeService {
       throw new AppError('Invoice must include at least one positive line item', 400);
     }
 
-    const customers = await this.client.customers.list({ email: params.email, limit: 1 });
-    let customerId = customers.data[0]?.id;
+    let customerId = params.customerId;
+    if (!customerId) {
+      const customers = await this.client.customers.list({ email: params.email, limit: 1 });
+      customerId = customers.data[0]?.id;
+    }
     if (!customerId) {
       const created = await this.client.customers.create({
         email: params.email,
@@ -293,6 +336,8 @@ class StripeService {
       days_until_due: params.daysUntilDue ?? 14,
       description: params.description,
       metadata: params.metadata ?? {},
+      ...(params.customFields?.length ? { custom_fields: params.customFields } : {}),
+      ...(params.taxRateId ? { default_tax_rates: [params.taxRateId] } : {}),
       pending_invoice_items_behavior: 'exclude',
       // Finalized below once every item is attached, not by Stripe's timer
       auto_advance: false,

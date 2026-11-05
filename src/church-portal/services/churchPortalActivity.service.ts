@@ -1,3 +1,4 @@
+import { In } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { User } from '@/database/entities/user.entity';
 import { Session, SESSION_STATUS } from '@/database/entities/session.entity';
@@ -147,8 +148,22 @@ export class ChurchPortalActivityService {
       .offset((page - 1) * limit)
       .getManyAndCount();
 
+    // The joins above filter; these names are what the export needs
+    const peopleIds = [...new Set(sessions.flatMap((s) => [s.mentorId, s.menteeId]))];
+    const people = peopleIds.length
+      ? await AppDataSource.getRepository(User).find({
+          where: { id: In(peopleIds) },
+          select: ['id', 'firstName', 'lastName'],
+        })
+      : [];
+    const personById = new Map(people.map((p) => [p.id, { firstName: p.firstName ?? null, lastName: p.lastName ?? null }]));
+
     return {
-      data: sessions,
+      data: sessions.map((s) => ({
+        ...s,
+        mentor: personById.get(s.mentorId) ?? null,
+        mentee: personById.get(s.menteeId) ?? null,
+      })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

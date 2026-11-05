@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { ForbiddenError } from '@/common/errors';
 import { adminOrgPlanService } from '@/services/adminOrgPlan.service';
+import { CHURCH_PORTAL_USER_ROLE } from '../entities/churchPortalUser.entity';
 
 export class ChurchPortalBillingController {
   getPreview = async (req: Request, res: Response, next: NextFunction) => {
@@ -17,6 +19,10 @@ export class ChurchPortalBillingController {
   generateInvoice = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const portalUser = req.churchPortalUser!;
+      // A real invoice goes out to be paid, so it's a billing change like the others
+      if (portalUser.role !== CHURCH_PORTAL_USER_ROLE.PASTOR) {
+        throw new ForbiddenError('Only pastors can generate invoices.');
+      }
       const data = await adminOrgPlanService.generateChurchInvoiceFromPortal(
         portalUser.churchPortalId,
         {

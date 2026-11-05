@@ -33,7 +33,9 @@ export type BillingActor = { kind: 'admin' | 'church_portal' | 'system'; id: str
 import { stripePayingMemberIds, syncChurchCouponsInBackground } from './churchDiscountSync.service';
 import { adminAlertService } from './adminAlert.service';
 import {
+  buildInvoiceBillTo,
   invoiceDisplayStatus,
+  readBillingDetails,
   readInvoiceRecords,
   toInvoiceStatus,
   upsertInvoiceRecord,
@@ -839,12 +841,28 @@ export class AdminOrgPlanService {
       ({ email, name, userId } = recipient);
     }
 
+    // The buyer on the invoice is the church, whoever receives the email
+    const billTo = buildInvoiceBillTo(readBillingDetails(plan.metadata), plan.name);
+    const savedCustomerId = plan.metadata?.stripeCustomerId;
+    const customerId = await stripeService.upsertOrganisationCustomer({
+      existingId: typeof savedCustomerId === 'string' ? savedCustomerId : null,
+      email,
+      name: billTo.name,
+      address: billTo.address,
+      metadata: { orgPlanId: opts.planId, planType: 'church' },
+    });
+    if (customerId !== savedCustomerId) await this.saveStripeCustomerId(opts.planId, customerId);
+
     const invoice = await stripeService.createAndSendInvoice({
       email,
       name,
       userId: userId ?? null,
+      customerId,
       description: `Spiriment church plan — ${plan.name}`,
       lineItems: draft.lineItems,
+      customFields: billTo.customFields,
+      // Set once VAT applies: a tax-inclusive rate created in Stripe
+      taxRateId: process.env.STRIPE_CHURCH_INVOICE_TAX_RATE_ID?.trim() || undefined,
       metadata: {
         planType: 'church',
         orgPlanId: opts.planId,
@@ -907,6 +925,16 @@ export class AdminOrgPlanService {
   // ─── Central church invoice tracking ──────────────────────────────────────────
 
   /** Insert/merge one invoice record on the plan (row-locked). Returns it with its previous status. */
+  private async saveStripeCustomerId(planId: string, stripeCustomerId: string) {
+    await AppDataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(OrgPlan);
+      const plan = await repo.findOne({ where: { id: planId }, lock: { mode: 'pessimistic_write' } });
+      if (!plan) return;
+      plan.metadata = { ...(plan.metadata ?? {}), stripeCustomerId };
+      await repo.save(plan);
+    });
+  }
+
   private async saveInvoiceRecord(
     planId: string,
     update: Partial<ChurchInvoiceRecord> & { id: string },

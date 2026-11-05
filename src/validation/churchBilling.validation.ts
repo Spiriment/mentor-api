@@ -4,10 +4,38 @@ export const churchCoverageTierSchema = z.object({
   tier: z.enum(['basic', 'pro', 'premium']),
 });
 
-/** Pastors can only change where invoices go */
+const detailText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((value) => value || null);
+
+/** What the church's invoices are addressed to. Blank fields are cleared. */
+const churchBillingDetailsSchema = z
+  .object({
+    legalName: detailText(200),
+    addressLine1: detailText(200),
+    addressLine2: detailText(200),
+    postalCode: detailText(20),
+    city: detailText(120),
+    country: z
+      .string()
+      .regex(/^[A-Z]{2}$/, 'Choose a country')
+      .nullable()
+      .optional()
+      .transform((value) => value || null),
+    vatNumber: detailText(40),
+  })
+  .strict();
+
+/** Pastors can only change where invoices go and who they're addressed to */
 export const churchBillingSettingsPastorSchema = z
   .object({
-    billingEmail: z.string().trim().email('Enter a valid email address').max(255).nullable(),
+    billingEmail: z.string().trim().email('Enter a valid email address').max(255).nullable().optional(),
+    billingDetails: churchBillingDetailsSchema.optional(),
   })
   .strict();
 
@@ -15,6 +43,7 @@ export const churchBillingSettingsPastorSchema = z
 export const churchBillingSettingsAdminSchema = z
   .object({
     billingEmail: z.string().trim().email('Enter a valid email address').max(255).nullable().optional(),
+    billingDetails: churchBillingDetailsSchema.optional(),
     autoInvoice: z
       .object({
         enabled: z.boolean(),

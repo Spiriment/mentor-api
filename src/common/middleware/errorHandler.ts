@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { ZodError } from "zod";
 import { AppError, ValidationError } from "../errors";
 import { Logger } from "../logger";
 import { redactSensitive } from "../redactSensitive";
@@ -11,6 +12,21 @@ export const errorHandler = (logger: Logger) => {
       // Never log raw bodies — failed logins would write passwords/tokens to log files
       requestBody: redactSensitive(_req.body),
     });
+
+    // Bad input from controllers that validate with schema.parse: say what's wrong, not "server error"
+    if (error instanceof ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: error.issues[0]?.message ?? "Invalid request",
+          code: "VALIDATION_ERROR",
+          details: error.issues.map((issue) => ({
+            field: issue.path.join("."),
+            message: issue.message,
+          })),
+        },
+      });
+    }
 
     // Handle payload too large error specifically
     if (error.name === "PayloadTooLargeError") {

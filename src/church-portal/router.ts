@@ -19,6 +19,10 @@ import { createChurchPortalMembersRoutes } from './routes/members.routes';
 import { createChurchPortalActivityRoutes } from './routes/activity.routes';
 import { ChurchPortalBillingController } from './controllers/churchPortalBilling.controller';
 import { createChurchPortalBillingRoutes } from './routes/billing.routes';
+import { AdminChurchPortalService } from '@/services/adminChurchPortal.service';
+import { ChurchPortalTeamService } from './services/churchPortalTeam.service';
+import { ChurchPortalTeamController } from './controllers/churchPortalTeam.controller';
+import { createChurchPortalTeamRoutes } from './routes/team.routes';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -51,6 +55,9 @@ export function createChurchPortalRouter(emailService: EmailService): Router {
   const membersController = new ChurchPortalMembersController(membersService);
   const activityController = new ChurchPortalActivityController(activityService);
   const billingController = new ChurchPortalBillingController();
+  const teamController = new ChurchPortalTeamController(
+    new ChurchPortalTeamService(new AdminChurchPortalService(emailService)),
+  );
 
   // Routes
   router.use('/portal', createChurchPortalPortalRoutes(authController));
@@ -59,6 +66,7 @@ export function createChurchPortalRouter(emailService: EmailService): Router {
   router.use('/members', apiLimiter, createChurchPortalMembersRoutes(membersController));
   router.use('/activity', apiLimiter, createChurchPortalActivityRoutes(activityController));
   router.use('/billing', apiLimiter, createChurchPortalBillingRoutes(billingController));
+  router.use('/team', apiLimiter, createChurchPortalTeamRoutes(teamController));
 
   return router;
 }

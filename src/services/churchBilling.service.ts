@@ -13,10 +13,13 @@ import {
   CHURCH_PORTAL_MONTHLY_FEE_EUR,
 } from '@/common/constants/subscriptionPricing';
 import {
+  hasBillingDetails,
   isAutoInvoiceDue,
   readAutoInvoiceSettings,
+  readBillingDetails,
   readInvoiceRecords,
   type AutoInvoiceSettings,
+  type ChurchBillingDetails,
 } from '@/common/churchBilling';
 import { adminOrgPlanService, type BillingActor } from './adminOrgPlan.service';
 import { adminAlertService } from './adminAlert.service';
@@ -118,6 +121,7 @@ export class ChurchBillingService {
       portalFeeEur: CHURCH_PORTAL_MONTHLY_FEE_EUR,
       tierPrices: TIER_PRICE_EUR,
       billingEmail: typeof plan.metadata?.billingEmail === 'string' ? plan.metadata.billingEmail : null,
+      billingDetails: readBillingDetails(plan.metadata),
       invoiceRecipient: recipient?.email ?? null,
       autoInvoice: readAutoInvoiceSettings(plan.metadata),
       members: rows,
@@ -162,12 +166,17 @@ export class ChurchBillingService {
   }
 
   /**
-   * Billing email (pastors and admins). Automatic invoicing and the seat cap are for Spiriment
-   * admins only (callers enforce that).
+   * Billing email and invoice details (pastors and admins). Automatic invoicing and the seat cap
+   * are for Spiriment admins only (callers enforce that).
    */
   async updateSettings(
     churchPortalId: string,
-    input: { billingEmail?: string | null; autoInvoice?: AutoInvoiceSettings; seatCap?: number | null },
+    input: {
+      billingEmail?: string | null;
+      billingDetails?: ChurchBillingDetails;
+      autoInvoice?: AutoInvoiceSettings;
+      seatCap?: number | null;
+    },
     actor: BillingActor,
   ) {
     const planId = await this.ensurePlanForPortal(churchPortalId);
@@ -179,6 +188,10 @@ export class ChurchBillingService {
         const email = input.billingEmail?.trim().toLowerCase() || null;
         if (email) metadata.billingEmail = email;
         else delete metadata.billingEmail;
+      }
+      if (input.billingDetails !== undefined) {
+        if (hasBillingDetails(input.billingDetails)) metadata.billingDetails = input.billingDetails;
+        else delete metadata.billingDetails;
       }
       if (input.autoInvoice !== undefined) metadata.autoInvoice = input.autoInvoice;
       plan.metadata = metadata;

@@ -44,6 +44,15 @@ describe('buildInviteEmail', () => {
     assert.equal(templateData.name, 'Pastor');
     assert.equal(templateData.joinCode, null);
   });
+
+  it("doesn't call a deacon or leader Pastor when their name is missing", () => {
+    const { templateData } = buildInviteEmail(
+      { email: 'd@example.com', role: 'deacon' },
+      { name: 'Grace', slug: 'grace' },
+      'tok',
+    );
+    assert.equal(templateData.name, 'there');
+  });
 });
 
 describe('describeInvite', () => {
