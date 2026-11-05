@@ -65,6 +65,10 @@ import {
   EmailCampaignRecipient,
 } from '@/database/entities';
 
+import { ChurchPrivacyAcceptance } from '@/church-portal/entities/churchPrivacyAcceptance.entity';
+import { ChurchPortalLoginCode } from '@/church-portal/entities/churchPortalLoginCode.entity';
+import { ChurchPortalHistoryEntry } from '@/church-portal/entities/churchPortalHistoryEntry.entity';
+
 export const AppDataSource = new DataSource({
   type: 'mysql',
   host: Config.database.host,
@@ -131,6 +135,9 @@ export const AppDataSource = new DataSource({
     ChurchPortalUser,
     ChurchPortalRefreshToken,
     ChurchPortalJoinRequest,
+    ChurchPrivacyAcceptance,
+    ChurchPortalLoginCode,
+    ChurchPortalHistoryEntry,
     PromoCode,
     PromoCodeRedemption,
     QuizBook,

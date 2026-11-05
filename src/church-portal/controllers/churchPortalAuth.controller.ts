@@ -3,6 +3,8 @@ import { StatusCodes } from 'http-status-codes';
 import { ChurchPortalAuthService } from '../services/churchPortalAuth.service';
 import {
   loginSchema,
+  verifyLoginCodeSchema,
+  resendLoginCodeSchema,
   acceptInviteSchema,
   inviteInfoSchema,
   forgotPasswordSchema,
@@ -37,6 +39,26 @@ export class ChurchPortalAuthController {
     try {
       const body = loginSchema.parse(req.body);
       const result = await this.authService.login(body.email, body.password, body.churchPortalId);
+      res.status(StatusCodes.OK).json({ status: 'success', data: result });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  verifyLoginCode = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = verifyLoginCodeSchema.parse(req.body);
+      const result = await this.authService.verifyLoginCode(body.challengeId, body.code);
+      res.status(StatusCodes.OK).json({ status: 'success', data: result });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resendLoginCode = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = resendLoginCodeSchema.parse(req.body);
+      const result = await this.authService.resendLoginCode(body.challengeId);
       res.status(StatusCodes.OK).json({ status: 'success', data: result });
     } catch (err) {
       next(err);

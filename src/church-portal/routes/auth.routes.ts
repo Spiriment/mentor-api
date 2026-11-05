@@ -7,6 +7,8 @@ export function createChurchPortalAuthRoutes(controller: ChurchPortalAuthControl
 
   // Public routes
   router.post('/login', controller.login);
+  router.post('/login/verify', controller.verifyLoginCode);
+  router.post('/login/resend', controller.resendLoginCode);
   router.post('/logout', controller.logout);
   router.post('/refresh', controller.refreshToken);
   router.post('/invite-info', controller.inviteInfo);

@@ -9,6 +9,7 @@ import { FamilyPlan } from '@/database/entities/familyPlan.entity';
 import { FamilyMember } from '@/database/entities/familyMember.entity';
 import { UserSubscription, SubscriptionTier } from '@/database/entities/userSubscription.entity';
 import { AppError } from '@/common';
+import { withDbLock } from '@/common/dbLock';
 import { mrrCentsFromCatalogTier } from '@/common/constants/subscriptionMrr';
 import { adminAuditService } from './adminAudit.service';
 import { stripeService } from './stripe.service';
@@ -27,6 +28,7 @@ import {
 } from '@/common/constants/subscriptionPricing';
 import { ChurchPortal, CHURCH_PORTAL_STATUS } from '@/church-portal/entities/churchPortal.entity';
 import { ChurchPortalUser } from '@/church-portal/entities/churchPortalUser.entity';
+import { churchPortalHistory } from '@/church-portal/services/churchPortalHistory.service';
 
 /** Who changed church billing: a Spiriment admin, a pastor in the church portal, or the scheduler */
 export type BillingActor = { kind: 'admin' | 'church_portal' | 'system'; id: string };
@@ -35,6 +37,8 @@ import { adminAlertService } from './adminAlert.service';
 import {
   buildInvoiceBillTo,
   invoiceDisplayStatus,
+  isAutoInvoiceDue,
+  readAutoInvoiceSettings,
   readBillingDetails,
   readInvoiceRecords,
   toInvoiceStatus,
@@ -606,17 +610,64 @@ export class AdminOrgPlanService {
     return Object.assign(portal, { orgPlanId });
   }
 
-  /** The monthly scheduled invoice (see ChurchBillingService.runAutoInvoices) */
-  async generateChurchInvoiceAutomatically(planId: string) {
-    return this.createChurchPlanInvoice({ planId, actor: { kind: 'system', id: 'auto-invoice' } });
+  /** Only one process at a time may invoice a church; every way of sending goes through this lock */
+  private invoiceLockName(planId: string) {
+    return `spiriment:church-invoice:${planId}`;
+  }
+
+  /** For invoices someone asked for: if one is already being made, say so rather than send a second */
+  private async withManualInvoiceLock<T>(planId: string, fn: () => Promise<T>): Promise<T> {
+    const outcome = await withDbLock(this.invoiceLockName(planId), fn);
+    if (!outcome.acquired) {
+      throw new AppError('An invoice for this church is already being created. Please check again in a moment.', 409);
+    }
+    return outcome.value;
+  }
+
+  /**
+   * The monthly scheduled invoice (see ChurchBillingService.runAutoInvoices). Returns null when no
+   * invoice was needed: another process is sending it or already has. Each process runs the
+   * scheduler, so the "is it due?" check is repeated here while holding the lock.
+   */
+  async generateChurchInvoiceAutomatically(planId: string, now: Date = new Date()) {
+    const outcome = await withDbLock(this.invoiceLockName(planId), async () => {
+      const plan = await this.get(planId);
+      if (!isAutoInvoiceDue(readAutoInvoiceSettings(plan.metadata), readInvoiceRecords(plan.metadata), now)) {
+        return null;
+      }
+
+      // A restart between sending and recording leaves no record here, and retrying would bill
+      // the church twice, so ask Stripe too. Only a Stripe error stops this: it retries tomorrow.
+      const customerId = plan.metadata?.stripeCustomerId;
+      if (typeof customerId === 'string') {
+        const sent = await stripeService.findChurchAutoInvoiceSince(
+          customerId,
+          planId,
+          new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        );
+        if (sent) {
+          logger.warn('Automatic church invoice was already sent; recording it instead of sending again', {
+            planId,
+            invoiceId: sent.id,
+          });
+          await this.saveInvoiceRecord(planId, this.invoiceUpdateFromStripe(sent), this.invoiceFallbackFromStripe(sent));
+          return null;
+        }
+      }
+
+      return this.createChurchPlanInvoice({ planId, actor: { kind: 'system', id: 'auto-invoice' } });
+    });
+    return outcome.acquired ? outcome.value : null;
   }
 
   async generateChurchInvoice(planId: string, adminUserId: string, ip?: string) {
-    return this.createChurchPlanInvoice({
-      planId,
-      actor: { kind: 'admin', id: adminUserId },
-      ip,
-    });
+    return this.withManualInvoiceLock(planId, () =>
+      this.createChurchPlanInvoice({
+        planId,
+        actor: { kind: 'admin', id: adminUserId },
+        ip,
+      }),
+    );
   }
 
   /**
@@ -635,41 +686,43 @@ export class AdminOrgPlanService {
       throw new AppError('Your portal account has no email address', 400);
     }
 
-    const plan = await this.get(portal.orgPlanId);
-    const lastAt = (plan.metadata as any)?.lastPortalInvoiceAt as string | undefined;
-    if (lastAt) {
-      const hours = (Date.now() - new Date(lastAt).getTime()) / (1000 * 60 * 60);
-      if (hours < 24) {
-        throw new AppError(
-          'An invoice was already generated in the last 24 hours. Please wait before generating another.',
-          429,
-        );
+    return this.withManualInvoiceLock(portal.orgPlanId, async () => {
+      // Checked inside the lock, so a request that was waiting sees the invoice just sent
+      const plan = await this.get(portal.orgPlanId);
+      const lastAt = (plan.metadata as any)?.lastPortalInvoiceAt as string | undefined;
+      if (lastAt) {
+        const hours = (Date.now() - new Date(lastAt).getTime()) / (1000 * 60 * 60);
+        if (hours < 24) {
+          throw new AppError(
+            'An invoice was already generated in the last 24 hours. Please wait before generating another.',
+            429,
+          );
+        }
       }
-    }
 
-    const result = await this.createChurchPlanInvoice({
-      planId: portal.orgPlanId,
-      actor: { kind: 'church_portal', id: portalUser.id },
-      ip,
-      fallbackRecipient: {
-        email: portalUser.email,
-        name: `${portalUser.firstName ?? ''} ${portalUser.lastName ?? ''}`.trim() || portal.name,
-      },
-    });
+      const result = await this.createChurchPlanInvoice({
+        planId: portal.orgPlanId,
+        actor: { kind: 'church_portal', id: portalUser.id },
+        ip,
+        fallbackRecipient: {
+          email: portalUser.email,
+          name: `${portalUser.firstName ?? ''} ${portalUser.lastName ?? ''}`.trim() || portal.name,
+        },
+      });
 
-    const fresh = await AppDataSource.getRepository(OrgPlan).findOne({
-      where: { id: portal.orgPlanId },
-    });
-    if (fresh) {
-      fresh.metadata = {
-        ...(fresh.metadata ?? {}),
+      // The invoice has gone out: a failure here must not tell the pastor it failed and invite a retry
+      await this.mergePlanMetadata(portal.orgPlanId, {
         lastPortalInvoiceAt: new Date().toISOString(),
         lastPortalInvoiceId: result.invoiceId,
-      };
-      await AppDataSource.getRepository(OrgPlan).save(fresh);
-    }
+      }).catch((err) =>
+        logger.error('Failed to save last portal invoice', err instanceof Error ? err : new Error(String(err)), {
+          planId: portal.orgPlanId,
+          invoiceId: result.invoiceId,
+        }),
+      );
 
-    return result;
+      return result;
+    });
   }
 
   async getChurchInvoicePreviewForPortal(churchPortalId: string) {
@@ -894,6 +947,15 @@ export class AdminOrgPlanService {
       }),
     );
 
+    await churchPortalHistory.recordForPlan(opts.planId, {
+      actor:
+        opts.actor.kind === 'church_portal'
+          ? { portalUserId: opts.actor.id }
+          : { label: opts.actor.kind === 'admin' ? 'Spiriment support' : 'Automatic' },
+      action: 'billing.invoice_sent',
+      detail: `€${(invoice.totalCents / 100).toFixed(2)} to ${email}`,
+    });
+
     if (opts.actor.kind === 'admin') {
       await adminAuditService.log({
         adminUserId: opts.actor.id,
@@ -924,17 +986,21 @@ export class AdminOrgPlanService {
 
   // ─── Central church invoice tracking ──────────────────────────────────────────
 
-  /** Insert/merge one invoice record on the plan (row-locked). Returns it with its previous status. */
-  private async saveStripeCustomerId(planId: string, stripeCustomerId: string) {
+  private async mergePlanMetadata(planId: string, patch: Record<string, unknown>) {
     await AppDataSource.transaction(async (manager) => {
       const repo = manager.getRepository(OrgPlan);
       const plan = await repo.findOne({ where: { id: planId }, lock: { mode: 'pessimistic_write' } });
       if (!plan) return;
-      plan.metadata = { ...(plan.metadata ?? {}), stripeCustomerId };
+      plan.metadata = { ...(plan.metadata ?? {}), ...patch };
       await repo.save(plan);
     });
   }
 
+  private async saveStripeCustomerId(planId: string, stripeCustomerId: string) {
+    await this.mergePlanMetadata(planId, { stripeCustomerId });
+  }
+
+  /** Insert/merge one invoice record on the plan (row-locked). Returns it with its previous status. */
   private async saveInvoiceRecord(
     planId: string,
     update: Partial<ChurchInvoiceRecord> & { id: string },

@@ -169,6 +169,7 @@ const createAuthRoutes = (
   // Church portal membership — join, change, or leave a church
   router.get('/church', authenticateToken, authController.getChurchPortal);
   router.patch('/church', authenticateToken, authController.updateChurchPortal);
+  router.post('/church/privacy-notice', authenticateToken, authController.acceptChurchPrivacyNotice);
 
   // Self-service account deletion (Apple / Google store requirement)
   router.delete('/account', authenticateToken, authController.deleteAccount);

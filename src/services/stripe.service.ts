@@ -274,6 +274,29 @@ class StripeService {
     return created.id;
   }
 
+  /** An automatic invoice already issued to this church since `since` (drafts were never sent) */
+  async findChurchAutoInvoiceSince(customerId: string, planId: string, since: Date) {
+    try {
+      const invoices = await this.client.invoices.list({
+        customer: customerId,
+        created: { gte: Math.floor(since.getTime() / 1000) },
+        limit: 100,
+      });
+      return (
+        invoices.data.find(
+          (invoice) =>
+            invoice.status !== 'draft' &&
+            invoice.metadata?.orgPlanId === planId &&
+            invoice.metadata?.generatedBy === 'system',
+        ) ?? null
+      );
+    } catch (err: any) {
+      // The customer was deleted in Stripe; a new one gets made when the invoice is created
+      if (err?.code === 'resource_missing') return null;
+      throw err;
+    }
+  }
+
   /**
    * Create a one-off Stripe invoice, email it to the customer for payment.
    * Amounts are in cents (EUR).

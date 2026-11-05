@@ -2,11 +2,23 @@ import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { ChurchPortalMembersService } from '../services/churchPortalMembers.service';
 import { churchPortalJoinRequestService } from '../services/churchPortalJoinRequest.service';
+import { churchPortalHistory, type ChurchHistoryAction } from '../services/churchPortalHistory.service';
 import { CHURCH_PORTAL_USER_ROLE } from '../entities/churchPortalUser.entity';
 import { ForbiddenError } from '@/common/errors';
 
 export class ChurchPortalMembersController {
   constructor(private readonly membersService: ChurchPortalMembersService) {}
+
+  /** The action already happened, so a failed name lookup must not surface as an error */
+  private async recordMemberAction(req: Request, action: ChurchHistoryAction) {
+    const targetName = await churchPortalHistory.memberName(req.params.userId).catch(() => null);
+    await churchPortalHistory.record({
+      churchPortalId: req.churchPortalUser!.churchPortalId,
+      actor: { portalUserId: req.churchPortalUser!.id },
+      action,
+      targetName,
+    });
+  }
 
   listJoinRequests = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -25,6 +37,7 @@ export class ChurchPortalMembersController {
         req.churchPortalUser!.churchPortalId,
         req.params.userId
       );
+      await this.recordMemberAction(req, 'member.approved');
       res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {
       next(err);
@@ -37,6 +50,7 @@ export class ChurchPortalMembersController {
         req.churchPortalUser!.churchPortalId,
         req.params.userId
       );
+      await this.recordMemberAction(req, 'member.rejected');
       res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {
       next(err);
@@ -97,6 +111,7 @@ export class ChurchPortalMembersController {
         req.churchPortalUser!.churchPortalId,
         req.params.userId
       );
+      await this.recordMemberAction(req, 'member.removed');
       res.status(StatusCodes.OK).json({ status: 'success', data });
     } catch (err) {
       next(err);

@@ -6,6 +6,15 @@ export const loginSchema = z.object({
   churchPortalId: z.string().uuid('Invalid church portal ID'),
 });
 
+export const verifyLoginCodeSchema = z.object({
+  challengeId: z.string().uuid('This code has expired. Please sign in again.'),
+  code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code from your email'),
+});
+
+export const resendLoginCodeSchema = z.object({
+  challengeId: z.string().uuid('This code has expired. Please sign in again.'),
+});
+
 export const acceptInviteSchema = z.object({
   inviteToken: z.string().min(1, 'Invite token is required'),
   password: z.string().min(8, 'Password must be at least 8 characters'),

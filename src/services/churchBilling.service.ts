@@ -230,8 +230,8 @@ export class ChurchBillingService {
       if (portal && portal.status !== CHURCH_PORTAL_STATUS.ACTIVE) continue;
 
       try {
-        await adminOrgPlanService.generateChurchInvoiceAutomatically(plan.id);
-        sent++;
+        const invoice = await adminOrgPlanService.generateChurchInvoiceAutomatically(plan.id, now);
+        if (invoice) sent++;
       } catch (err) {
         failed++;
         const message = err instanceof Error ? err.message : String(err);

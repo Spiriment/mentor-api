@@ -17,6 +17,10 @@ import { DataSource } from 'typeorm';
 import { User } from '@/database/entities';
 import { sendSuccessResponse } from '@/common/helpers';
 import { churchPortalJoinRequestService } from '@/church-portal/services/churchPortalJoinRequest.service';
+import {
+  churchPrivacyNoticeService,
+  privacyNoticeVersionSchema,
+} from '@/church-portal/services/churchPrivacyNotice.service';
 import { calcAge, MIN_USER_AGE } from '@/common/constants/userAge';
 
 export class AuthController {
@@ -733,13 +737,46 @@ export class AuthController {
       if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
 
       const state = await churchPortalJoinRequestService.getAppUserMembershipState(user.id);
+
+      let privacyNoticeRequired = false;
+      if (state.membershipStatus === 'active' && state.church) {
+        // Never let this break the church screen: at worst the member is asked on a later launch
+        privacyNoticeRequired = await churchPrivacyNoticeService
+          .hasAcceptedCurrent(user.id, state.church.id)
+          .then((accepted) => !accepted)
+          .catch((err) => {
+            this.logger.error('Could not check church privacy notice', err);
+            return false;
+          });
+      }
+
       return sendSuccessResponse(res, {
         membershipStatus: state.membershipStatus,
         church: state.church,
         pendingJoin: state.pendingJoin,
+        privacyNoticeRequired,
       });
     } catch (error: any) {
       this.logger.error('Error fetching church portal', error);
+      next(error);
+    }
+  };
+
+  /** An existing member agrees to what their church can see (joining records this in updateChurchPortal) */
+  acceptChurchPrivacyNotice = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
+
+      const version = privacyNoticeVersionSchema.parse(req.body?.version);
+      const state = await churchPortalJoinRequestService.getAppUserMembershipState(user.id);
+      if (state.membershipStatus !== 'active' || !state.church) {
+        throw new AppError('You are not part of a church.', StatusCodes.CONFLICT, 'NOT_IN_CHURCH');
+      }
+
+      await churchPrivacyNoticeService.recordAcceptance(user.id, state.church.id, version, 'existing_member');
+      return sendSuccessResponse(res, { message: 'Thanks, your choice has been saved.' });
+    } catch (error) {
       next(error);
     }
   };
@@ -761,9 +798,12 @@ export class AuthController {
         return sendSuccessResponse(res, { message: 'You have left your church.' });
       }
 
+      const privacyNoticeVersion = privacyNoticeVersionSchema.optional().parse(req.body?.privacyNoticeVersion);
+
       const result = await churchPortalJoinRequestService.requestJoin(user.id, {
         slug: slug?.trim(),
         code: code?.trim(),
+        privacyNoticeVersion,
       });
 
       return sendSuccessResponse(res, {

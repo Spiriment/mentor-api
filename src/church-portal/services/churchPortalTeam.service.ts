@@ -5,6 +5,7 @@ import type { AdminChurchPortalService } from '@/services/adminChurchPortal.serv
 import { ChurchPortalRefreshToken } from '../entities/churchPortalRefreshToken.entity';
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
 import { assertCanChangeTeamMember } from '../utils/teamRules';
+import { churchPortalHistory } from './churchPortalHistory.service';
 
 type TeamRole = 'pastor' | 'deacon' | 'leader';
 
@@ -26,18 +27,39 @@ export class ChurchPortalTeamService {
   ) {
     const result = await this.portals.createPortalUser(churchPortalId, input);
     logger.info('Church team: member invited', { churchPortalId, actorId, invitedId: result.id, role: input.role });
+    await churchPortalHistory.record({
+      churchPortalId,
+      actor: { portalUserId: actorId },
+      action: 'team.invited',
+      targetName: [input.firstName, input.lastName].filter(Boolean).join(' ') || input.email,
+      detail: input.role,
+    });
     return result;
   }
 
   async resend(churchPortalId: string, actorId: string, targetId: string, email?: string) {
     const result = await this.portals.resendInvite(churchPortalId, targetId, email);
     logger.info('Church team: invite resent', { churchPortalId, actorId, targetId, emailChanged: !!result.emailChangedFrom });
+    await churchPortalHistory.record({
+      churchPortalId,
+      actor: { portalUserId: actorId },
+      action: 'team.invite_resent',
+      targetName: await churchPortalHistory.teamMemberName(targetId).catch(() => null),
+    });
     return result;
   }
 
   async cancelInvite(churchPortalId: string, actorId: string, targetId: string) {
+    // The invite is deleted below, so get the name first
+    const targetName = await churchPortalHistory.teamMemberName(targetId).catch(() => null);
     const result = await this.portals.cancelInvite(churchPortalId, targetId);
     logger.info('Church team: invite cancelled', { churchPortalId, actorId, targetId });
+    await churchPortalHistory.record({
+      churchPortalId,
+      actor: { portalUserId: actorId },
+      action: 'team.invite_cancelled',
+      targetName: targetName ?? result.email,
+    });
     return result;
   }
 
@@ -73,6 +95,26 @@ export class ChurchPortalTeamService {
     }
 
     logger.info('Church team: member updated', { churchPortalId, actorId, targetId, changes });
+
+    const targetName = await churchPortalHistory.teamMemberName(targetId).catch(() => null);
+    if (changes.role !== undefined && changes.role !== target.role) {
+      await churchPortalHistory.record({
+        churchPortalId,
+        actor: { portalUserId: actorId },
+        action: 'team.role_changed',
+        targetName,
+        detail: changes.role,
+      });
+    }
+    if (changes.isActive !== undefined && changes.isActive !== target.isActive) {
+      await churchPortalHistory.record({
+        churchPortalId,
+        actor: { portalUserId: actorId },
+        action: changes.isActive ? 'team.access_restored' : 'team.access_removed',
+        targetName,
+      });
+    }
+
     return { message: `${target.email} updated` };
   }
 }

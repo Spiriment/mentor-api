@@ -10,6 +10,7 @@ import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
 import { notifyMemberOfJoinDecision, notifyPastorsOfJoinRequest } from './churchPortalNotifications';
+import { churchPrivacyNoticeService } from './churchPrivacyNotice.service';
 
 function portalPreview(portal: ChurchPortal) {
   return {
@@ -40,7 +41,7 @@ export class ChurchPortalJoinRequestService {
     return null;
   }
 
-  async requestJoin(appUserId: string, opts: { code?: string; slug?: string }) {
+  async requestJoin(appUserId: string, opts: { code?: string; slug?: string; privacyNoticeVersion?: string }) {
     const portal = await this.findPortalByCodeOrSlug(opts.code, opts.slug);
     if (!portal) {
       throw new AppError(
@@ -59,6 +60,14 @@ export class ChurchPortalJoinRequestService {
     });
     if (!user) {
       throw new AppError('User not found', StatusCodes.NOT_FOUND, 'USER_NOT_FOUND');
+    }
+
+    if (!user.churchPortalId || user.churchPortalId === portal.id) {
+      // Before the pastor hears of the request: no request goes out if agreement can't be recorded.
+      // Versions of the app without the notice send nothing; those members are asked once they update.
+      if (opts.privacyNoticeVersion) {
+        await churchPrivacyNoticeService.recordAcceptance(appUserId, portal.id, opts.privacyNoticeVersion, 'join');
+      }
     }
 
     if (user.churchPortalId === portal.id) {

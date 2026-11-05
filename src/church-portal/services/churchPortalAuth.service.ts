@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { IsNull, LessThan, MoreThan } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { jwt, logger } from '@/config/int-services';
 import { EmailService } from '@/core/email.service';
@@ -8,7 +9,16 @@ import { ChurchPortal, CHURCH_PORTAL_STATUS } from '../entities/churchPortal.ent
 import { PORTAL_SUSPENDED_MESSAGE } from '../middleware/churchPortalAuth.middleware';
 import { ChurchPortalUser } from '../entities/churchPortalUser.entity';
 import { ChurchPortalRefreshToken } from '../entities/churchPortalRefreshToken.entity';
+import { ChurchPortalLoginCode } from '../entities/churchPortalLoginCode.entity';
 import type { UpdateProfileInput } from '../validation/churchPortalAuth.validation';
+import {
+  LOGIN_CODE_EXPIRY_MINUTES,
+  LOGIN_CODE_RESEND_SECONDS,
+  MAX_LOGIN_CODE_ATTEMPTS,
+  MAX_LOGIN_CODES_PER_HOUR,
+  maskEmail,
+  requiresLoginCode,
+} from '../utils/loginCode';
 import { buildInviteEmail, hashInviteToken, inviteTokenMatches, INVITE_EXPIRY_HOURS } from '../utils/inviteToken';
 
 const SALT_ROUNDS = 12;
@@ -64,6 +74,147 @@ export class ChurchPortalAuthService {
 
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) throw new UnauthorizedError('Invalid credentials');
+
+    if (requiresLoginCode(user.role)) return this.sendLoginCode(user, portal);
+    return this.startSession(user, portal);
+  }
+
+  /** Second step for pastors: checks the emailed code, and only then signs them in */
+  async verifyLoginCode(challengeId: string, code: string) {
+    const repo = AppDataSource.getRepository(ChurchPortalLoginCode);
+    const expired = () =>
+      new AppError('This code has expired. Please sign in again.', 400, 'LOGIN_CODE_EXPIRED');
+
+    const row = await repo.findOne({ where: { id: challengeId } });
+    if (!row || row.usedAt || row.expiresAt < new Date()) throw expired();
+
+    // Counted before checking, in one statement, so guesses sent at once can't exceed the limit
+    const counted = await repo
+      .createQueryBuilder()
+      .update()
+      .set({ attempts: () => 'attempts + 1' })
+      .where('id = :id AND usedAt IS NULL AND attempts < :max', { id: row.id, max: MAX_LOGIN_CODE_ATTEMPTS })
+      .execute();
+    if (!counted.affected) throw expired();
+
+    if (!(await bcrypt.compare(code, row.codeHash))) {
+      if (row.attempts + 1 >= MAX_LOGIN_CODE_ATTEMPTS) {
+        await repo.update(row.id, { usedAt: new Date() });
+        throw new AppError('Too many wrong codes. Please sign in again.', 400, 'LOGIN_CODE_LOCKED');
+      }
+      throw new AppError('That code is not right. Please check it and try again.', 400, 'LOGIN_CODE_INVALID');
+    }
+
+    // Single use: if two requests arrive together, only one gets through
+    const consumed = await repo
+      .createQueryBuilder()
+      .update()
+      .set({ usedAt: new Date() })
+      .where('id = :id AND usedAt IS NULL', { id: row.id })
+      .execute();
+    if (!consumed.affected) throw expired();
+
+    // Things may have changed since the password was checked
+    const user = await AppDataSource.getRepository(ChurchPortalUser).findOne({
+      where: { id: row.portalUserId },
+      select: ['id', 'email', 'firstName', 'lastName', 'role', 'isActive', 'churchPortalId'],
+    });
+    if (!user || !user.isActive) throw new UnauthorizedError('Invalid credentials');
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: user.churchPortalId },
+      select: ['id', 'name', 'slug', 'logoUrl', 'joinCode', 'status'],
+    });
+    if (!portal) throw new UnauthorizedError('Church portal not found');
+    if (portal.status !== CHURCH_PORTAL_STATUS.ACTIVE) throw new UnauthorizedError(PORTAL_SUSPENDED_MESSAGE);
+
+    return this.startSession(user, portal);
+  }
+
+  /** Holding the id from a correct password is what allows this, so no password is asked again */
+  async resendLoginCode(challengeId: string) {
+    const row = await AppDataSource.getRepository(ChurchPortalLoginCode).findOne({ where: { id: challengeId } });
+    if (!row || row.usedAt || row.expiresAt < new Date()) {
+      throw new AppError('This code has expired. Please sign in again.', 400, 'LOGIN_CODE_EXPIRED');
+    }
+    if (Date.now() - row.createdAt.getTime() < LOGIN_CODE_RESEND_SECONDS * 1000) {
+      throw new AppError('Please wait a moment before asking for another code.', 429, 'LOGIN_CODE_TOO_SOON');
+    }
+
+    const user = await AppDataSource.getRepository(ChurchPortalUser).findOne({
+      where: { id: row.portalUserId },
+      select: ['id', 'email', 'firstName', 'role', 'isActive', 'churchPortalId'],
+    });
+    if (!user || !user.isActive) throw new UnauthorizedError('Invalid credentials');
+    const portal = await AppDataSource.getRepository(ChurchPortal).findOne({
+      where: { id: user.churchPortalId },
+      select: ['id', 'name', 'status'],
+    });
+    if (!portal) throw new UnauthorizedError('Church portal not found');
+    if (portal.status !== CHURCH_PORTAL_STATUS.ACTIVE) throw new UnauthorizedError(PORTAL_SUSPENDED_MESSAGE);
+
+    return this.sendLoginCode(user, portal);
+  }
+
+  private async sendLoginCode(user: ChurchPortalUser, portal: Pick<ChurchPortal, 'name'>) {
+    const repo = AppDataSource.getRepository(ChurchPortalLoginCode);
+    const now = Date.now();
+
+    // Limits guessing, since every code allows a few tries, and limits email sent to the pastor
+    const sentLastHour = await repo.count({
+      where: { portalUserId: user.id, createdAt: MoreThan(new Date(now - 60 * 60 * 1000)) },
+    });
+    if (sentLastHour >= MAX_LOGIN_CODES_PER_HOUR) {
+      throw new AppError('Too many sign-in codes were requested. Please try again in an hour.', 429, 'LOGIN_CODE_LIMIT');
+    }
+
+    await repo.delete({ portalUserId: user.id, createdAt: LessThan(new Date(now - 24 * 60 * 60 * 1000)) });
+    // Only the newest code works
+    await repo.update({ portalUserId: user.id, usedAt: IsNull() }, { usedAt: new Date(now) });
+
+    const otp = crypto.randomInt(100000, 1000000).toString();
+    const row = await repo.save(
+      repo.create({
+        portalUserId: user.id,
+        codeHash: await bcrypt.hash(otp, 10),
+        expiresAt: new Date(now + LOGIN_CODE_EXPIRY_MINUTES * 60 * 1000),
+      }),
+    );
+
+    try {
+      await this.emailService.sendEmailWithTemplate({
+        to: user.email,
+        subject: 'Your church portal sign-in code',
+        partialName: 'church-portal-login-code',
+        templateData: {
+          name: user.firstName || 'Pastor',
+          churchName: portal.name,
+          otp,
+          expiryMinutes: LOGIN_CODE_EXPIRY_MINUTES,
+        },
+      });
+    } catch (err) {
+      logger.error('Church portal sign-in code email failed', err instanceof Error ? err : new Error(String(err)), {
+        portalUserId: user.id,
+      });
+      // An unsent code shouldn't count against the hourly limit
+      await repo.delete(row.id);
+      throw new AppError("We couldn't email your sign-in code. Please try again in a few minutes.", 503, 'LOGIN_CODE_NOT_SENT');
+    }
+
+    return {
+      twoStepRequired: true as const,
+      challengeId: row.id,
+      email: maskEmail(user.email),
+      expiresInMinutes: LOGIN_CODE_EXPIRY_MINUTES,
+      resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS,
+    };
+  }
+
+  private async startSession(
+    user: ChurchPortalUser,
+    portal: Pick<ChurchPortal, 'id' | 'name' | 'slug' | 'logoUrl' | 'joinCode'>,
+  ) {
+    const userRepo = AppDataSource.getRepository(ChurchPortalUser);
 
     const accessToken = jwt.signChurchPortalAccessToken({
       portalUserId: user.id,
@@ -277,6 +428,9 @@ export class ChurchPortalAuthService {
     });
     // Sign out every other session, in case the old password was the problem
     await AppDataSource.getRepository(ChurchPortalRefreshToken).delete({ churchPortalUserId: user.id });
+    // Codes requested with the old password stop working, and someone who misused it can't keep
+    // the real pastor locked out through the hourly limit
+    await AppDataSource.getRepository(ChurchPortalLoginCode).delete({ portalUserId: user.id });
 
     return { message: 'Password reset successfully.' };
   }
