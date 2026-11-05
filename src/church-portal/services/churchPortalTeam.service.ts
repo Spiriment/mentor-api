@@ -23,37 +23,75 @@ export class ChurchPortalTeamService {
   async invite(
     churchPortalId: string,
     actorId: string,
-    input: { email: string; firstName?: string; lastName?: string; role: TeamRole },
+    input: {
+      email: string;
+      firstName?: string;
+      lastName?: string;
+      role: TeamRole;
+    },
   ) {
     const result = await this.portals.createPortalUser(churchPortalId, input);
-    logger.info('Church team: member invited', { churchPortalId, actorId, invitedId: result.id, role: input.role });
+    logger.info('Church team: member invited', {
+      churchPortalId,
+      actorId,
+      invitedId: result.id,
+      role: input.role,
+    });
     await churchPortalHistory.record({
       churchPortalId,
       actor: { portalUserId: actorId },
       action: 'team.invited',
-      targetName: [input.firstName, input.lastName].filter(Boolean).join(' ') || input.email,
+      targetName:
+        [input.firstName, input.lastName].filter(Boolean).join(' ') ||
+        input.email,
       detail: input.role,
     });
     return result;
   }
 
-  async resend(churchPortalId: string, actorId: string, targetId: string, email?: string) {
-    const result = await this.portals.resendInvite(churchPortalId, targetId, email);
-    logger.info('Church team: invite resent', { churchPortalId, actorId, targetId, emailChanged: !!result.emailChangedFrom });
+  async resend(
+    churchPortalId: string,
+    actorId: string,
+    targetId: string,
+    email?: string,
+  ) {
+    const result = await this.portals.resendInvite(
+      churchPortalId,
+      targetId,
+      email,
+    );
+    logger.info('Church team: invite resent', {
+      churchPortalId,
+      actorId,
+      targetId,
+      emailChanged: !!result.emailChangedFrom,
+    });
     await churchPortalHistory.record({
       churchPortalId,
       actor: { portalUserId: actorId },
       action: 'team.invite_resent',
-      targetName: await churchPortalHistory.teamMemberName(targetId).catch(() => null),
+      targetName: await churchPortalHistory
+        .teamMemberName(targetId)
+        .catch(() => null),
     });
     return result;
   }
 
-  async cancelInvite(churchPortalId: string, actorId: string, targetId: string) {
+  async cancelInvite(
+    churchPortalId: string,
+    actorId: string,
+    targetId: string,
+  ) {
     // The invite is deleted below, so get the name first
-    const targetName = await churchPortalHistory.teamMemberName(targetId).catch(() => null);
+    const targetName = await churchPortalHistory
+      .teamMemberName(targetId)
+      .catch(() => null);
     const result = await this.portals.cancelInvite(churchPortalId, targetId);
-    logger.info('Church team: invite cancelled', { churchPortalId, actorId, targetId });
+    logger.info('Church team: invite cancelled', {
+      churchPortalId,
+      actorId,
+      targetId,
+    });
     await churchPortalHistory.record({
       churchPortalId,
       actor: { portalUserId: actorId },
@@ -84,19 +122,30 @@ export class ChurchPortalTeamService {
     if (!target) throw new NotFoundError('Team member not found');
 
     if (changes.isActive !== undefined && !target.password) {
-      throw new ConflictError("This invite hasn't been accepted yet. Cancel the invite instead.");
+      throw new ConflictError(
+        "This invite hasn't been accepted yet. Cancel the invite instead.",
+      );
     }
 
     await repo.update(targetId, changes);
 
     // Old sessions shouldn't come back to life if the account is reactivated later
     if (changes.isActive === false) {
-      await AppDataSource.getRepository(ChurchPortalRefreshToken).delete({ churchPortalUserId: targetId });
+      await AppDataSource.getRepository(ChurchPortalRefreshToken).delete({
+        churchPortalUserId: targetId,
+      });
     }
 
-    logger.info('Church team: member updated', { churchPortalId, actorId, targetId, changes });
+    logger.info('Church team: member updated', {
+      churchPortalId,
+      actorId,
+      targetId,
+      changes,
+    });
 
-    const targetName = await churchPortalHistory.teamMemberName(targetId).catch(() => null);
+    const targetName = await churchPortalHistory
+      .teamMemberName(targetId)
+      .catch(() => null);
     if (changes.role !== undefined && changes.role !== target.role) {
       await churchPortalHistory.record({
         churchPortalId,
@@ -106,11 +155,16 @@ export class ChurchPortalTeamService {
         detail: changes.role,
       });
     }
-    if (changes.isActive !== undefined && changes.isActive !== target.isActive) {
+    if (
+      changes.isActive !== undefined &&
+      changes.isActive !== target.isActive
+    ) {
       await churchPortalHistory.record({
         churchPortalId,
         actor: { portalUserId: actorId },
-        action: changes.isActive ? 'team.access_restored' : 'team.access_removed',
+        action: changes.isActive
+          ? 'team.access_restored'
+          : 'team.access_removed',
         targetName,
       });
     }

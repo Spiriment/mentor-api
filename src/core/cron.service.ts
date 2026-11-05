@@ -443,6 +443,27 @@ export class CronService {
       this.tasks.set("webhook-idempotency-prune", webhookPruneTask);
       logger.info("Webhook idempotency prune cron scheduled (daily 00:45 UTC)");
 
+      const churchHistoryPruneTask = cron.schedule(
+        "50 0 * * *",
+        async () => {
+          try {
+            const { churchPortalHistory } = await import("@/church-portal/services/churchPortalHistory.service");
+            const deleted = await churchPortalHistory.pruneExpired();
+            if (deleted > 0) {
+              logger.info(`Pruned ${deleted} church portal history entries older than a year`);
+            }
+          } catch (err) {
+            logger.error(
+              "Error in church portal history prune cron",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+        { timezone: "UTC" },
+      );
+      this.tasks.set("church-history-prune", churchHistoryPruneTask);
+      logger.info("Church portal history prune cron scheduled (daily 00:50 UTC)");
+
       // Weekly quiz reminder — every Monday at 9:00 AM UTC
       const weeklyQuizTask = cron.schedule(
         "0 9 * * 1",
@@ -559,6 +580,8 @@ export class CronService {
         return "15 0 * * * (Daily at 00:15 UTC)";
       case "webhook-idempotency-prune":
         return "45 0 * * * (Daily at 00:45 UTC — retains 90 days)";
+      case "church-history-prune":
+        return "50 0 * * * (Daily at 00:50 UTC — retains 1 year)";
       case "broadcast-schedule":
         return "* * * * * (Every minute)";
       case "weekly-quiz-reminder":

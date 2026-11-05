@@ -1,3 +1,5 @@
+import { subYears } from 'date-fns';
+import { LessThan } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { logger } from '@/config/int-services';
 import { User } from '@/database/entities/user.entity';
@@ -26,6 +28,7 @@ export type ChurchHistoryAction =
 export type ChurchHistoryActor = { portalUserId: string } | { label: string };
 
 const MAX_PAGE_SIZE = 100;
+const RETENTION_YEARS = 1;
 
 function displayName(person: { firstName?: string | null; lastName?: string | null; email?: string | null } | null) {
   if (!person) return null;
@@ -103,6 +106,14 @@ export class ChurchPortalHistoryService {
       select: ['id', 'firstName', 'lastName', 'email'],
     });
     return displayName(user);
+  }
+
+  /** Entries hold people's names, so they're only kept for a limited time. Safe to run twice. */
+  async pruneExpired(now = new Date()): Promise<number> {
+    const result = await AppDataSource.getRepository(ChurchPortalHistoryEntry).delete({
+      createdAt: LessThan(subYears(now, RETENTION_YEARS)),
+    });
+    return result.affected ?? 0;
   }
 
   async list(churchPortalId: string, page = 1, limit = 20) {

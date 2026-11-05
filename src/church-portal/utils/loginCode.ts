@@ -1,17 +1,14 @@
-import { CHURCH_PORTAL_USER_ROLE } from '../entities/churchPortalUser.entity';
-
 export const LOGIN_CODE_EXPIRY_MINUTES = 10;
 export const MAX_LOGIN_CODE_ATTEMPTS = 5;
 export const MAX_LOGIN_CODES_PER_HOUR = 10;
 export const LOGIN_CODE_RESEND_SECONDS = 30;
 
 /**
- * Pastors can see members' private details, send invoices and export everyone's data. Setting
- * CHURCH_PORTAL_TWO_STEP=off is the emergency switch if email is down and pastors are locked out.
+ * Every portal role can see members' details, so everyone signs in with a code. Setting
+ * CHURCH_PORTAL_TWO_STEP=off is the emergency switch if email is down and the team is locked out.
  */
-export function requiresLoginCode(role: string, setting = process.env.CHURCH_PORTAL_TWO_STEP): boolean {
-  if (setting?.trim().toLowerCase() === 'off') return false;
-  return role === CHURCH_PORTAL_USER_ROLE.PASTOR;
+export function requiresLoginCode(setting = process.env.CHURCH_PORTAL_TWO_STEP): boolean {
+  return setting?.trim().toLowerCase() !== 'off';
 }
 
 /** Enough to recognise the address on screen, for someone who has only proved the password */

@@ -75,11 +75,11 @@ export class ChurchPortalAuthService {
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) throw new UnauthorizedError('Invalid credentials');
 
-    if (requiresLoginCode(user.role)) return this.sendLoginCode(user, portal);
+    if (requiresLoginCode()) return this.sendLoginCode(user, portal);
     return this.startSession(user, portal);
   }
 
-  /** Second step for pastors: checks the emailed code, and only then signs them in */
+  /** Second step: checks the emailed code, and only then signs them in */
   async verifyLoginCode(challengeId: string, code: string) {
     const repo = AppDataSource.getRepository(ChurchPortalLoginCode);
     const expired = () =>
@@ -159,7 +159,7 @@ export class ChurchPortalAuthService {
     const repo = AppDataSource.getRepository(ChurchPortalLoginCode);
     const now = Date.now();
 
-    // Limits guessing, since every code allows a few tries, and limits email sent to the pastor
+    // Limits guessing, since every code allows a few tries, and limits email sent to the person
     const sentLastHour = await repo.count({
       where: { portalUserId: user.id, createdAt: MoreThan(new Date(now - 60 * 60 * 1000)) },
     });
@@ -186,7 +186,7 @@ export class ChurchPortalAuthService {
         subject: 'Your church portal sign-in code',
         partialName: 'church-portal-login-code',
         templateData: {
-          name: user.firstName || 'Pastor',
+          name: user.firstName || 'there',
           churchName: portal.name,
           otp,
           expiryMinutes: LOGIN_CODE_EXPIRY_MINUTES,
@@ -378,7 +378,7 @@ export class ChurchPortalAuthService {
         subject: 'Your church portal password reset code',
         partialName: 'church-portal-reset-code',
         templateData: {
-          name: user.firstName || 'Pastor',
+          name: user.firstName || 'there',
           churchName: portal.name,
           otp,
           expiryMinutes: OTP_EXPIRY_MINUTES,
