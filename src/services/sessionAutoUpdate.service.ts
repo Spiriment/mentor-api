@@ -8,6 +8,7 @@ import { getEmailService } from './emailHelper';
 import { pushNotificationService } from './pushNotification.service';
 import { format } from 'date-fns';
 import { StreamService } from '@/core/stream.service';
+import { In } from 'typeorm';
 
 const streamService = new StreamService();
 
@@ -147,8 +148,18 @@ export class SessionAutoUpdateService {
 
     for (const session of missedSessions) {
       try {
+        // Claim it in one statement before notifying anyone. Production runs this job in two
+        // processes at the same time; both used to find the same session and both sent the
+        // emails, pushes and chat message. Only the process whose update lands carries on.
+        const claimed = await this.sessionRepo.update(
+          {
+            id: session.id,
+            status: In([SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED]),
+          },
+          { status: SESSION_STATUS.NO_SHOW },
+        );
+        if (!claimed.affected) continue;
         session.status = SESSION_STATUS.NO_SHOW;
-        await this.sessionRepo.save(session);
 
         const scheduledTimeFormatted = format(new Date(session.scheduledAt), 'PPPPp');
 
@@ -228,8 +239,16 @@ export class SessionAutoUpdateService {
 
     for (const gs of missedGroupSessions) {
       try {
+        // Claim first, so only one of the two production processes notifies (see above)
+        const claimed = await this.groupSessionRepo.update(
+          {
+            id: gs.id,
+            status: In([GROUP_SESSION_STATUS.INVITES_SENT, GROUP_SESSION_STATUS.CONFIRMED]),
+          },
+          { status: GROUP_SESSION_STATUS.MISSED },
+        );
+        if (!claimed.affected) continue;
         gs.status = GROUP_SESSION_STATUS.MISSED;
-        await this.groupSessionRepo.save(gs);
 
         const scheduledTimeFormatted = format(new Date(gs.scheduledAt), 'PPPPp');
 
