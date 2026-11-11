@@ -51,7 +51,7 @@ app routes (and vice versa).
 
 | Item | Price |
 |---|---|
-| Church portal | €50 / month, on every church invoice |
+| Church portal | €25 / month, on every church invoice |
 | Each member the church pays for | tier price (Basic €3, Pro €5, Premium €7.50) minus the church discount |
 | Church discount | 5%; 10% once the church has 100+ members (mentors + mentees) |
 
@@ -91,7 +91,7 @@ API — `src/services/churchBilling.service.ts`, `src/controllers/churchBilling.
 
 ## 5. Invoices
 
-- **One Stripe invoice per month** (`collection_method: send_invoice`, due in 14 days): the €50
+- **One Stripe invoice per month** (`collection_method: send_invoice`, due in 14 days): the €25
   portal fee plus one line per member the church pays for. Built in
   `AdminOrgPlanService.buildChurchInvoiceDraft`; sent by `StripeService.createAndSendInvoice` (items
   are attached to the invoice itself; the total is checked before sending).

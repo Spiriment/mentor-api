@@ -11,7 +11,7 @@ export const CHURCH_DISCOUNT_PERCENT = 5;
 export const CHURCH_BULK_DISCOUNT_PERCENT = 10;
 export const CHURCH_BULK_MEMBER_THRESHOLD = 100;
 /** Monthly fee for church portal / dashboard access (central invoice). */
-export const CHURCH_PORTAL_MONTHLY_FEE_EUR = 50;
+export const CHURCH_PORTAL_MONTHLY_FEE_EUR = 25;
 
 export function getChurchDiscountPercentForMemberCount(memberCount: number): number {
   return memberCount >= CHURCH_BULK_MEMBER_THRESHOLD

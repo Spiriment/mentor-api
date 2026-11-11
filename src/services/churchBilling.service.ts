@@ -28,7 +28,7 @@ import { notifyMemberCovered } from '@/church-portal/services/churchPortalNotifi
 export type PaidTier = 'basic' | 'pro' | 'premium';
 
 /**
- * Churches pay for the members they choose, each on a tier (central monthly invoice: €50
+ * Churches pay for the members they choose, each on a tier (central monthly invoice: €25
  * portal fee + each covered member's tier at the church discount). Pastors manage this in
  * the church portal; Spiriment admins in the admin panel. Joining a church with its code only
  * gives the discount; being covered is a separate choice.
