@@ -88,15 +88,7 @@ export class SessionReminderService {
             continue;
           }
 
-          // Send reminder to mentor
-          if (session.mentor) {
-            await this.sendReminderToMentor(session, '1 hour');
-          }
-
-          // Send reminder to mentee
-          if (session.mentee) {
-            await this.sendReminderToMentee(session, '1 hour');
-          }
+          await this.sendReminders(session, '1 hour');
 
           logger.info(`1-hour reminder sent for session ${session.id}`);
         } catch (error) {
@@ -175,15 +167,7 @@ export class SessionReminderService {
             continue;
           }
 
-          // Send reminder to mentor
-          if (session.mentor) {
-            await this.sendReminderToMentor(session, '15 minutes');
-          }
-
-          // Send reminder to mentee
-          if (session.mentee) {
-            await this.sendReminderToMentee(session, '15 minutes');
-          }
+          await this.sendReminders(session, '15 minutes');
 
           logger.info(`15-minute reminder sent for session ${session.id}`);
         } catch (error) {
@@ -265,15 +249,7 @@ export class SessionReminderService {
             continue;
           }
 
-          // Send reminder to mentor
-          if (session.mentor) {
-            await this.sendReminderToMentor(session, 'now');
-          }
-
-          // Send reminder to mentee
-          if (session.mentee) {
-            await this.sendReminderToMentee(session, 'now');
-          }
+          await this.sendReminders(session, 'now');
 
           logger.info(`"Starting now" reminder sent for session ${session.id}`);
         } catch (error) {
@@ -289,6 +265,91 @@ export class SessionReminderService {
         error instanceof Error ? error : new Error(String(error))
       );
     }
+  }
+
+  /**
+   * Reminders for one session. A request the mentor hasn't accepted yet (status SCHEDULED)
+   * used to get the same "starts in 1 hour" reminders as a confirmed session, so mentors
+   * were told a session was starting before they had agreed to it, and mentees were
+   * reminded about a session that wasn't confirmed. Now: the mentor is asked to accept or
+   * decline, and the mentee gets nothing until the mentor accepts.
+   */
+  private async sendReminders(session: Session, timeUntil: string): Promise<void> {
+    if (session.status === SESSION_STATUS.SCHEDULED) {
+      if (session.mentor) await this.sendPendingRequestReminderToMentor(session, timeUntil);
+      return;
+    }
+    if (session.mentor) await this.sendReminderToMentor(session, timeUntil);
+    if (session.mentee) await this.sendReminderToMentee(session, timeUntil);
+  }
+
+  private async sendPendingRequestReminderToMentor(
+    session: Session,
+    timeUntil: string
+  ): Promise<void> {
+    const mentor = session.mentor;
+    if (!mentor) return;
+
+    const remindersEnabled =
+      !mentor.notificationPreferences || mentor.notificationPreferences.includes('session_reminders');
+    if (!remindersEnabled) return;
+
+    const timezone = mentor.timezone || session.timezone || 'UTC';
+    const formattedTime = formatTz(
+      toZonedTime(new Date(session.scheduledAt), timezone),
+      "EEEE, MMMM d 'at' h:mm a",
+      { timeZone: timezone }
+    );
+    const menteeName = formatUserName(session.mentee || { email: 'Your mentee' });
+
+    const title = 'Session request waiting';
+    const messages: Record<string, string> = {
+      '24 hours': `${menteeName} asked for a session on ${formattedTime}. Accept or decline it so they know.`,
+      '1 hour': `${menteeName}'s session request starts in 1 hour and you haven't accepted it yet. Accept or decline it now.`,
+      '15 minutes': `${menteeName}'s session request starts in 15 minutes and you haven't accepted it yet. Accept or decline it now.`,
+      'now': `${menteeName}'s requested session is due now and you haven't accepted it yet. Accept it to start, or decline.`,
+    };
+    const message = messages[timeUntil] || `${menteeName}'s session request is waiting for your answer.`;
+    const data = {
+      sessionId: session.id,
+      menteeId: session.mentee?.id,
+      scheduledAt: session.scheduledAt.toISOString(),
+    };
+
+    if (mentor.pushToken && mentor.pushNotificationsEnabled !== false) {
+      try {
+        await pushNotificationService.sendToUser({
+          userId: mentor.id,
+          pushToken: mentor.pushToken,
+          title,
+          body: message,
+          // Same type as a new request, so tapping it opens the requests to accept
+          data: { type: 'session_request', ...data },
+          channelId: 'session-reminders',
+        });
+      } catch (error) {
+        logger.error(
+          `Failed to push pending-request reminder for session ${session.id}:`,
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+    }
+
+    try {
+      await this.appNotificationService.createNotification({
+        userId: mentor.id,
+        type: AppNotificationType.SESSION_REQUEST,
+        title,
+        message,
+        data,
+      });
+    } catch (error) {
+      logger.error(
+        `Failed to create pending-request reminder for session ${session.id}:`,
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+    logger.info(`${timeUntil} pending-request reminder sent to mentor for session ${session.id}`);
   }
 
   /**
@@ -591,9 +652,7 @@ export class SessionReminderService {
             continue;
           }
 
-          // Send reminder to both mentor and mentee
-          await this.sendReminderToMentor(session, '24 hours');
-          await this.sendReminderToMentee(session, '24 hours');
+          await this.sendReminders(session, '24 hours');
         } catch (sessionError) {
           logger.error(
             `Error processing 24-hour reminder for session ${session.id}:`,
