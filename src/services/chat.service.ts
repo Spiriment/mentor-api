@@ -16,6 +16,10 @@ import {
   GroupSession,
 } from '@/database/entities';
 
+// Shared by every ChatService instance (the REST controllers and the WebSocket server each
+// make their own) so concurrent requests for the same pair create a single conversation
+const pendingConversationCreates = new Map<string, Promise<Conversation | null>>();
+
 export interface CreateConversationData {
   type?: CONVERSATION_TYPE;
   title?: string;
@@ -128,7 +132,9 @@ export class ChatService {
       .where('conversation.type = :type', { type: CONVERSATION_TYPE.MENTOR_MENTEE })
       .andWhere('participant.userId IN (:...userIds)', { userIds })
       .groupBy('conversation.id')
-      .having('COUNT(participant.id) = :count', { count: userCount });
+      .having('COUNT(participant.id) = :count', { count: userCount })
+      // Deterministic: if two were ever created for the same pair, always use the oldest
+      .orderBy('conversation.createdAt', 'ASC');
 
     const conversation = await query.getOne();
     
@@ -164,9 +170,57 @@ export class ChatService {
     if (session) {
       const chat = await this.getConversationByUsers([session.mentorId, session.menteeId]);
       if (chat) return chat.id;
+
+      // No chat yet between these two (they've never messaged): the in-call chat of their
+      // session used to fail with "Conversation not found" on load and on every send. Create
+      // it — but only for the session's own mentor or mentee.
+      const isSessionParticipant =
+        currentUserId === session.mentorId || currentUserId === session.menteeId;
+      if (isSessionParticipant && session.mentorId && session.menteeId) {
+        const created = await this.createMentorMenteeConversationOnce(
+          session.mentorId,
+          session.menteeId,
+          currentUserId
+        );
+        return created?.id ?? null;
+      }
     }
 
     return null;
+  }
+
+  /**
+   * The in-call chat opens the conversation and joins its live room at the same moment, and
+   * both sides may join together, so several requests can try to create the same chat at once.
+   * Share one in-flight creation per pair, and re-read afterwards so everyone lands on the
+   * oldest conversation even if another server process created one too.
+   */
+  private async createMentorMenteeConversationOnce(
+    mentorId: string,
+    menteeId: string,
+    createdBy: string
+  ): Promise<Conversation | null> {
+    const key = [mentorId, menteeId].sort().join(':');
+    const pending = pendingConversationCreates.get(key);
+    if (pending) return pending;
+
+    const work = (async () => {
+      const existing = await this.getConversationByUsers([mentorId, menteeId]);
+      if (existing) return existing;
+      await this.createConversation({
+        type: CONVERSATION_TYPE.MENTOR_MENTEE,
+        participantIds: [mentorId, menteeId],
+        createdBy,
+      } as CreateConversationData);
+      return this.getConversationByUsers([mentorId, menteeId]);
+    })();
+
+    pendingConversationCreates.set(key, work);
+    try {
+      return await work;
+    } finally {
+      pendingConversationCreates.delete(key);
+    }
   }
 
   async getUnreadMessageCount(userId: string): Promise<number> {
