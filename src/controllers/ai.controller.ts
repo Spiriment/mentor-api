@@ -3,9 +3,31 @@ import { AppDataSource } from '@/config/data-source';
 import { AiChapterSummary } from '@/database/entities/aiChapterSummary.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { aiService } from '@/services/ai.service';
+import { BibleService } from '@/services/bible.service';
 import { AppError } from '@/common';
 
 // ─── Chapter Summary ──────────────────────────────────────────────────────────
+
+const bibleService = new BibleService();
+
+/**
+ * The chapter's text from our own Bible source. The app also sends verseText, but when someone
+ * moved to the next chapter it sometimes sent the *previous* chapter's verses (the new chapter
+ * hadn't loaded yet). That summary was then cached for every user under the wrong chapter —
+ * e.g. Nehemiah 7 showed chapter 6's summary. Returns '' if the text can't be fetched.
+ */
+async function fetchChapterText(book: string, chapter: number): Promise<string> {
+  try {
+    const data: any = await bibleService.getChapter(book, chapter, 'eng');
+    const verses: any[] = Array.isArray(data?.verses) ? data.verses : [];
+    return verses
+      .map((v) => (typeof v?.text === 'string' ? v.text : ''))
+      .join(' ')
+      .trim();
+  } catch {
+    return '';
+  }
+}
 
 export const getChapterSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -19,19 +41,33 @@ export const getChapterSummary = async (req: Request, res: Response, next: NextF
       throw new AppError('book, chapter, and verseText are required', 400);
     }
 
+    const chapterNum = Number(chapter);
+    if (!Number.isInteger(chapterNum) || chapterNum <= 0) {
+      throw new AppError('chapter must be a positive integer', 400);
+    }
+
     const repo = AppDataSource.getRepository(AiChapterSummary);
 
     // Return cached summary if it exists
-    const cached = await repo.findOne({ where: { book, chapter } });
+    const cached = await repo.findOne({ where: { book, chapter: chapterNum } });
     if (cached) {
       return res.json({ success: true, data: { summary: cached.summary, cached: true } });
     }
 
-    const summary = await aiService.generateChapterSummary(book, chapter, verseText);
+    // Summarize the text we fetched ourselves. Only if that fails, fall back to what the app
+    // sent — and then don't cache, so a possibly mismatched summary can't stick for everyone.
+    const ownText = await fetchChapterText(book, chapterNum);
+    const textIsTrusted = ownText.length > 0;
+    const summary = await aiService.generateChapterSummary(
+      book,
+      chapterNum,
+      textIsTrusted ? ownText : verseText
+    );
     if (!summary) throw new AppError('Failed to generate summary', 500);
 
-    // Cache it
-    await repo.upsert({ book, chapter, summary }, ['book', 'chapter']);
+    if (textIsTrusted) {
+      await repo.upsert({ book, chapter: chapterNum, summary }, ['book', 'chapter']);
+    }
 
     res.json({ success: true, data: { summary, cached: false } });
   } catch (e) {
