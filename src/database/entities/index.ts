@@ -81,4 +81,5 @@ export * from '../../church-portal/entities';
 // Email broadcast campaigns
 export * from './emailCampaign.entity';
 export * from './emailCampaignRecipient.entity';
+export * from './adminInvoice.entity';
 

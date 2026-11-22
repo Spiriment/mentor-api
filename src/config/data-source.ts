@@ -63,6 +63,7 @@ import {
   SupportTicketMessage,
   EmailCampaign,
   EmailCampaignRecipient,
+  AdminInvoice,
 } from '@/database/entities';
 
 import { ChurchPrivacyAcceptance } from '@/church-portal/entities/churchPrivacyAcceptance.entity';
@@ -153,6 +154,7 @@ export const AppDataSource = new DataSource({
     SupportTicketMessage,
     EmailCampaign,
     EmailCampaignRecipient,
+    AdminInvoice,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'
