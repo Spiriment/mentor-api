@@ -424,6 +424,11 @@ export class SessionService {
         throw error;
       }
 
+      // First person into the call while the other hasn't joined yet → tell the other one
+      const joinedFirst =
+        (userId === session.mentorId && !!updates.mentorJoinedAt && !session.menteeJoinedAt) ||
+        (userId === session.menteeId && !!updates.menteeJoinedAt && !session.mentorJoinedAt);
+
       Object.assign(session, updates);
       const updatedSession = await this.sessionRepository.save(session);
 
@@ -433,11 +438,86 @@ export class SessionService {
         updatedFields: Object.keys(updates),
       });
 
+      if (joinedFirst) {
+        // Don't hold up the join response on push delivery
+        void this.notifyOtherPartyWaiting(updatedSession, userId).catch((error) =>
+          logger.error('Failed to send "waiting for you" notification', error)
+        );
+      }
+
       return updatedSession;
     } catch (error: any) {
       logger.error('Error updating session', error);
       throw error;
     }
+  }
+
+  /**
+   * Someone joined the session call and the other person isn't there yet: tell them.
+   * Sent as a joinable session_reminder so app versions already in the field open the
+   * call when it's tapped (same handling as the "Session Starting Now" reminder).
+   */
+  private async notifyOtherPartyWaiting(session: Session, joinerId: string): Promise<void> {
+    const joinerIsMentor = joinerId === session.mentorId;
+    const joiner = joinerIsMentor ? session.mentor : session.mentee;
+    const other = joinerIsMentor ? session.mentee : session.mentor;
+    if (!joiner || !other) return;
+
+    const joinerName = formatUserName(joiner);
+    const mentorName = session.mentor ? formatUserName(session.mentor) : undefined;
+    const menteeName = session.mentee ? formatUserName(session.mentee) : undefined;
+    const title = `${joinerName} is waiting for you`;
+    const body = `${joinerName} has joined your session call. Tap to join.`;
+    const data = {
+      type: 'session_reminder',
+      sessionId: session.id,
+      mentorId: session.mentorId,
+      menteeId: session.menteeId,
+      mentorName,
+      menteeName,
+      minutesBefore: 0,
+      canJoin: true,
+      reason: 'other_party_waiting',
+    };
+
+    const remindersEnabled =
+      !other.notificationPreferences || other.notificationPreferences.includes('session_reminders');
+    if (!remindersEnabled) return;
+
+    try {
+      await getAppNotificationService().createNotification({
+        userId: other.id,
+        type: AppNotificationType.SESSION_REMINDER,
+        title,
+        message: body,
+        data: {
+          ...data,
+          sessionType: session.type,
+          scheduledAt: session.scheduledAt.toISOString(),
+        },
+      });
+    } catch (error: any) {
+      logger.error('Failed to create "waiting for you" in-app notification', error);
+    }
+
+    if (other.pushToken && other.pushNotificationsEnabled !== false) {
+      await pushNotificationService.sendToUser({
+        userId: other.id,
+        pushToken: other.pushToken,
+        title,
+        body,
+        data,
+        channelId: 'session-reminders',
+        priority: 'high',
+        sound: 'default',
+      });
+    }
+
+    logger.info('Sent "waiting for you" notification', {
+      sessionId: session.id,
+      joinerId,
+      notifiedUserId: other.id,
+    });
   }
 
   /**
