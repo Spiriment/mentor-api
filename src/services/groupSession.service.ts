@@ -32,9 +32,14 @@ import {
 } from '@/database/entities/conversationParticipant.entity';
 import { Message, MESSAGE_TYPE } from '@/database/entities/message.entity';
 
+/** Mentees per group session (plus the mentor: up to 9 people in the call). Keep in sync with
+ * the app's CreateGroupSessionScreen. */
+export const MIN_GROUP_MENTEES = 2;
+export const MAX_GROUP_MENTEES = 8;
+
 export interface CreateGroupSessionDTO {
   mentorId: string;
-  menteeIds: string[]; // 2-5 mentees
+  menteeIds: string[]; // MIN_GROUP_MENTEES–MAX_GROUP_MENTEES mentees
   title: string;
   description?: string;
   scheduledAt: Date;
@@ -112,9 +117,9 @@ export class GroupSessionService {
       }
 
       // Validate mentee count (2-5)
-      if (data.menteeIds.length < 2 || data.menteeIds.length > 5) {
+      if (data.menteeIds.length < MIN_GROUP_MENTEES || data.menteeIds.length > MAX_GROUP_MENTEES) {
         throw new AppError(
-          'Group session must have 2-5 mentees',
+          `Group session must have ${MIN_GROUP_MENTEES}-${MAX_GROUP_MENTEES} mentees`,
           StatusCodes.BAD_REQUEST
         );
       }
