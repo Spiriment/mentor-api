@@ -102,7 +102,14 @@ class AdminInvoiceService {
     return row;
   }
 
-  async list(params: { page?: number; limit?: number; status?: AdminInvoiceStatus; search?: string }) {
+  async list(params: {
+    page?: number;
+    limit?: number;
+    status?: AdminInvoiceStatus;
+    search?: string;
+    /** Only invoices a receipt can still be made for: issued (unpaid), or paid without a receipt */
+    receiptable?: boolean;
+  }) {
     const page = Math.max(1, params.page ?? 1);
     const limit = Math.min(100, Math.max(1, params.limit ?? 25));
     const qb = this.repo
@@ -111,6 +118,14 @@ class AdminInvoiceService {
       .skip((page - 1) * limit)
       .take(limit);
     if (params.status) qb.andWhere('inv.status = :status', { status: params.status });
+    if (params.receiptable) {
+      qb.andWhere(
+        `(inv.status = :issued OR (inv.status = :paid AND NOT EXISTS (
+            SELECT 1 FROM admin_receipts r WHERE r.invoiceId = inv.id AND r.status = :receiptIssued
+          )))`,
+        { issued: AdminInvoiceStatus.ISSUED, paid: AdminInvoiceStatus.PAID, receiptIssued: 'issued' }
+      );
+    }
     if (params.search?.trim()) {
       const term = `%${params.search.trim().replace(/[%_\\]/g, '')}%`;
       qb.andWhere(

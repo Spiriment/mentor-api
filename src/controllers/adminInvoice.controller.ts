@@ -18,6 +18,7 @@ export class AdminInvoiceController {
         limit: q.limit ? Number(q.limit) : undefined,
         status: q.status as AdminInvoiceStatus | undefined,
         search: q.search,
+        receiptable: q.receiptable === 'true',
       });
       return sendSuccessResponse(res, result);
     } catch (e) {

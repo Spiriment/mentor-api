@@ -42,4 +42,6 @@ export const adminInvoiceListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   status: z.nativeEnum(AdminInvoiceStatus).optional(),
   search: z.string().trim().max(200).optional(),
+  /** 'true': only invoices that can still get a receipt (issued, or paid without one) */
+  receiptable: z.enum(['true', 'false']).optional(),
 });
