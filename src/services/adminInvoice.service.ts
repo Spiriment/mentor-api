@@ -6,7 +6,11 @@ import {
   AdminInvoiceStatus,
 } from '@/database/entities/adminInvoice.entity';
 import { adminAuditService } from './adminAudit.service';
-import { adminReceiptService, type AdminReceiptPaymentInput } from './adminReceipt.service';
+import {
+  adminReceiptService,
+  RECEIPT_TX_ISOLATION,
+  type AdminReceiptPaymentInput,
+} from './adminReceipt.service';
 
 export interface AdminInvoiceInput {
   billedToName: string;
@@ -259,7 +263,7 @@ class AdminInvoiceService {
 
   /** Mark an issued invoice as paid and issue its receipt in one step */
   async markPaid(id: string, payment: AdminReceiptPaymentInput, adminUserId: string) {
-    await AppDataSource.transaction(async (manager) => {
+    const receipt = await AppDataSource.transaction(RECEIPT_TX_ISOLATION, async (manager) => {
       const row = await this.lockRow(manager, id);
       if (row.status === AdminInvoiceStatus.DRAFT) {
         throw new AppError('Issue the invoice first.', 400, 'INVOICE_NOT_ISSUED');
@@ -273,8 +277,9 @@ class AdminInvoiceService {
       row.status = AdminInvoiceStatus.PAID;
       row.paidAt = new Date();
       await manager.getRepository(AdminInvoice).save(row);
-      await adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
+      return adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
     });
+    await adminReceiptService.logCreated(receipt, adminUserId);
     await adminAuditService.log({
       adminUserId,
       action: 'admin.invoice.mark_paid',
@@ -290,7 +295,7 @@ class AdminInvoiceService {
    * or its receipt was voided to correct a mistake)
    */
   async createReceipt(id: string, payment: AdminReceiptPaymentInput, adminUserId: string) {
-    await AppDataSource.transaction(async (manager) => {
+    const receipt = await AppDataSource.transaction(RECEIPT_TX_ISOLATION, async (manager) => {
       const row = await this.lockRow(manager, id);
       if (row.status !== AdminInvoiceStatus.PAID) {
         throw new AppError('Only a paid invoice can get a receipt. Mark it as paid instead.', 400, 'INVOICE_NOT_PAID');
@@ -298,16 +303,16 @@ class AdminInvoiceService {
       if (await adminReceiptService.findActiveForInvoice(id, manager)) {
         throw new AppError('This invoice already has a receipt. Void it first to issue a new one.', 400, 'RECEIPT_EXISTS');
       }
-      await adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
+      return adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
     });
+    await adminReceiptService.logCreated(receipt, adminUserId);
     return this.get(id);
   }
 
   /** Undo "mark as paid" (back to issued) or void. Either way its receipt is voided too. */
   async setStatus(id: string, status: AdminInvoiceStatus.ISSUED | AdminInvoiceStatus.VOID, adminUserId: string) {
     let invoiceNumber: string | null = null;
-    let voidedReceipt: string | null = null;
-    await AppDataSource.transaction(async (manager) => {
+    const voided = await AppDataSource.transaction(async (manager) => {
       const row = await this.lockRow(manager, id);
       invoiceNumber = row.invoiceNumber;
       if (row.status === AdminInvoiceStatus.DRAFT) {
@@ -327,15 +332,15 @@ class AdminInvoiceService {
         row.voidedAt = new Date();
       }
       await manager.getRepository(AdminInvoice).save(row);
-      const receipt = await adminReceiptService.voidActiveForInvoice(manager, id, adminUserId);
-      voidedReceipt = receipt?.receiptNumber ?? null;
+      return adminReceiptService.voidActiveForInvoice(manager, id);
     });
+    if (voided) await adminReceiptService.logVoided(voided, adminUserId, 'invoice_changed');
     await adminAuditService.log({
       adminUserId,
       action: `admin.invoice.${status === AdminInvoiceStatus.ISSUED ? 'mark_unpaid' : 'void'}`,
       targetType: 'admin_invoice',
       targetId: id,
-      metadata: { invoiceNumber, voidedReceipt },
+      metadata: { invoiceNumber, voidedReceipt: voided?.receiptNumber ?? null },
     });
     return this.get(id);
   }

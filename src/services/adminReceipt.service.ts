@@ -28,6 +28,13 @@ export interface AdminReceiptInput extends AdminReceiptPaymentInput {
 
 const NUMBER_PREFIX = 'SPR-R';
 
+/**
+ * Isolation for every transaction that creates a receipt. Lets a retry after a duplicate
+ * number see receipts committed in the meantime, and avoids REPEATABLE READ's gap locks, which
+ * can deadlock two inserts racing for the same next number.
+ */
+export const RECEIPT_TX_ISOLATION = 'READ COMMITTED' as const;
+
 const toCents = (amount: number) => Math.round(amount * 100);
 
 function isDuplicateKey(error: unknown) {
@@ -111,7 +118,13 @@ class AdminReceiptService {
     return repo.findOne({ where: { invoiceId, status: AdminReceiptStatus.ISSUED } });
   }
 
-  /** Next number for the payment year, e.g. SPR-R-2026-0007 */
+  /**
+   * Next number for the payment year, e.g. SPR-R-2026-0007. Read inside the caller's
+   * transaction, which must be READ COMMITTED (see RECEIPT_TX_ISOLATION) so each read sees the
+   * latest committed receipts. Under MySQL's default REPEATABLE READ a retry would keep seeing
+   * the old snapshot and pick the same taken number again. (Reading on a separate connection
+   * instead can exhaust the pool when many receipts are created at once.)
+   */
   private async nextNumber(manager: EntityManager, year: string) {
     const prefix = `${NUMBER_PREFIX}-${year}-`;
     const last = await manager
@@ -134,7 +147,7 @@ class AdminReceiptService {
   private async insertNumbered(manager: EntityManager, fields: Partial<AdminReceipt>) {
     const repo = manager.getRepository(AdminReceipt);
     const year = String(fields.paymentDate).slice(0, 4);
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
       const receiptNumber = await this.nextNumber(manager, year);
       try {
         return await repo.save(repo.create({ ...fields, receiptNumber, status: AdminReceiptStatus.ISSUED }));
@@ -155,7 +168,10 @@ class AdminReceiptService {
     };
   }
 
-  /** Receipt for a paid invoice. Call inside the transaction that holds the invoice row lock. */
+  /**
+   * Receipt for a paid invoice. Call inside the transaction that holds the invoice row lock,
+   * then call logCreated() once that transaction has committed.
+   */
   async createForInvoice(
     manager: EntityManager,
     invoice: AdminInvoice,
@@ -179,6 +195,11 @@ class AdminReceiptService {
       voidedAt: null,
       createdByAdminId: adminUserId,
     });
+    return saved;
+  }
+
+  /** Audit entry for a receipt — after its transaction committed, so the log never lies */
+  async logCreated(saved: AdminReceipt, adminUserId: string) {
     await adminAuditService.log({
       adminUserId,
       action: 'admin.receipt.create',
@@ -186,12 +207,22 @@ class AdminReceiptService {
       targetId: saved.id,
       metadata: {
         receiptNumber: saved.receiptNumber,
-        invoiceNumber: invoice.invoiceNumber,
+        invoiceNumber: saved.invoiceNumber,
+        receivedFromName: saved.receivedFromName,
         total: saved.totalCents / 100,
         currency: saved.currency,
       },
     });
-    return saved;
+  }
+
+  async logVoided(row: AdminReceipt, adminUserId: string, reason?: string) {
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.receipt.void',
+      targetType: 'admin_receipt',
+      targetId: row.id,
+      metadata: { receiptNumber: row.receiptNumber, invoiceNumber: row.invoiceNumber, ...(reason ? { reason } : {}) },
+    });
   }
 
   /** Receipt for a payment that had no invoice */
@@ -204,7 +235,7 @@ class AdminReceiptService {
     const subtotalCents = lineItems.reduce((sum, l) => sum + l.amountCents, 0);
     const vatCents = vatRate ? Math.round((subtotalCents * vatRate) / 100) : 0;
 
-    const saved = await AppDataSource.transaction((manager) =>
+    const saved = await AppDataSource.transaction(RECEIPT_TX_ISOLATION, (manager) =>
       this.insertNumbered(manager, {
         ...this.paymentFields(input),
         invoiceId: null,
@@ -223,18 +254,7 @@ class AdminReceiptService {
         createdByAdminId: adminUserId,
       })
     );
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.receipt.create',
-      targetType: 'admin_receipt',
-      targetId: saved.id,
-      metadata: {
-        receiptNumber: saved.receiptNumber,
-        receivedFromName: saved.receivedFromName,
-        total: saved.totalCents / 100,
-        currency: saved.currency,
-      },
-    });
+    await this.logCreated(saved, adminUserId);
     return this.serialize(saved);
   }
 
@@ -246,30 +266,20 @@ class AdminReceiptService {
     row.status = AdminReceiptStatus.VOID;
     row.voidedAt = new Date();
     const saved = await this.repo.save(row);
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.receipt.void',
-      targetType: 'admin_receipt',
-      targetId: id,
-      metadata: { receiptNumber: row.receiptNumber, invoiceNumber: row.invoiceNumber },
-    });
+    await this.logVoided(saved, adminUserId);
     return this.serialize(saved);
   }
 
-  /** Void an invoice's receipt when the invoice is marked unpaid or voided */
-  async voidActiveForInvoice(manager: EntityManager, invoiceId: string, adminUserId: string) {
+  /**
+   * Void an invoice's receipt when the invoice is marked unpaid or voided. Call inside that
+   * transaction, then logVoided() once it has committed.
+   */
+  async voidActiveForInvoice(manager: EntityManager, invoiceId: string) {
     const active = await this.findActiveForInvoice(invoiceId, manager);
     if (!active) return null;
     active.status = AdminReceiptStatus.VOID;
     active.voidedAt = new Date();
     await manager.getRepository(AdminReceipt).save(active);
-    await adminAuditService.log({
-      adminUserId,
-      action: 'admin.receipt.void',
-      targetType: 'admin_receipt',
-      targetId: active.id,
-      metadata: { receiptNumber: active.receiptNumber, invoiceNumber: active.invoiceNumber, reason: 'invoice_changed' },
-    });
     return active;
   }
 }
