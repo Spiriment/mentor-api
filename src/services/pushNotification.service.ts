@@ -6,6 +6,44 @@ import {
 } from 'expo-server-sdk';
 import { Logger } from '../common';
 import { Config } from '../config';
+import { AppDataSource } from '@/config/data-source';
+
+/**
+ * Unread messages + unread in-app notifications per user: the number on the app icon.
+ * Messages are counted exactly like ChatService.getUnreadMessageCount (active conversations,
+ * messages from others after the user's last-read message) so the icon matches the app.
+ * Two grouped queries however many users, so broadcasts stay cheap.
+ */
+export async function getAppBadgeCounts(userIds: string[]): Promise<Map<string, number>> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  const counts = new Map<string, number>(ids.map((id) => [id, 0]));
+  if (!ids.length) return counts;
+
+  const [notificationRows, messageRows] = await Promise.all([
+    AppDataSource.query(
+      `SELECT n.userId AS userId, COUNT(*) AS n
+         FROM app_notifications n
+        WHERE n.isRead = 0 AND n.userId IN (?)
+        GROUP BY n.userId`,
+      [ids]
+    ),
+    AppDataSource.query(
+      `SELECT p.userId AS userId, COUNT(m.id) AS n
+         FROM conversation_participants p
+         JOIN messages m
+           ON m.conversationId = p.conversationId AND m.senderId <> p.userId
+         LEFT JOIN messages lastRead ON lastRead.id = p.lastReadMessageId
+        WHERE p.userId IN (?) AND p.status = 'active'
+          AND (lastRead.id IS NULL OR m.sentAt > lastRead.sentAt)
+        GROUP BY p.userId`,
+      [ids]
+    ),
+  ]);
+  for (const row of [...notificationRows, ...messageRows] as { userId: string; n: number | string }[]) {
+    counts.set(row.userId, (counts.get(row.userId) ?? 0) + Number(row.n || 0));
+  }
+  return counts;
+}
 
 export interface PushNotificationData {
   userId: string;
@@ -32,10 +70,31 @@ export class PushNotificationService {
   }
 
   /**
+   * Fill in the icon badge (unread total) for pushes that don't set one. Never blocks a push:
+   * if counting fails, the push goes out without a badge.
+   */
+  private async withBadges(notifications: PushNotificationData[]): Promise<PushNotificationData[]> {
+    const missing = notifications.filter((n) => n.badge === undefined && n.userId);
+    if (!missing.length) return notifications;
+    try {
+      const counts = await getAppBadgeCounts(missing.map((n) => n.userId));
+      return notifications.map((n) =>
+        n.badge === undefined && n.userId ? { ...n, badge: counts.get(n.userId) ?? 0 } : n
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not count unread items for the app badge: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return notifications;
+    }
+  }
+
+  /**
    * Send a push notification to a single user
    */
-  async sendToUser(notification: PushNotificationData): Promise<boolean> {
+  async sendToUser(input: PushNotificationData): Promise<boolean> {
     try {
+      const [notification] = await this.withBadges([input]);
       // Check if the token is a valid Expo push token
       if (!Expo.isExpoPushToken(notification.pushToken)) {
         this.logger.warn(
@@ -99,8 +158,9 @@ export class PushNotificationService {
   /**
    * Send push notifications to multiple users
    */
-  async sendToMany(notifications: PushNotificationData[]): Promise<void> {
+  async sendToMany(input: PushNotificationData[]): Promise<void> {
     try {
+      const notifications = await this.withBadges(input);
       const messages: ExpoPushMessage[] = [];
 
       for (const notification of notifications) {
