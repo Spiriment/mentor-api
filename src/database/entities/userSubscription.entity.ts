@@ -47,4 +47,11 @@ export class UserSubscription extends BaseEntity {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   notes?: string | null;
+
+  /**
+   * Bought in a test environment (App Store sandbox / TestFlight, Stripe test mode). Still gives
+   * access so testing works, but never counts towards revenue or paying subscribers.
+   */
+  @Column({ name: 'isTest', type: 'boolean', default: false })
+  isTest!: boolean;
 }

@@ -76,7 +76,12 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
     price_in_purchased_currency,
     transaction_id,
     original_transaction_id,
+    environment,
   } = event;
+
+  // TestFlight / Xcode purchases arrive with environment SANDBOX: they still unlock the plan (so
+  // testing works) but are marked as test so they never count as revenue
+  const isSandbox = String(environment ?? '').toUpperCase() === 'SANDBOX';
 
   if (!app_user_id) {
     res.status(400).json({ error: 'Missing app_user_id' });
@@ -141,6 +146,7 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
           }),
           billingInterval: inferBillingIntervalFromProductId(effectiveProductId),
           expiresAt: expiration_at_ms ? new Date(expiration_at_ms) : null,
+          isTest: isSandbox,
         });
         break;
       }
@@ -251,8 +257,8 @@ export const handleRevenueCatWebhook = async (req: Request, res: Response): Prom
       const who = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
       const plan = tierFromProductId(product_id) ?? 'unknown plan';
       void adminAlertService.notify('subscription', {
-        title: rcAlert[type],
-        body: `${who} · ${plan} (App Store)`,
+        title: isSandbox ? `${rcAlert[type]} (test purchase)` : rcAlert[type],
+        body: `${who} · ${plan} (${isSandbox ? 'App Store sandbox / TestFlight, not real revenue' : 'App Store'})`,
         link: '/subscriptions',
       });
     }

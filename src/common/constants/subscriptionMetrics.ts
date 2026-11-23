@@ -17,12 +17,14 @@ export const ENTITLED_STATUSES: SubscriptionStatus[] = ['active', 'trialing', 'p
 /** Providers that are not true paying customers for ops metrics — excluded from MRR and revenue totals. */
 export const NON_PAYING_PROVIDERS = ['admin', 'internal_test', 'church_central'] as const;
 
-/** Applies the shared non-paying exclusion (provider + manual-grant note) to a query. */
+/** Applies the shared non-paying exclusion (provider + manual-grant note + test purchases). */
 function excludeNonPaying(
   qb: SelectQueryBuilder<UserSubscription>,
   alias: string,
 ): SelectQueryBuilder<UserSubscription> {
   return qb
+    // Sandbox / TestFlight / Stripe test-mode purchases are never real revenue
+    .andWhere(`${alias}.isTest = :notTest`, { notTest: false })
     .andWhere(
       `(${alias}.externalProvider IS NULL OR ${alias}.externalProvider NOT IN (:...nonPaying))`,
       { nonPaying: [...NON_PAYING_PROVIDERS] },

@@ -326,6 +326,8 @@ export const handleStripeWebhook = async (req: Request, res: Response): Promise<
             billingInterval,
             expiresAt,
             notes: cancelAtPeriodEnd ? CANCEL_AT_PERIOD_END_NOTE : undefined,
+            // Stripe test-mode subscriptions are never real revenue
+            isTest: event.livemode === false,
           });
 
           const promoCodeId = stripeSub.metadata?.promoCodeId;

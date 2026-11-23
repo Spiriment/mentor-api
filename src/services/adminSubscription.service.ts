@@ -28,7 +28,7 @@ import { CANCEL_AT_PERIOD_END_NOTE } from '@/services/subscription.service';
 const MAX_INTERNAL_TEST_CODES = 3;
 const ADMIN_MANUAL_NOTE = 'Manually granted by admin';
 
-export type EntitlementKind = 'paying' | 'trial' | 'promo' | 'comp' | 'none';
+export type EntitlementKind = 'paying' | 'trial' | 'promo' | 'comp' | 'test' | 'none';
 
 export function isManuallyAssignedSubscription(row: Pick<UserSubscription, 'externalProvider' | 'notes'>): boolean {
   if (row.externalProvider === 'admin') return true;
@@ -49,11 +49,16 @@ export function getSubscriptionAssignmentSource(
 
 /** Ops-facing entitlement bucket: Paying / Trial / Promo / Comp / None */
 export function getEntitlementKind(
-  row: Pick<UserSubscription, 'status' | 'tier' | 'externalProvider' | 'notes'> | null | undefined,
+  row:
+    | (Pick<UserSubscription, 'status' | 'tier' | 'externalProvider' | 'notes'> & { isTest?: boolean })
+    | null
+    | undefined,
 ): EntitlementKind {
   if (!row) return 'none';
   if (!PAYING_TIERS.includes(row.tier as SubscriptionTier)) return 'none';
   if (!ENTITLED_STATUSES.includes(row.status as SubscriptionStatus)) return 'none';
+  // Sandbox / TestFlight / Stripe test-mode purchase: has access, but isn't a paying customer
+  if (row.isTest) return 'test';
 
   if (row.status === 'trialing') return 'trial';
   if (isManuallyAssignedSubscription(row)) return 'comp';
@@ -76,6 +81,7 @@ export class AdminSubscriptionService {
       externalProvider: row.externalProvider ?? null,
       externalRef: row.externalRef ?? null,
       billingInterval: row.billingInterval ?? null,
+      isTest: !!row.isTest,
       pastDueAt: row.pastDueAt ?? null,
       cancelAtPeriodEnd: row.notes === CANCEL_AT_PERIOD_END_NOTE,
       notes: row.notes ?? null,

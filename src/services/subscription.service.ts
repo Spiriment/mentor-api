@@ -454,6 +454,8 @@ export class SubscriptionService {
       expiresAt?: Date | null;
       notes?: string | null;
       billingInterval?: 'monthly' | 'annual' | null;
+      /** Test-environment purchase (sandbox / Stripe test mode); leave undefined to keep as is */
+      isTest?: boolean;
     }
   ): Promise<boolean> {
     let sub = await this.subRepo.findOne({ where: { user: { id: userId } } });
@@ -484,6 +486,7 @@ export class SubscriptionService {
     if (data.externalProvider !== undefined) sub.externalProvider = data.externalProvider;
     if (data.mrrCents !== undefined) sub.mrrCents = data.mrrCents;
     if (data.expiresAt !== undefined) sub.expiresAt = data.expiresAt;
+    if (data.isTest !== undefined) sub.isTest = data.isTest;
     if (data.billingInterval !== undefined) {
       sub.billingInterval = data.billingInterval;
     } else if (

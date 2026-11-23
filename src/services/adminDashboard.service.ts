@@ -169,7 +169,8 @@ export class AdminDashboardService {
       userRepo.find({ select: ['id', 'role', 'createdAt'] }),
       sessionRepo.find({ select: ['id', 'scheduledAt'] }),
       subRepo.find({
-        where: { status: In(ENTITLED_STATUSES), tier: In(PAYING_TIERS) },
+        // Test purchases (sandbox / TestFlight) aren't real subscribers
+        where: { status: In(ENTITLED_STATUSES), tier: In(PAYING_TIERS), isTest: false },
         select: ['id', 'tier'],
       }),
       userRepo
