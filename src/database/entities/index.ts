@@ -82,4 +82,5 @@ export * from '../../church-portal/entities';
 export * from './emailCampaign.entity';
 export * from './emailCampaignRecipient.entity';
 export * from './adminInvoice.entity';
+export * from './adminReceipt.entity';
 

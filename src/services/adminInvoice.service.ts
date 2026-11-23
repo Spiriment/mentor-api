@@ -1,4 +1,4 @@
-import { QueryFailedError } from 'typeorm';
+import { EntityManager, QueryFailedError } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { AppError } from '@/common';
 import {
@@ -6,6 +6,7 @@ import {
   AdminInvoiceStatus,
 } from '@/database/entities/adminInvoice.entity';
 import { adminAuditService } from './adminAudit.service';
+import { adminReceiptService, type AdminReceiptPaymentInput } from './adminReceipt.service';
 
 export interface AdminInvoiceInput {
   billedToName: string;
@@ -121,7 +122,14 @@ class AdminInvoiceService {
   }
 
   async get(id: string) {
-    return this.serialize(await this.getRow(id));
+    const row = await this.getRow(id);
+    const receipt = await adminReceiptService.findActiveForInvoice(id);
+    return {
+      ...this.serialize(row),
+      receipt: receipt
+        ? { id: receipt.id, receiptNumber: receipt.receiptNumber, paymentDate: receipt.paymentDate }
+        : null,
+    };
   }
 
   async create(input: AdminInvoiceInput, adminUserId: string) {
@@ -237,34 +245,99 @@ class AdminInvoiceService {
     throw new AppError('Could not assign an invoice number, please try again.', 409, 'INVOICE_NUMBER_CONFLICT');
   }
 
-  async setStatus(id: string, status: AdminInvoiceStatus.PAID | AdminInvoiceStatus.ISSUED | AdminInvoiceStatus.VOID, adminUserId: string) {
-    const row = await this.getRow(id);
-    if (row.status === AdminInvoiceStatus.DRAFT) {
-      throw new AppError('Issue the invoice first.', 400, 'INVOICE_NOT_ISSUED');
-    }
-    if (row.status === AdminInvoiceStatus.VOID) {
-      throw new AppError('A voided invoice cannot be changed.', 400, 'INVOICE_VOID');
-    }
-    if (status === AdminInvoiceStatus.PAID) {
+  /** Lock the invoice row for the rest of the transaction (no double "mark paid" clicks) */
+  private async lockRow(manager: EntityManager, id: string) {
+    const row = await manager
+      .getRepository(AdminInvoice)
+      .createQueryBuilder('inv')
+      .setLock('pessimistic_write')
+      .where('inv.id = :id', { id })
+      .getOne();
+    if (!row) throw new AppError('Invoice not found', 404, 'NOT_FOUND');
+    return row;
+  }
+
+  /** Mark an issued invoice as paid and issue its receipt in one step */
+  async markPaid(id: string, payment: AdminReceiptPaymentInput, adminUserId: string) {
+    await AppDataSource.transaction(async (manager) => {
+      const row = await this.lockRow(manager, id);
+      if (row.status === AdminInvoiceStatus.DRAFT) {
+        throw new AppError('Issue the invoice first.', 400, 'INVOICE_NOT_ISSUED');
+      }
+      if (row.status === AdminInvoiceStatus.VOID) {
+        throw new AppError('A voided invoice cannot be changed.', 400, 'INVOICE_VOID');
+      }
+      if (row.status === AdminInvoiceStatus.PAID) {
+        throw new AppError('This invoice is already marked as paid.', 400, 'INVOICE_ALREADY_PAID');
+      }
       row.status = AdminInvoiceStatus.PAID;
       row.paidAt = new Date();
-    } else if (status === AdminInvoiceStatus.ISSUED) {
-      // Undo "mark as paid"
-      row.status = AdminInvoiceStatus.ISSUED;
-      row.paidAt = null;
-    } else {
-      row.status = AdminInvoiceStatus.VOID;
-      row.voidedAt = new Date();
-    }
-    const saved = await this.repo.save(row);
+      await manager.getRepository(AdminInvoice).save(row);
+      await adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
+    });
     await adminAuditService.log({
       adminUserId,
-      action: `admin.invoice.${status === AdminInvoiceStatus.ISSUED ? 'mark_unpaid' : status === AdminInvoiceStatus.PAID ? 'mark_paid' : 'void'}`,
+      action: 'admin.invoice.mark_paid',
       targetType: 'admin_invoice',
       targetId: id,
-      metadata: { invoiceNumber: row.invoiceNumber },
+      metadata: { paymentDate: payment.paymentDate, paymentMethod: payment.paymentMethod },
     });
-    return this.serialize(saved);
+    return this.get(id);
+  }
+
+  /**
+   * Receipt for an invoice that is already paid but has none (paid before receipts existed,
+   * or its receipt was voided to correct a mistake)
+   */
+  async createReceipt(id: string, payment: AdminReceiptPaymentInput, adminUserId: string) {
+    await AppDataSource.transaction(async (manager) => {
+      const row = await this.lockRow(manager, id);
+      if (row.status !== AdminInvoiceStatus.PAID) {
+        throw new AppError('Only a paid invoice can get a receipt. Mark it as paid instead.', 400, 'INVOICE_NOT_PAID');
+      }
+      if (await adminReceiptService.findActiveForInvoice(id, manager)) {
+        throw new AppError('This invoice already has a receipt. Void it first to issue a new one.', 400, 'RECEIPT_EXISTS');
+      }
+      await adminReceiptService.createForInvoice(manager, row, payment, adminUserId);
+    });
+    return this.get(id);
+  }
+
+  /** Undo "mark as paid" (back to issued) or void. Either way its receipt is voided too. */
+  async setStatus(id: string, status: AdminInvoiceStatus.ISSUED | AdminInvoiceStatus.VOID, adminUserId: string) {
+    let invoiceNumber: string | null = null;
+    let voidedReceipt: string | null = null;
+    await AppDataSource.transaction(async (manager) => {
+      const row = await this.lockRow(manager, id);
+      invoiceNumber = row.invoiceNumber;
+      if (row.status === AdminInvoiceStatus.DRAFT) {
+        throw new AppError('Issue the invoice first.', 400, 'INVOICE_NOT_ISSUED');
+      }
+      if (row.status === AdminInvoiceStatus.VOID) {
+        throw new AppError('A voided invoice cannot be changed.', 400, 'INVOICE_VOID');
+      }
+      if (status === AdminInvoiceStatus.ISSUED) {
+        if (row.status !== AdminInvoiceStatus.PAID) {
+          throw new AppError('This invoice is not marked as paid.', 400, 'INVOICE_NOT_PAID');
+        }
+        row.status = AdminInvoiceStatus.ISSUED;
+        row.paidAt = null;
+      } else {
+        row.status = AdminInvoiceStatus.VOID;
+        row.voidedAt = new Date();
+      }
+      await manager.getRepository(AdminInvoice).save(row);
+      const receipt = await adminReceiptService.voidActiveForInvoice(manager, id, adminUserId);
+      voidedReceipt = receipt?.receiptNumber ?? null;
+    });
+    await adminAuditService.log({
+      adminUserId,
+      action: `admin.invoice.${status === AdminInvoiceStatus.ISSUED ? 'mark_unpaid' : 'void'}`,
+      targetType: 'admin_invoice',
+      targetId: id,
+      metadata: { invoiceNumber, voidedReceipt },
+    });
+    return this.get(id);
   }
 
   /** Start a new draft from any invoice (handy after voiding, or for recurring clients) */

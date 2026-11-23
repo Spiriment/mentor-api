@@ -64,6 +64,7 @@ import {
   EmailCampaign,
   EmailCampaignRecipient,
   AdminInvoice,
+  AdminReceipt,
 } from '@/database/entities';
 
 import { ChurchPrivacyAcceptance } from '@/church-portal/entities/churchPrivacyAcceptance.entity';
@@ -155,6 +156,7 @@ export const AppDataSource = new DataSource({
     EmailCampaign,
     EmailCampaignRecipient,
     AdminInvoice,
+    AdminReceipt,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

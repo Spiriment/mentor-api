@@ -3,6 +3,7 @@ import { sendSuccessResponse } from '@/common/helpers';
 import { adminInvoiceService } from '@/services/adminInvoice.service';
 import { AdminInvoiceStatus } from '@/database/entities/adminInvoice.entity';
 import { adminInvoiceCreateBodySchema } from '@/validation/adminInvoice.validation';
+import { adminReceiptPaymentBodySchema } from '@/validation/adminReceipt.validation';
 
 // The shared validate() middleware only checks the body; parse here so amounts and VAT arrive
 // as numbers and fields are trimmed exactly as validated
@@ -72,7 +73,11 @@ export class AdminInvoiceController {
     try {
       return sendSuccessResponse(
         res,
-        await adminInvoiceService.setStatus(req.params.id, AdminInvoiceStatus.PAID, req.admin!.id)
+        await adminInvoiceService.markPaid(
+          req.params.id,
+          adminReceiptPaymentBodySchema.parse(req.body),
+          req.admin!.id
+        )
       );
     } catch (e) {
       next(e);
@@ -84,6 +89,22 @@ export class AdminInvoiceController {
       return sendSuccessResponse(
         res,
         await adminInvoiceService.setStatus(req.params.id, AdminInvoiceStatus.ISSUED, req.admin!.id)
+      );
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  createReceipt = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      return sendSuccessResponse(
+        res,
+        await adminInvoiceService.createReceipt(
+          req.params.id,
+          adminReceiptPaymentBodySchema.parse(req.body),
+          req.admin!.id
+        ),
+        201
       );
     } catch (e) {
       next(e);
