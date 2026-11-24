@@ -256,13 +256,24 @@ export class FileUploadService {
       // Videos can exceed Cloudinary's ~100MB single-request upload cap and take
       // longer than the SDK's 60s default timeout, so stream them in chunks with
       // a much longer timeout. Images stay on the simple, non-chunked path.
-      // upload_large's typings include UploadStream; with await + no callback we get UploadApiResponse.
+      // upload_large returns a stream, not a promise (cloudinary 2.x): awaiting it resolved at once
+      // with no secure_url, so chat voice notes were saved without their audio. Wait for its callback.
       const result: UploadApiResponse = isVideo
-        ? ((await cloudinary.uploader.upload_large(filePath, {
-            ...uploadOptions,
-            chunk_size: 6 * 1024 * 1024, // 6MB per chunk
-            timeout: 600000, // 10 minutes
-          })) as UploadApiResponse)
+        ? await new Promise<UploadApiResponse>((resolve, reject) => {
+            cloudinary.uploader.upload_large(
+              filePath,
+              {
+                ...uploadOptions,
+                chunk_size: 6 * 1024 * 1024, // 6MB per chunk
+                timeout: 600000, // 10 minutes
+              },
+              (error, response) => {
+                if (error) reject(error);
+                else if (!response?.secure_url) reject(new Error('Cloudinary returned no file URL'));
+                else resolve(response);
+              }
+            );
+          })
         : await cloudinary.uploader.upload(filePath, uploadOptions);
 
       this.logger.info("File uploaded successfully", {
