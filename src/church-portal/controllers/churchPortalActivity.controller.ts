@@ -25,6 +25,15 @@ export class ChurchPortalActivityController {
     }
   };
 
+  getSession = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.activityService.getSession(req.churchPortalUser!.churchPortalId, req.params.sessionId);
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getSessions = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, limit, filter } = req.query as Record<string, string>;

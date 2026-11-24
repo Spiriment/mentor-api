@@ -13,6 +13,7 @@ export function createChurchPortalMembersRoutes(controller: ChurchPortalMembersC
   router.post('/join-requests/:userId/reject', controller.rejectJoinRequest);
   router.get('/:userId', controller.getMember);
   router.get('/:userId/sessions', controller.getMemberSessions);
+  router.get('/:userId/session-chart', controller.getMemberSessionChart);
   router.get('/:userId/streak', controller.getMemberStreak);
   router.delete('/:userId', controller.removeMember);
 

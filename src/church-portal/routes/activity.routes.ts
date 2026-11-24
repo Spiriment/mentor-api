@@ -10,6 +10,7 @@ export function createChurchPortalActivityRoutes(controller: ChurchPortalActivit
   router.get('/mentors', controller.getMentors);
   router.get('/mentees', controller.getMentees);
   router.get('/sessions', controller.getSessions);
+  router.get('/sessions/:sessionId', controller.getSession);
   router.get('/bible-reading', controller.getBibleReading);
   router.get('/quizzes', controller.getQuizzes);
 

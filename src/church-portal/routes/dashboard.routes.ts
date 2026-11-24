@@ -9,6 +9,7 @@ export function createChurchPortalDashboardRoutes(controller: ChurchPortalDashbo
 
   router.get('/summary', controller.getSummary);
   router.get('/activity', controller.getActivityFeed);
+  router.get('/insights', controller.getInsights);
 
   return router;
 }

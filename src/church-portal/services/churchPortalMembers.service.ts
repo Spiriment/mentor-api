@@ -1,5 +1,5 @@
 import { AppDataSource } from '@/config/data-source';
-import { In } from 'typeorm';
+import { In, MoreThanOrEqual } from 'typeorm';
 import { User } from '@/database/entities/user.entity';
 import { MenteeProfile } from '@/database/entities/menteeProfile.entity';
 import { MentorProfile } from '@/database/entities/mentorProfile.entity';
@@ -11,6 +11,7 @@ import { USER_ROLE } from '@/common/constants';
 import { NotFoundError, ForbiddenError } from '@/common/errors';
 import { syncChurchCouponsInBackground } from '@/services/churchDiscountSync.service';
 import { getMenteeStats, getMentorStats } from './churchPortalActivity.service';
+import { lastWeekStarts, sessionsByWeek } from '../utils/insights';
 
 // Allowlists: signatures, agreements and internal admin notes must never reach a church
 const MENTEE_PROFILE_FIELDS: (keyof MenteeProfile)[] = [
@@ -24,6 +25,7 @@ const MENTOR_PROFILE_FIELDS: (keyof MentorProfile)[] = [
   'spiritualExpertise', 'currentBook', 'currentChapter', 'completedChapters', 'studyDays',
 ];
 const RECENT_QUIZ_ATTEMPTS = 10;
+const SESSION_CHART_WEEKS = 12;
 
 export class ChurchPortalMembersService {
   async listMembers(
@@ -147,6 +149,72 @@ export class ChurchPortalMembersService {
         };
       }),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * One member's sessions for a chart: completed and cancelled per week (last 12 weeks), the
+   * same split per person they met with, and how many are booked ahead. Counts only, same
+   * session fields the portal already lists.
+   */
+  async getMemberSessionChart(churchPortalId: string, userId: string, now: Date = new Date()) {
+    const userRepo = AppDataSource.getRepository(User);
+    const member = await userRepo.findOne({ where: { id: userId, churchPortalId }, select: ['id', 'role'] });
+    if (!member) throw new NotFoundError('Member not found in this church');
+
+    const isMentor = member.role === USER_ROLE.MENTOR;
+    const weeks = lastWeekStarts(SESSION_CHART_WEEKS, now);
+    const since = new Date(`${weeks[0]}T00:00:00Z`);
+    const own = isMentor ? { mentorId: userId } : { menteeId: userId };
+
+    const sessionRepo = AppDataSource.getRepository(Session);
+    const [sessions, upcoming] = await Promise.all([
+      sessionRepo.find({
+        where: { ...own, scheduledAt: MoreThanOrEqual(since) },
+        select: ['id', 'status', 'scheduledAt', 'mentorId', 'menteeId'],
+      }),
+      sessionRepo.count({
+        where: {
+          ...own,
+          scheduledAt: MoreThanOrEqual(now),
+          status: In([SESSION_STATUS.SCHEDULED, SESSION_STATUS.CONFIRMED, SESSION_STATUS.RESCHEDULED]),
+        },
+      }),
+    ]);
+    const past = sessions.filter((s) => new Date(s.scheduledAt) <= now);
+
+    const perPerson = new Map<string, { completed: number; cancelled: number }>();
+    for (const s of past) {
+      const other = isMentor ? s.menteeId : s.mentorId;
+      if (!other) continue;
+      const row = perPerson.get(other) ?? { completed: 0, cancelled: 0 };
+      if (s.status === SESSION_STATUS.COMPLETED) row.completed++;
+      else if (s.status === SESSION_STATUS.CANCELLED || s.status === SESSION_STATUS.NO_SHOW) row.cancelled++;
+      else continue;
+      perPerson.set(other, row);
+    }
+    const people = perPerson.size
+      ? await userRepo.find({
+          where: { id: In([...perPerson.keys()]) },
+          select: ['id', 'firstName', 'lastName', 'churchPortalId'],
+        })
+      : [];
+    const byId = new Map(people.map((u) => [u.id, u]));
+
+    return {
+      weeks: sessionsByWeek(past, weeks),
+      byPerson: [...perPerson.entries()]
+        .map(([id, counts]) => {
+          const u = byId.get(id);
+          return {
+            id,
+            name: u ? [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Member' : 'Former member',
+            inChurch: u?.churchPortalId === churchPortalId,
+            ...counts,
+          };
+        })
+        .sort((a, b) => b.completed - a.completed || b.cancelled - a.cancelled || a.name.localeCompare(b.name)),
+      upcoming,
     };
   }
 

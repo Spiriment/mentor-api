@@ -14,6 +14,15 @@ export class ChurchPortalDashboardController {
     }
   };
 
+  getInsights = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.dashboardService.getInsights(req.churchPortalUser!.churchPortalId);
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getActivityFeed = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = await this.dashboardService.getActivityFeed(req.churchPortalUser!.churchPortalId);

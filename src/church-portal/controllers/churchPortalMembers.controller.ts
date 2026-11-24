@@ -86,6 +86,18 @@ export class ChurchPortalMembersController {
     }
   };
 
+  getMemberSessionChart = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.membersService.getMemberSessionChart(
+        req.churchPortalUser!.churchPortalId,
+        req.params.userId
+      );
+      res.status(StatusCodes.OK).json({ status: 'success', data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   getMemberSessions = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, limit } = req.query as Record<string, string>;

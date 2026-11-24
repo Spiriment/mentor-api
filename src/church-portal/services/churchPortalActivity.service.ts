@@ -6,6 +6,8 @@ import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entitie
 import { QuizAttempt } from '@/database/entities/quizAttempt.entity';
 import { QuizStreak } from '@/database/entities/quizStreak.entity';
 import { USER_ROLE } from '@/common/constants';
+import { AppError } from '@/common/errors';
+import { StatusCodes } from 'http-status-codes';
 
 /** Completed sessions and active mentees per mentor */
 export async function getMentorStats(mentorIds: string[]) {
@@ -105,6 +107,67 @@ export class ChurchPortalActivityService {
     });
     const stats = await getMenteeStats(mentees.map((m) => m.id));
     return mentees.map((m) => ({ ...m, ...stats.get(m.id) }));
+  }
+
+  /**
+   * One session for the pastor: what it is, when, and who actually turned up. Deliberately
+   * leaves out everything said in it (notes, summary, assignments, feedback) — those stay between
+   * mentor and mentee. Visible when the mentor or the mentee belongs to this church, like the
+   * church-wide and per-member session lists.
+   */
+  async getSession(churchPortalId: string, sessionId: string) {
+    const s = await AppDataSource.getRepository(Session)
+      .createQueryBuilder('s')
+      .select([
+        's.id', 's.title', 's.description', 's.status', 's.type', 's.scheduledAt', 's.duration', 's.timezone',
+        's.startedAt', 's.endedAt', 's.mentorJoinedAt', 's.menteeJoinedAt', 's.mentorConfirmed', 's.menteeConfirmed',
+        's.cancelledAt', 's.cancellationReason', 's.previousScheduledAt', 's.rescheduleReason',
+        's.isRecurring', 's.recurringPattern', 's.mentorId', 's.menteeId', 's.createdAt',
+      ])
+      .where('s.id = :id', { id: sessionId })
+      .getOne();
+    const people = s
+      ? await AppDataSource.getRepository(User).find({
+          where: { id: In([s.mentorId, s.menteeId]) },
+          select: ['id', 'firstName', 'lastName', 'churchPortalId'],
+        })
+      : [];
+    const mentor = people.find((p) => p.id === s?.mentorId);
+    const mentee = people.find((p) => p.id === s?.menteeId);
+    if (!s || !(mentor?.churchPortalId === churchPortalId || mentee?.churchPortalId === churchPortalId)) {
+      throw new AppError('Session not found', StatusCodes.NOT_FOUND, 'NOT_FOUND');
+    }
+    const person = (p?: User) =>
+      p ? { id: p.id, firstName: p.firstName ?? null, lastName: p.lastName ?? null, inChurch: p.churchPortalId === churchPortalId } : null;
+    const actualMinutes =
+      s.startedAt && s.endedAt ? Math.max(0, Math.round((s.endedAt.getTime() - s.startedAt.getTime()) / 60000)) : null;
+
+    return {
+      id: s.id,
+      title: s.title ?? null,
+      description: s.description ?? null,
+      status: s.status,
+      type: s.type,
+      scheduledAt: s.scheduledAt,
+      duration: s.duration,
+      timezone: s.timezone ?? null,
+      startedAt: s.startedAt ?? null,
+      endedAt: s.endedAt ?? null,
+      actualMinutes,
+      mentorJoinedAt: s.mentorJoinedAt ?? null,
+      menteeJoinedAt: s.menteeJoinedAt ?? null,
+      mentorConfirmed: s.mentorConfirmed,
+      menteeConfirmed: s.menteeConfirmed,
+      cancelledAt: s.cancelledAt ?? null,
+      cancellationReason: s.cancellationReason ?? null,
+      previousScheduledAt: s.previousScheduledAt ?? null,
+      rescheduleReason: s.rescheduleReason ?? null,
+      isRecurring: s.isRecurring,
+      recurringPattern: s.recurringPattern ?? null,
+      createdAt: s.createdAt,
+      mentor: person(mentor),
+      mentee: person(mentee),
+    };
   }
 
   async getSessions(
