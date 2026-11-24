@@ -278,7 +278,8 @@ export class MonthlySummaryService {
       currentStreak: summary.currentStreak ?? 0,
       totalDaysRead: summary.totalDaysRead ?? 0,
       totalReadingMinutes: Math.round(summary.totalReadingMinutes ?? 0),
-      avgWeeklyStreak: Math.round((summary.longestConsecutiveDays ?? 0) / 4),
+      // Days read per week over the month (the email goes out once the month is over)
+      avgWeeklyStreak: Math.min(7, Math.round((((summary.totalDaysRead ?? 0) / daysInMonth) * 7) * 10) / 10),
       longestConsecutiveDays: summary.longestConsecutiveDays ?? 0,
       sessionsCount: summary.sessionsCount ?? 0,
       readingTimePreferenceLabel,
