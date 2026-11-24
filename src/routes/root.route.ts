@@ -28,6 +28,7 @@ import pushTokenRoutes from './pushToken.routes';
 import { monthlySummaryRoutes } from './monthlySummary.routes';
 import { streamRoutes } from './stream.routes';
 import { contactRoutes } from './contact.routes';
+import { demoVisitorRoutes } from './demoVisitor.routes';
 import { supportRoutes } from './support.routes';
 import { blogRoutes } from './blog.routes';
 import { faqRoutes } from './faq.routes';
@@ -194,6 +195,7 @@ const createRootRoutes = () => {
 
   // Website interaction routes
   rootRouter.use('/api/contact', contactRoutes);
+  rootRouter.use('/api/demo-visitors', demoVisitorRoutes);
   rootRouter.use('/api/support', supportRoutes);
   rootRouter.use('/api/blog', blogRoutes);
   rootRouter.use('/api/faq', faqRoutes);

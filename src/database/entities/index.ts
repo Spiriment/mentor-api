@@ -83,4 +83,5 @@ export * from './emailCampaign.entity';
 export * from './emailCampaignRecipient.entity';
 export * from './adminInvoice.entity';
 export * from './adminReceipt.entity';
+export * from './demoVisitor.entity';
 

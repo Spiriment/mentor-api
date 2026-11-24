@@ -33,6 +33,7 @@ import supportRoutes from './routes/support.routes';
 import broadcastsRoutes from './routes/broadcasts.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import receiptsRoutes from './routes/receipts.routes';
+import demoVisitorsRoutes from './routes/demoVisitors.routes';
 
 const adminAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -92,6 +93,7 @@ export function createAdminRouter(): Router {
   protectedAdmin.use('/broadcasts', broadcastsRoutes);
   protectedAdmin.use('/invoices', invoicesRoutes);
   protectedAdmin.use('/receipts', receiptsRoutes);
+  protectedAdmin.use('/demo-visitors', demoVisitorsRoutes);
 
   protectedAdmin.get(
     '/message-templates/:templateId',
