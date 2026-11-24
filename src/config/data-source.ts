@@ -66,6 +66,7 @@ import {
   AdminInvoice,
   AdminReceipt,
   DemoVisitor,
+  UserPushToken,
 } from '@/database/entities';
 
 import { ChurchPrivacyAcceptance } from '@/church-portal/entities/churchPrivacyAcceptance.entity';
@@ -159,6 +160,7 @@ export const AppDataSource = new DataSource({
     AdminInvoice,
     AdminReceipt,
     DemoVisitor,
+    UserPushToken,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

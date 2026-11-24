@@ -1,3 +1,5 @@
+import { userPushTokenService } from './userPushToken.service';
+import { deadTokensFromTickets, deviceTokensToSend } from '@/common/pushDevices';
 import {
   Expo,
   ExpoPushMessage,
@@ -55,6 +57,8 @@ export interface PushNotificationData {
   badge?: number;
   channelId?: string;
   priority?: 'default' | 'normal' | 'high';
+  /** Devices to leave out (e.g. ones already ringing through the live connection) */
+  excludePushTokens?: string[];
 }
 
 export class PushNotificationService {
@@ -95,57 +99,31 @@ export class PushNotificationService {
   async sendToUser(input: PushNotificationData): Promise<boolean> {
     try {
       const [notification] = await this.withBadges([input]);
-      // Check if the token is a valid Expo push token
-      if (!Expo.isExpoPushToken(notification.pushToken)) {
-        this.logger.warn(
-          `Push token ${notification.pushToken} is not a valid Expo push token`,
-        );
+      // Every device the person is signed in on, not only the last one to open the app
+      const stored = notification.userId ? await this.storedDevices(notification.userId) : [];
+      const tokens = deviceTokensToSend(notification.pushToken, stored, notification.excludePushTokens);
+      if (!tokens.length) {
+        this.logger.warn(`No valid push token for user ${notification.userId}`);
         return false;
       }
 
-      const message: ExpoPushMessage = {
-        to: notification.pushToken,
-        sound: notification.sound || 'default',
-        title: notification.title,
-        body: notification.body,
-        data: notification.data || {},
-        badge: notification.badge,
-        channelId: notification.channelId || 'default',
-        priority: notification.priority || 'high',
-      };
+      const tickets = await this.sendMessages(tokens.map((to) => this.toMessage(notification, to)));
+      await this.pruneDead(tokens, tickets);
 
-      const chunks = this.expo.chunkPushNotifications([message]);
-      const tickets: ExpoPushTicket[] = [];
-
-      for (const chunk of chunks) {
-        try {
-          const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-          tickets.push(...ticketChunk);
-        } catch (error) {
-          this.logger.error(
-            'Error sending push notification chunk',
-            error instanceof Error ? error : new Error(String(error)),
-          );
-        }
-      }
-
-      // Check for errors in tickets
-      for (const ticket of tickets) {
-        if (ticket.status === 'error') {
+      let delivered = 0;
+      tickets.forEach((ticket) => {
+        if (ticket?.status === 'ok') delivered++;
+        else if (ticket?.status === 'error') {
           this.logger.error(
             `Error sending push notification: ${ticket.message}`,
-            ticket.details
-              ? new Error(JSON.stringify(ticket.details))
-              : undefined,
+            ticket.details ? new Error(JSON.stringify(ticket.details)) : undefined,
           );
-          return false;
         }
+      });
+      if (delivered) {
+        this.logger.info(`Push notification sent to user ${notification.userId} (${delivered}/${tokens.length} devices)`);
       }
-
-      this.logger.info(
-        `Push notification sent successfully to user ${notification.userId}`,
-      );
-      return true;
+      return delivered > 0;
     } catch (error) {
       this.logger.error(
         'Error in sendToUser',
@@ -155,32 +133,82 @@ export class PushNotificationService {
     }
   }
 
+  /** The person's devices; if that lookup fails (e.g. migration not run yet), just the passed token */
+  private async storedDevices(userId: string): Promise<string[]> {
+    try {
+      return await userPushTokenService.tokensFor(userId);
+    } catch (error) {
+      this.logger.warn(`Device tokens unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }
+
+  private toMessage(notification: PushNotificationData, to: string): ExpoPushMessage {
+    return {
+      to,
+      sound: notification.sound || 'default',
+      title: notification.title,
+      body: notification.body,
+      data: notification.data || {},
+      badge: notification.badge,
+      channelId: notification.channelId || 'default',
+      priority: notification.priority || 'high',
+    };
+  }
+
+  /** Send in chunks; tickets line up with `messages` (undefined where a chunk failed) */
+  private async sendMessages(messages: ExpoPushMessage[]): Promise<Array<ExpoPushTicket | undefined>> {
+    const tickets: Array<ExpoPushTicket | undefined> = [];
+    for (const chunk of this.expo.chunkPushNotifications(messages)) {
+      try {
+        tickets.push(...(await this.expo.sendPushNotificationsAsync(chunk)));
+      } catch (error) {
+        tickets.push(...chunk.map(() => undefined));
+        this.logger.error(
+          'Error sending push notification chunk',
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
+    return tickets;
+  }
+
+  /** Forget devices the app was removed from, so we stop sending to them */
+  private async pruneDead(tokens: string[], tickets: Array<ExpoPushTicket | undefined>) {
+    const dead = deadTokensFromTickets(tokens, tickets as any);
+    if (!dead.length) return;
+    try {
+      await userPushTokenService.removeDead(dead);
+      this.logger.info(`Removed ${dead.length} push token(s) for uninstalled apps`);
+    } catch (error) {
+      this.logger.warn(`Could not remove dead push tokens: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /**
    * Send push notifications to multiple users
    */
   async sendToMany(input: PushNotificationData[]): Promise<void> {
     try {
       const notifications = await this.withBadges(input);
+      let devices = new Map<string, string[]>();
+      try {
+        devices = await userPushTokenService.tokensForMany(notifications.map((n) => n.userId).filter(Boolean));
+      } catch (error) {
+        // e.g. the user_push_tokens migration hasn't run yet: send to the passed tokens only
+        this.logger.warn(`Device tokens unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
       const messages: ExpoPushMessage[] = [];
-
+      const tokens: string[] = [];
       for (const notification of notifications) {
-        if (!Expo.isExpoPushToken(notification.pushToken)) {
-          this.logger.warn(
-            `Push token ${notification.pushToken} is not a valid Expo push token`,
-          );
-          continue;
+        for (const to of deviceTokensToSend(
+          notification.pushToken,
+          devices.get(notification.userId) ?? [],
+          notification.excludePushTokens,
+        )) {
+          messages.push(this.toMessage(notification, to));
+          tokens.push(to);
         }
-
-        messages.push({
-          to: notification.pushToken,
-          sound: notification.sound || 'default',
-          title: notification.title,
-          body: notification.body,
-          data: notification.data || {},
-          badge: notification.badge,
-          channelId: notification.channelId || 'default',
-          priority: notification.priority || 'high',
-        });
       }
 
       if (messages.length === 0) {
@@ -188,37 +216,18 @@ export class PushNotificationService {
         return;
       }
 
-      // Chunk messages to avoid rate limiting
-      const chunks = this.expo.chunkPushNotifications(messages);
-      const tickets: ExpoPushTicket[] = [];
-
-      for (const chunk of chunks) {
-        try {
-          const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-          tickets.push(...ticketChunk);
-        } catch (error) {
-          this.logger.error(
-            'Error sending push notification chunk',
-            error instanceof Error ? error : new Error(String(error)),
-          );
-        }
-      }
-
-      // Log any errors
+      const tickets = await this.sendMessages(messages);
+      await this.pruneDead(tokens, tickets);
       for (const ticket of tickets) {
-        if (ticket.status === 'error') {
+        if (ticket?.status === 'error') {
           this.logger.error(
             `Error in batch: ${ticket.message}`,
-            ticket.details
-              ? new Error(JSON.stringify(ticket.details))
-              : undefined,
+            ticket.details ? new Error(JSON.stringify(ticket.details)) : undefined,
           );
         }
       }
 
-      this.logger.info(
-        `Batch push notifications sent: ${messages.length} messages`,
-      );
+      this.logger.info(`Batch push notifications sent: ${messages.length} messages`);
     } catch (error) {
       this.logger.error(
         'Error in sendToMany',
@@ -466,11 +475,14 @@ export class PushNotificationService {
       conversationId: string;
       isSessionCall?: boolean;
     },
+    /** Devices already ringing through the live connection */
+    excludePushTokens: string[] = [],
   ): Promise<boolean> {
     const callLabel = callData.isSessionCall ? 'session call' : 'call';
     return this.sendToUser({
       userId,
       pushToken,
+      excludePushTokens,
       title: `Incoming ${callLabel} from ${callData.callerName}`,
       body: 'Tap to answer',
       data: {

@@ -1,3 +1,4 @@
+import { userPushTokenService } from '../services/userPushToken.service';
 import { Request, Response } from 'express';
 import { AppDataSource } from '../config/data-source';
 import { User } from '../database/entities/user.entity';
@@ -72,6 +73,11 @@ export class PushTokenController {
         ...(pushPlatform && { pushPlatform }),
         ...(appVersion && { appVersion }),
       });
+      // One row per device, so a phone and a tablet both get notifications. Never fails the
+      // request: users.pushToken above already keeps this device reachable.
+      await userPushTokenService
+        .register(userId, pushToken, pushPlatform ?? null)
+        .catch((e) => this.logger.warn(`Could not record device token: ${e instanceof Error ? e.message : String(e)}`));
 
 
       this.logger.info(`Push token updated for user ${userId}`);
@@ -129,8 +135,14 @@ export class PushTokenController {
         });
       }
 
-      // Remove user's push token
-      await this.userRepository.update(userId, { pushToken: null });
+      // Only this device: the person's other devices keep getting notifications.
+      // App builds before multi-device send no token (then the primary device is removed).
+      const token = typeof req.body?.pushToken === 'string' ? req.body.pushToken.trim() : null;
+      await userPushTokenService.unregister(userId, token || null).catch(async (e) => {
+        // e.g. migration not run yet: fall back to the old behaviour
+        this.logger.warn(`Could not remove device token: ${e instanceof Error ? e.message : String(e)}`);
+        await this.userRepository.update(userId, { pushToken: null });
+      });
 
       this.logger.info(`Push token removed for user ${userId}`);
 

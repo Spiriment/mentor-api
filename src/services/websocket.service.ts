@@ -57,7 +57,9 @@ interface SocketEvents {
 export class WebSocketService {
   private io: SocketIOServer;
   private chatService: ChatService;
-  private connectedUsers: Map<string, string> = new Map(); // userId -> socketId
+  // userId -> (socketId -> that device's push token, or null for app builds that don't send it).
+  // One person can be connected from a phone and a tablet at the same time.
+  private connectedUsers: Map<string, Map<string, string | null>> = new Map();
 
   constructor(httpServer: HttpServer, dataSource: DataSource) {
     this.io = new SocketIOServer(httpServer, {
@@ -170,8 +172,14 @@ export class WebSocketService {
     const userId = socket.userId!;
     const user = socket.user!;
 
-    // Store user connection
-    this.connectedUsers.set(userId, socket.id);
+    // Store user connection (every device: a phone closing mustn't mark the tablet offline)
+    const devicePushToken =
+      typeof socket.handshake.auth?.pushToken === 'string' && socket.handshake.auth.pushToken.trim()
+        ? socket.handshake.auth.pushToken.trim()
+        : null;
+    const sockets = this.connectedUsers.get(userId) ?? new Map<string, string | null>();
+    sockets.set(socket.id, devicePushToken);
+    this.connectedUsers.set(userId, sockets);
 
     // Join user to their personal room for direct messages (call invites, notifications, etc.)
     socket.join(`user:${userId}`);
@@ -233,6 +241,13 @@ export class WebSocketService {
     });
 
     // Handle video calls
+    // The app learned its push token after connecting: remember which device this socket is
+    socket.on('register-device', (data: any) => {
+      const token = typeof data?.pushToken === 'string' ? data.pushToken.trim() : '';
+      const sockets = this.connectedUsers.get(socket.userId!);
+      if (token && sockets?.has(socket.id)) sockets.set(socket.id, token);
+    });
+
     socket.on('call-invite', (data: any) => {
       this.handleCallInvite(socket, data);
     });
@@ -585,6 +600,13 @@ export class WebSocketService {
 
   private async handleDisconnection(socket: AuthenticatedSocket) {
     const userId = socket.userId!;
+    const sockets = this.connectedUsers.get(userId);
+    sockets?.delete(socket.id);
+    if (sockets && sockets.size > 0) {
+      // Still connected on another device: not offline
+      logger.info(`🔌 User ${userId} closed one device, ${sockets.size} still connected`);
+      return;
+    }
     this.connectedUsers.delete(userId);
 
     // Update lastSeen and broadcast offline status
@@ -665,8 +687,15 @@ export class WebSocketService {
     // Derive conversationId if not provided
     const finalConversationId = conversationId || this.deriveConversationId(sessionId, socket.userId!, targetUserId);
 
-    // Check if target user is online
-    const isTargetOnline = this.isUserOnline(targetUserId);
+    // Devices with the app open ring through the live connection; the person's other devices
+    // (in a pocket, app closed) get a push. Before multi-device, being online on one device
+    // meant no push at all, so a phone in a pocket never rang while the tablet was open.
+    const liveDevices = this.connectedUsers.get(targetUserId);
+    const isTargetOnline = !!liveDevices && liveDevices.size > 0;
+    const liveTokens = liveDevices ? [...liveDevices.values()] : [];
+    // A connected device that didn't say which it is (older app build) might be any of them:
+    // then don't push, or it could ring twice
+    const pushOtherDevices = !isTargetOnline || liveTokens.every(Boolean);
 
     if (isTargetOnline) {
       // User is online - send via WebSocket
@@ -679,8 +708,9 @@ export class WebSocketService {
         isSessionCall,
       });
       logger.info(`Call invite sent via WebSocket to online user ${targetUserId}`);
-    } else {
-      // User is offline/backgrounded - send push notification
+    }
+    if (pushOtherDevices) {
+      // Offline/backgrounded devices - send push notification
       try {
         const userRepository = this.chatService.getUserRepository();
         const targetUser = await userRepository.findOne({
@@ -700,7 +730,8 @@ export class WebSocketService {
               sessionId,
               conversationId: finalConversationId,
               isSessionCall,
-            }
+            },
+            liveTokens.filter((t): t is string => !!t)
           );
           logger.info(`📱 Call invite sent via push notification to offline user ${targetUserId}`);
         } else {
@@ -712,9 +743,23 @@ export class WebSocketService {
     }
   }
 
+  /**
+   * Answered or declined on one device: the person's other devices stop ringing. They already
+   * handle 'call-ended' for a ringing call, so app builds in use today stop too.
+   */
+  private stopRingingOnOtherDevices(socket: AuthenticatedSocket, data: any, reason: string) {
+    socket.to(`user:${socket.userId}`).emit('call-ended', {
+      enderId: data?.callerId,
+      sessionId: data?.sessionId,
+      conversationId: data?.conversationId,
+      reason,
+    });
+  }
+
   private handleCallAccept(socket: AuthenticatedSocket, data: any) {
     const { callerId, sessionId, conversationId } = data;
     logger.info(`Call accepted by ${socket.userId} for caller ${callerId}`);
+    this.stopRingingOnOtherDevices(socket, data, 'answered_elsewhere');
 
     this.io.to(`user:${callerId}`).emit('call-accepted', {
       acceptorId: socket.userId,
@@ -726,6 +771,7 @@ export class WebSocketService {
   private handleCallReject(socket: AuthenticatedSocket, data: any) {
     const { callerId, sessionId, conversationId, reason } = data;
     logger.info(`Call rejected by ${socket.userId} for caller ${callerId} ${reason ? `(Reason: ${reason})` : ''}`);
+    this.stopRingingOnOtherDevices(socket, data, 'declined_elsewhere');
 
     this.io.to(`user:${callerId}`).emit('call-rejected', {
       rejectorId: socket.userId,
@@ -768,7 +814,7 @@ export class WebSocketService {
   }
 
   public isUserOnline(userId: string): boolean {
-    return this.connectedUsers.has(userId);
+    return (this.connectedUsers.get(userId)?.size ?? 0) > 0;
   }
 
   public getOnlineUsers(): string[] {
