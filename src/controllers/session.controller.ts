@@ -6,10 +6,13 @@ import {
   CreateAvailabilityDTO,
 } from '../services/session.service';
 import { sendSuccessResponse } from '@/common/helpers';
+import { AppDataSource } from '@/config/data-source';
+import { assignmentNotificationText, newAssignments } from '@/common/sessionAssignments';
 import { Logger } from '@/common';
 import { AppError } from '@/common/errors';
 import { StatusCodes } from 'http-status-codes';
 import {
+  Session,
   SESSION_STATUS,
   SESSION_TYPE,
   SESSION_DURATION,
@@ -413,6 +416,12 @@ export class SessionController {
         throw new AppError('User not authenticated', StatusCodes.UNAUTHORIZED);
       }
 
+      // What the mentee already had, so only newly added assignments notify them
+      const before = await AppDataSource.getRepository(Session).findOne({
+        where: { id: sessionId },
+        select: ['id', 'assignments'],
+      });
+
       const updateData: UpdateSessionDTO = {
         mentorNotes: notes,
         sessionSummary: summary,
@@ -430,8 +439,46 @@ export class SessionController {
         mentorId: user.id,
       });
 
-      // Send assignment email if assignments exist
-      if (assignments && assignments.length > 0) {
+      // Only when assignments were added: saving again or editing the summary used to email
+      // the mentee the same assignments each time
+      const added = newAssignments(before?.assignments, assignments);
+      if (added.length > 0 && session.mentee) {
+        try {
+          const { getAppNotificationService } = await import('../services/appNotification.service');
+          const { AppNotificationType } = await import('../database/entities/appNotification.entity');
+          const { pushNotificationService } = await import('../services/pushNotification.service');
+          const mentorFirst = session.mentor?.firstName || '';
+          const { title, body } = assignmentNotificationText(mentorFirst, added);
+          const data = {
+            type: 'session_assignments',
+            sessionId: session.id,
+            mentorId: session.mentorId,
+            count: added.length,
+          };
+          await getAppNotificationService().createNotification({
+            userId: session.menteeId,
+            type: AppNotificationType.SESSION_ASSIGNMENTS,
+            title,
+            message: body,
+            data,
+          });
+          if (session.mentee.pushToken) {
+            await pushNotificationService.sendToUser({
+              userId: session.menteeId,
+              pushToken: session.mentee.pushToken,
+              title,
+              body,
+              data,
+              channelId: 'session-reminders',
+            });
+          }
+        } catch (notifyError: any) {
+          // The notes are saved; a failed notification mustn't fail the request
+          this.logger.error('Failed to notify mentee of new assignments', notifyError, { sessionId });
+        }
+      }
+
+      if (added.length > 0) {
         try {
           const { getEmailService, formatUserName } = await import('../services/emailHelper');
           const emailService = getEmailService();

@@ -9,6 +9,7 @@ import { LessThanOrEqual } from 'typeorm';
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { formatUserName } from './emailHelper';
+import { pushNotificationService } from './pushNotification.service';
 
 export interface CreateSessionReviewDTO {
   sessionId: string;
@@ -156,6 +157,19 @@ export class SessionReviewService {
             rating: data.rating,
           },
         });
+
+        // Push too: the in-app entry alone meant mentors only saw reviews if they opened the list
+        if (session.mentor?.pushToken) {
+          const stars = Math.max(1, Math.min(5, Math.round(Number(data.rating) || 0)));
+          await pushNotificationService.sendToUser({
+            userId: session.mentorId,
+            pushToken: session.mentor.pushToken,
+            title: 'New session review',
+            body: `${formatUserName(session.mentee)} left a review of your session ${'⭐'.repeat(stars)}`,
+            data: { type: 'session_review_submitted', sessionId: session.id, reviewId: savedReview.id },
+            channelId: 'session-reminders',
+          });
+        }
 
         logger.info('Session review notification sent', {
           mentorId: session.mentorId,

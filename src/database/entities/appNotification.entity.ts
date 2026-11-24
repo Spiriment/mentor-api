@@ -19,6 +19,7 @@ export enum AppNotificationType {
   SESSION_DECLINED = 'session_declined',
   SESSION_REMINDER = 'session_reminder',
   SESSION_REVIEW_SUBMITTED = 'session_review_submitted',
+  SESSION_ASSIGNMENTS = 'session_assignments',
   RESCHEDULE_REQUEST = 'reschedule_request',
   RESCHEDULE_ACCEPTED = 'reschedule_accepted',
   RESCHEDULE_DECLINED = 'reschedule_declined',
