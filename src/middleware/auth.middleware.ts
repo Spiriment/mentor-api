@@ -14,6 +14,32 @@ declare global {
   }
 }
 
+/** The user columns put on req.user after authentication */
+export const AUTH_USER_SELECT: (keyof User)[] = [
+  'id',
+  'email',
+  'firstName',
+  'lastName',
+  'gender',
+  'country',
+  'countryCode',
+  'birthday',
+  'role',
+  'isOnboardingComplete',
+  'mentorApprovalStatus',
+  'mentorApprovedAt',
+  'isActive',
+  'accountStatus',
+  'currentStreak',
+  'longestStreak',
+  'lastStreakDate',
+  'weeklyStreakData',
+  'stripeCustomerId',
+  'churchDiscountPercent',
+  'createdAt',
+  'updatedAt',
+];
+
 export const authenticateToken = async (
   req: Request,
   res: Response,
@@ -46,30 +72,7 @@ export const authenticateToken = async (
     const userRepository = AppDataSource.getRepository(User);
     const user = await userRepository.findOne({
       where: { id: decoded.userId },
-      select: [
-        'id',
-        'email',
-        'firstName',
-        'lastName',
-        'gender',
-        'country',
-        'countryCode',
-        'birthday',
-        'role',
-        'isOnboardingComplete',
-        'mentorApprovalStatus',
-        'mentorApprovedAt',
-        'isActive',
-        'accountStatus',
-        'currentStreak',
-        'longestStreak',
-        'lastStreakDate',
-        'weeklyStreakData',
-        'stripeCustomerId',
-        'churchDiscountPercent',
-        'createdAt',
-        'updatedAt',
-      ],
+      select: AUTH_USER_SELECT,
     });
 
     if (!user) {

@@ -408,6 +408,90 @@ export class AdminMentorService {
 
     return { sent: true, channels };
   }
+
+  /** Reviews mentees left for this mentor, newest first, for moderation */
+  async listMentorReviews(mentorId: string, params: { page?: number; limit?: number } = {}) {
+    if (!isUuid(mentorId)) throw new AppError('Invalid user id', 400);
+    const page = Math.max(1, Math.floor(Number(params.page) || 1));
+    const limit = Math.min(50, Math.max(1, Math.floor(Number(params.limit) || 20)));
+    const [rows, total] = await AppDataSource.getRepository(SessionReview)
+      .createQueryBuilder('r')
+      .leftJoin('r.mentee', 'mentee')
+      .select([
+        'r.id',
+        'r.rating',
+        'r.reviewText',
+        'r.sessionSummary',
+        'r.sessionId',
+        'r.groupSessionId',
+        'r.createdAt',
+        'mentee.id',
+        'mentee.firstName',
+        'mentee.lastName',
+      ])
+      .where('r.mentorId = :mentorId', { mentorId })
+      .orderBy('r.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        reviewText: r.reviewText ?? null,
+        sessionSummary: r.sessionSummary ?? null,
+        isGroupSession: !!r.groupSessionId,
+        createdAt: r.createdAt,
+        mentee: r.mentee
+          ? {
+              id: r.mentee.id,
+              name: [r.mentee.firstName, r.mentee.lastName].filter(Boolean).join(' ') || 'Mentee',
+            }
+          : null,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
+   * Removes a review for good (abusive or fake ones). The mentor's rating is worked out from
+   * the remaining reviews, so it updates by itself. The audit log keeps what was removed.
+   */
+  async deleteMentorReview(
+    mentorId: string,
+    reviewId: string,
+    adminUserId: string,
+    reason: string | undefined,
+    ip?: string
+  ) {
+    if (!isUuid(mentorId) || !isUuid(reviewId)) throw new AppError('Invalid id', 400);
+    const repo = AppDataSource.getRepository(SessionReview);
+    const review = await repo.findOne({ where: { id: reviewId, mentorId } });
+    if (!review) throw new AppError('Review not found', 404);
+
+    await repo.delete({ id: reviewId, mentorId });
+    await adminAuditService.log({
+      adminUserId,
+      action: 'admin.mentor.review.delete',
+      targetType: 'user',
+      targetId: mentorId,
+      metadata: {
+        reviewId,
+        menteeId: review.menteeId,
+        sessionId: review.sessionId ?? null,
+        groupSessionId: review.groupSessionId ?? null,
+        rating: review.rating,
+        reviewText: review.reviewText ?? null,
+        createdAt: review.createdAt,
+        reason: reason?.trim() || null,
+      },
+      ip: ip ?? null,
+    });
+    return { deleted: true, reviewId };
+  }
 }
 
 export const adminMentorService = new AdminMentorService();

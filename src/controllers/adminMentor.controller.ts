@@ -67,6 +67,35 @@ export class AdminMentorController {
       next(e);
     }
   };
+
+  listReviews = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const q = req.query as Record<string, string | undefined>;
+      const result = await adminMentorService.listMentorReviews(req.params.userId, {
+        page: q.page ? Number(q.page) : undefined,
+        limit: q.limit ? Number(q.limit) : undefined,
+      });
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  deleteReview = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 500) : undefined;
+      const result = await adminMentorService.deleteMentorReview(
+        req.params.userId,
+        req.params.reviewId,
+        req.admin!.id,
+        reason,
+        req.ip
+      );
+      return sendSuccessResponse(res, result);
+    } catch (e) {
+      next(e);
+    }
+  };
 }
 
 export const adminMentorController = new AdminMentorController();

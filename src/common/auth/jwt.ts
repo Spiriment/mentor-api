@@ -72,6 +72,28 @@ export class JwtService {
     }
   }
 
+  /**
+   * Like verify, but accepts a token that expired less than `graceSeconds` ago. Signature and
+   * algorithm are still checked. Only for routes older app builds call without refreshing.
+   */
+  verifyAllowingRecentExpiry<T extends UserPayload>(token: string, graceSeconds: number): DecodedToken<T> {
+    let decoded: DecodedToken<T>;
+    try {
+      decoded = jwt.verify(token, this.publicKey, {
+        algorithms: ["RS256"],
+        ignoreExpiration: true,
+      }) as DecodedToken<T>;
+    } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) throw new UnauthorizedError("Invalid token");
+      throw new UnauthorizedError("Failed to verify token");
+    }
+    const exp = (decoded as { exp?: unknown }).exp;
+    if (!isWithinExpiryGrace(exp, Math.floor(Date.now() / 1000), graceSeconds)) {
+      throw new UnauthorizedError("Token has expired");
+    }
+    return decoded;
+  }
+
   verify<T extends UserPayload>(token: string): DecodedToken<T> {
     try {
       return jwt.verify(token, this.publicKey, {
@@ -279,4 +301,9 @@ export class JwtService {
       throw new UnauthorizedError("Failed to verify church portal invite token");
     }
   }
+}
+
+/** A token is usable if it hasn't expired, or expired less than `graceSeconds` ago. No exp: not usable. */
+export function isWithinExpiryGrace(exp: unknown, nowSeconds: number, graceSeconds: number): boolean {
+  return typeof exp === "number" && Number.isFinite(exp) && nowSeconds < exp + graceSeconds;
 }

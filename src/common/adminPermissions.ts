@@ -14,6 +14,10 @@ export const ADMIN_PERMISSIONS = {
     label: 'Remove members from a church',
     description: 'Ends their church discount and any plan the church pays for.',
   },
+  'review.delete': {
+    label: 'Delete mentor reviews',
+    description: "Removes a mentee's review for good, e.g. abusive or fake ones. The mentor's rating updates.",
+  },
 } as const;
 
 export type AdminPermission = keyof typeof ADMIN_PERMISSIONS;

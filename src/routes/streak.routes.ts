@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { StreakController } from '../controllers/streak.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { requireSubscription } from '../middleware/requireSubscription.middleware';
 
 const streakController = new StreakController();
 const router = Router();
 
 router.use(authenticateToken);
 
-router.post('/increment', requireSubscription('basic'), streakController.incrementStreak);
-router.get('/', requireSubscription('basic'), streakController.getStreakData);
-router.get('/monthly/:year/:month', requireSubscription('basic'), streakController.getMonthlyStreakData);
+// The reading streak is free for everyone (since 2026-11-25); monthly reports stay Basic
+router.post('/increment', streakController.incrementStreak);
+router.get('/', streakController.getStreakData);
+router.get('/monthly/:year/:month', streakController.getMonthlyStreakData);
 
 // Reset weekly streak data (admin function)
 router.post('/reset-weekly', streakController.resetWeeklyStreakData);

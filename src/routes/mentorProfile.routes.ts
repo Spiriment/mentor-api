@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { MentorProfileController } from '../controllers/mentorProfile.controller';
 import { validate } from '../common';
+import { authenticateProfileRequest, profileAccessGuard } from '../middleware/profileAccess.middleware';
 import {
   mentorChristianExperienceSchema,
   mentorChristianJourneySchema,
@@ -19,6 +20,11 @@ import {
 
 const router = Router();
 const mentorProfileController = new MentorProfileController();
+
+// Every route needs a signed-in user, and :userId must be someone they may access
+// (see common/auth/profileAccess.ts). These routes used to be open to anyone.
+router.use(authenticateProfileRequest);
+router.param('userId', profileAccessGuard('mentor'));
 
 // Get mentor profile
 router.get('/:userId', mentorProfileController.getProfile);

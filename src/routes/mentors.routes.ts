@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { MentorsController } from '../controllers/mentors.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 const router = Router();
 const mentorsController = new MentorsController();
+
+// Only the signed-in app browses mentors; these responses include mentors' emails
+router.use(authenticateToken);
 
 // Get all approved mentors (for mentees to browse)
 router.get('/', mentorsController.getApprovedMentors);

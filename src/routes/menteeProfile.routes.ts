@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { MenteeProfileController } from '../controllers/menteeProfile.controller';
 import { validate } from '../common';
+import { authenticateProfileRequest, profileAccessGuard } from '../middleware/profileAccess.middleware';
 import {
   menteeBibleReadingFrequencySchema,
   menteeScriptureConfidenceSchema,
@@ -18,6 +19,11 @@ import {
 
 const router = Router();
 const menteeProfileController = new MenteeProfileController();
+
+// Every route needs a signed-in user, and :userId must be someone they may access
+// (see common/auth/profileAccess.ts). These routes used to be open to anyone.
+router.use(authenticateProfileRequest);
+router.param('userId', profileAccessGuard('mentee'));
 
 // Get mentee profile
 router.get('/:userId', menteeProfileController.getProfile);

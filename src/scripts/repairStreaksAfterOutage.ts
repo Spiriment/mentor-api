@@ -62,7 +62,7 @@ async function main() {
     where: { userId: In(userIds) },
     select: ['userId', 'tier', 'status'],
   });
-  // Same rule as requireSubscription('basic') on the streak endpoints
+  // The rule the streak endpoints had at the time (Basic and up); the streak became free on 2026-11-25
   const eligible = new Set(
     subs.filter((s) => ACCESS_STATUSES.includes(s.status) && STREAK_TIERS.includes(s.tier)).map((s) => s.userId),
   );
