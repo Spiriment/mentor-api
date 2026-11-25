@@ -20,6 +20,24 @@ import {
   parseISO,
 } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { ACCOUNT_STATUS } from '@/common/constants/options';
+import {
+  assignRanks,
+  FUTURE_TOLERANCE_MS,
+  isValidQuizVersion,
+  leaderboardDisplayName,
+  MAX_QUIZ_QUESTIONS,
+  normalizeAttemptNumbers,
+} from '@/common/quizLeaderboard';
+
+export type LeaderboardEntry = {
+  userId: string;
+  name: string;
+  profileImage: string | null;
+  xp: number;
+  rank: number;
+  isCurrentUser: boolean;
+};
 
 export class QuizService {
   private bookRepo = AppDataSource.getRepository(QuizBook);
@@ -85,19 +103,37 @@ export class QuizService {
     },
     timezone = 'UTC'
   ): Promise<{ attempt: QuizAttempt; streak: QuizStreak }> {
+    // The app grades the quiz and posts the result, so only accept what a real quiz can produce
+    const version = Number(data?.version);
+    if (!isValidQuizVersion(version)) {
+      throw new AppError('Invalid quiz level', 400, 'INVALID_QUIZ_ATTEMPT');
+    }
+    const book = typeof data?.book === 'string' ? data.book.trim() : '';
+    const bookEntity = book ? await this.bookRepo.findOne({ where: { book, isActive: true } }) : null;
+    if (!bookEntity) {
+      throw new AppError('Unknown quiz book', 400, 'INVALID_QUIZ_ATTEMPT');
+    }
+    const questionsAvailable = await this.questionRepo.count({
+      where: { bookId: bookEntity.id, version, isActive: true },
+    });
+    if (questionsAvailable === 0) {
+      throw new AppError('Unknown quiz level for this book', 400, 'INVALID_QUIZ_ATTEMPT');
+    }
+    const { score, total, completedAt } = normalizeAttemptNumbers(data, questionsAvailable);
+
     const attempt = this.attemptRepo.create({
       id: uuidv4(),
       userId,
-      book: data.book,
-      version: data.version,
-      score: data.score,
-      total: data.total,
-      completedAt: new Date(data.completedAt),
-      answers: data.answers,
+      book: bookEntity.book,
+      version,
+      score,
+      total,
+      completedAt,
+      answers: Array.isArray(data.answers) ? data.answers.slice(0, MAX_QUIZ_QUESTIONS) : undefined,
     });
     await this.attemptRepo.save(attempt);
 
-    const streak = await this.incrementQuizStreak(userId, timezone, data.book, data.version, data.score);
+    const streak = await this.incrementQuizStreak(userId, timezone, bookEntity.book, version, score);
 
     return { attempt, streak };
   }
@@ -430,15 +466,18 @@ export class QuizService {
     userId: string,
     period: 'week' | 'alltime',
     scope: 'global' | 'mentees' = 'global'
-  ): Promise<{ userId: string; name: string; profileImage: string | null; xp: number; isCurrentUser: boolean }[]> {
-    // Global XP leaderboard across ALL books and versions, optionally scoped to a
-    // mentor's own accepted mentees.
-    // Best score per (userId, book, version) only — prevents farming by replaying same quiz.
+  ): Promise<{ entries: LeaderboardEntry[]; me: { rank: number; xp: number } | null }> {
+    // Global XP leaderboard across ALL books and levels, optionally scoped to a mentor's own
+    // accepted mentees. Best score per (userId, book, version) only, so replaying the same quiz
+    // can't farm XP. Level multipliers: 1 → 1.0x | 2 → 1.5x | 3 → 2.0x | 4 → 3.0x
     //
-    // Version multipliers:
-    //   1 → 1.0x  |  2 → 1.5x  |  3 → 2.0x  |  4 → 3.0x
+    // Scores are posted by the app, so the query also caps what it counts the same way
+    // submitAttempt now does: real books only, levels 1–4, at most MAX_QUIZ_QUESTIONS
+    // per quiz, nothing dated in the future. That covers attempts stored before those checks.
 
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const latestAllowed = new Date(now.getTime() + FUTURE_TOLERANCE_MS);
 
     let scopedUserIds: string[] | null = null;
     if (scope === 'mentees') {
@@ -446,16 +485,28 @@ export class QuizService {
         where: { mentorId: userId, status: MENTORSHIP_REQUEST_STATUS.ACCEPTED },
       });
       scopedUserIds = acceptedRequests.map((r) => r.menteeId);
-      if (scopedUserIds.length === 0) return [];
+      if (scopedUserIds.length === 0) return { entries: [], me: null };
     }
 
-    // Inner subquery: best score per (userId, book, version), optionally filtered by week
+    // Inner subquery: best (capped) score per (userId, book, version)
     const innerQb = this.attemptRepo
       .createQueryBuilder('a')
+      // Only real books count (an invented book name used to add a fresh quiz's worth of XP).
+      // A book later switched off keeps the XP people earned on it.
+      .innerJoin(QuizBook, 'qb', 'qb.book = a.book')
+      // Deleted, suspended, blocked and deactivated accounts don't rank
+      .innerJoin(User, 'u', 'u.id = a.userId')
       .select('a.userId', 'userId')
       .addSelect('a.book', 'book')
       .addSelect('a.version', 'version')
-      .addSelect('MAX(a.score)', 'bestScore')
+      .addSelect('MAX(LEAST(GREATEST(a.score, 0), a.total, :maxQuestions))', 'bestScore')
+      .where('u.isActive = :userActive', { userActive: true })
+      .andWhere('(u.accountStatus IS NULL OR u.accountStatus NOT IN (:...hiddenStatuses))', {
+        hiddenStatuses: [ACCOUNT_STATUS.DELETED, ACCOUNT_STATUS.SUSPENDED, ACCOUNT_STATUS.BLOCKED],
+      })
+      .andWhere('a.version BETWEEN 1 AND 4')
+      .andWhere('a.completedAt <= :latestAllowed', { latestAllowed })
+      .setParameter('maxQuestions', MAX_QUIZ_QUESTIONS)
       .groupBy('a.userId')
       .addGroupBy('a.book')
       .addGroupBy('a.version');
@@ -471,7 +522,9 @@ export class QuizService {
     const innerSql = innerQb.getQuery();
     const innerParams = innerQb.getParameters();
 
-    // Outer query: apply version multiplier and sum XP per user
+    // Outer query: apply the level multiplier and sum XP per user. Not limited, so the viewer's
+    // own rank is known even when they're outside the top 50; ties break by user id so the
+    // order doesn't shuffle between refreshes.
     const rows = await this.attemptRepo.manager
       .createQueryBuilder()
       .select('sub.userId', 'userId')
@@ -491,39 +544,44 @@ export class QuizService {
       .setParameters(innerParams)
       .groupBy('sub.userId')
       .orderBy('xp', 'DESC')
-      .limit(50)
+      .addOrderBy('sub.userId', 'ASC')
       .getRawMany<{ userId: string; xp: string }>();
 
-    if (rows.length === 0) return [];
+    if (rows.length === 0) return { entries: [], me: null };
 
-    const rankedUserIds = rows.map((r) => r.userId);
-    const xpByUser = new Map(rows.map((r) => [r.userId, Math.round(Number(r.xp))]));
+    const ranked = assignRanks(rows.map((r) => ({ userId: r.userId, xp: Math.round(Number(r.xp)) })));
+    const mine = ranked.find((r) => r.userId === userId);
+    const me = mine ? { rank: mine.rank, xp: mine.xp } : null;
 
-    const users = await this.userRepo.find({ where: rankedUserIds.map((id) => ({ id })) });
+    const top = ranked.slice(0, 50);
+    const topIds = top.map((r) => r.userId);
+
+    const users = await this.userRepo.find({ where: topIds.map((id) => ({ id })) });
     const userById = new Map(users.map((u) => [u.id, u]));
 
     const [menteeProfiles, mentorProfiles] = await Promise.all([
-      this.menteeProfileRepo.find({ where: rankedUserIds.map((id) => ({ userId: id })) }),
-      this.mentorProfileRepo.find({ where: rankedUserIds.map((id) => ({ userId: id })) }),
+      this.menteeProfileRepo.find({ where: topIds.map((id) => ({ userId: id })) }),
+      this.mentorProfileRepo.find({ where: topIds.map((id) => ({ userId: id })) }),
     ]);
     const imageByUser = new Map<string, string | null>();
     for (const p of [...menteeProfiles, ...mentorProfiles]) {
       imageByUser.set(p.userId, p.profileImage ?? null);
     }
 
-    return rankedUserIds.map((uid) => {
-      const user = userById.get(uid);
-      const name = user
-        ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'User'
-        : 'User';
+    const entries = top.map((r) => {
+      const user = userById.get(r.userId);
       return {
-        userId: uid,
-        name,
-        profileImage: imageByUser.get(uid) ?? null,
-        xp: xpByUser.get(uid) ?? 0,
-        isCurrentUser: uid === userId,
+        userId: r.userId,
+        // First name and last initial: everyone with Basic can see this list
+        name: leaderboardDisplayName(user?.firstName, user?.lastName),
+        profileImage: imageByUser.get(r.userId) ?? null,
+        xp: r.xp,
+        rank: r.rank,
+        isCurrentUser: r.userId === userId,
       };
     });
+
+    return { entries, me };
   }
 
   async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {

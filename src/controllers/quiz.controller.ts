@@ -65,9 +65,11 @@ export const getLeaderboard = async (req: Request, res: Response, next: NextFunc
     const period = req.query.period === 'alltime' ? 'alltime' : 'week';
     // "mentees" scope is only meaningful for mentors — mentees have no mentees of their own.
     const scope = req.query.scope === 'mentees' && req.user!.role === 'mentor' ? 'mentees' : 'global';
-    // Returns { userId, name, profileImage, xp, isCurrentUser }[]
-    const leaderboard = await quizService.getLeaderboard(userId, period, scope);
-    res.json({ success: true, data: leaderboard });
+    const { entries, me } = await quizService.getLeaderboard(userId, period, scope);
+    // Apps that ask for it also get their own rank (shown when they're outside the top 50);
+    // older apps expect the bare list, so they keep getting exactly that.
+    const data = req.query.include === 'me' ? { entries, me } : entries;
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 };
 
