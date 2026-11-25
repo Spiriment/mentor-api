@@ -3,6 +3,13 @@ import { AppDataSource } from '../config/data-source';
 import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger } from '../common';
+import { ACCOUNT_STATUS } from '../common/constants/options';
+
+/** Mentors whose account was deleted, suspended, blocked or deactivated are never shown */
+const HIDDEN_ACCOUNT_STATUSES = [ACCOUNT_STATUS.DELETED, ACCOUNT_STATUS.SUSPENDED, ACCOUNT_STATUS.BLOCKED];
+const VISIBLE_MENTOR_ACCOUNT =
+  'user.id IS NOT NULL AND user.isActive = :mentorAccountActive AND (user.accountStatus IS NULL OR user.accountStatus NOT IN (:...hiddenAccountStatuses))';
+const VISIBLE_MENTOR_PARAMS = { mentorAccountActive: true, hiddenAccountStatuses: HIDDEN_ACCOUNT_STATUSES };
 
 export class MentorsController {
   private logger: Logger;
@@ -35,6 +42,7 @@ export class MentorsController {
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
+        .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         });
@@ -115,7 +123,8 @@ export class MentorsController {
       let query = mentorProfileRepository
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
-        .where('(profile.id = :mentorId OR profile.userId = :mentorId)', { mentorId });
+        .where('(profile.id = :mentorId OR profile.userId = :mentorId)', { mentorId })
+        .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS);
 
       // Only require approval if not explicitly skipped
       if (!skipApprovalCheck) {
@@ -197,6 +206,7 @@ export class MentorsController {
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
+        .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         });
@@ -301,6 +311,7 @@ export class MentorsController {
         .createQueryBuilder('profile')
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
+        .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         })

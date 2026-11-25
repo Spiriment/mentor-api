@@ -1389,6 +1389,23 @@ export class AuthService {
       notificationPreferences: [],
     });
 
+    // A mentor's public profile (photo, video, story, church) lived on after deletion and kept
+    // showing to mentees. Take it out of the directory and clear what identifies them; the row
+    // itself stays so past sessions and reviews still resolve.
+    await AppDataSource.getRepository(MentorProfile).update(
+      { userId },
+      {
+        isApproved: false,
+        profileImage: null as any,
+        videoIntroduction: null as any,
+        christianJourney: null as any,
+        maturityDefinition: null as any,
+        churchAffiliation: null as any,
+        leadershipRoles: null as any,
+        eSignature: null,
+      },
+    );
+
     this.logger.info('User self-deleted account', { userId });
     return { success: true };
   };
