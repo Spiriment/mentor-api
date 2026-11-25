@@ -12,6 +12,7 @@ import { sessionAutoUpdateService } from "@/services/sessionAutoUpdate.service";
 import { AssignmentReminderService } from "@/services/assignmentReminder.service";
 import { EmailService } from "./email.service";
 import { subMonths } from "date-fns";
+import { pruneCronRuns, runCronOnce } from "@/common/cronRuns";
 import { SubscriptionService } from "@/services/subscription.service";
 import { adminOrgPlanService } from "@/services/adminOrgPlan.service";
 import { mrrSnapshotService } from "@/services/mrrSnapshot.service";
@@ -34,6 +35,32 @@ export class CronService {
   }
 
   /**
+   * cron.schedule, but each run is claimed in cron_runs first, so when several backend
+   * processes are up only one of them runs the job (see common/cronRuns.ts).
+   */
+  private scheduleOnce(
+    name: string,
+    expression: string,
+    job: () => Promise<unknown>,
+    options: { timezone: string }
+  ): cron.ScheduledTask {
+    return cron.schedule(
+      expression,
+      async () => {
+        try {
+          await runCronOnce(name, job, { log: logger });
+        } catch (error) {
+          logger.error(
+            `Error in cron job ${name}:`,
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      },
+      options
+    );
+  }
+
+  /**
    * Initialize and start all cron jobs
    */
   startAllCronJobs(): void {
@@ -47,7 +74,8 @@ export class CronService {
 
       // Schedule session reminder job - runs every minute
       // This checks for sessions starting in 1 hour and 15 minutes
-      const sessionReminderTask = cron.schedule(
+      const sessionReminderTask = this.scheduleOnce(
+        "session-15min-reminder",
         "* * * * *", // Every minute
         async () => {
           // Run 1-hour reminders
@@ -103,8 +131,7 @@ export class CronService {
 
       // Schedule streak reminder job - runs twice daily at 8 PM user time (approximately)
       // We run at 12:00 PM UTC and 8:00 PM UTC to cover most timezones
-      const streakReminderTask = cron.schedule(
-        "0 12,20 * * *", // At 12:00 PM and 8:00 PM UTC daily
+      const streakReminderTask = this.scheduleOnce("streak-reminder", "0 12,20 * * *", // At 12:00 PM and 8:00 PM UTC daily
         async () => {
           try {
             await this.streakNotificationService?.sendStreakReminders();
@@ -127,8 +154,7 @@ export class CronService {
       this.reengagementService = new ReengagementService(emailService);
 
       // Schedule re-engagement job - runs once daily at 10:00 AM UTC
-      const reengagementTask = cron.schedule(
-        "0 10 * * *", // At 10:00 AM UTC daily
+      const reengagementTask = this.scheduleOnce("reengagement", "0 10 * * *", // At 10:00 AM UTC daily
         async () => {
           try {
             await this.reengagementService?.sendReengagementNotifications();
@@ -149,8 +175,7 @@ export class CronService {
 
       // Incomplete onboarding reminders — day 1 / 3 / 7 after signup
       this.onboardingReminderService = new OnboardingReminderService(emailService);
-      const onboardingReminderTask = cron.schedule(
-        "30 11 * * *", // 11:30 AM UTC daily
+      const onboardingReminderTask = this.scheduleOnce("onboarding-reminder", "30 11 * * *", // 11:30 AM UTC daily
         async () => {
           try {
             await this.onboardingReminderService?.sendOnboardingReminders();
@@ -169,8 +194,7 @@ export class CronService {
       logger.info("Onboarding reminder cron job scheduled (daily at 11:30 AM UTC)");
 
       // Schedule notification processing job - runs every minute
-      const notificationProcessingTask = cron.schedule(
-        "* * * * *", // Every minute
+      const notificationProcessingTask = this.scheduleOnce("notification-processing", "* * * * *", // Every minute
         async () => {
           try {
             await notificationSchedulerService.processPendingNotifications();
@@ -193,8 +217,7 @@ export class CronService {
       this.monthlySummaryService = new MonthlySummaryService();
 
       // Schedule monthly report job - runs at 00:00 on the 1st of every month
-      const monthlyReportTask = cron.schedule(
-        "0 0 1 * *",
+      const monthlyReportTask = this.scheduleOnce("monthly-report", "0 0 1 * *",
         async () => {
           try {
             const previousMonthDate = subMonths(new Date(), 1);
@@ -218,8 +241,7 @@ export class CronService {
       logger.info("Monthly report cron job scheduled (1st of month at 00:00 UTC)");
 
       // Schedule missed session check job - runs every 30 minutes
-      const missedSessionCheckTask = cron.schedule(
-        "*/30 * * * *",
+      const missedSessionCheckTask = this.scheduleOnce("missed-session-check", "*/30 * * * *",
         async () => {
           try {
             await sessionAutoUpdateService.checkMissedSessions();
@@ -246,8 +268,7 @@ export class CronService {
 
       // Schedule assignment reminder job - runs every hour
       // Sends reminder to mentors who completed a session ~24hrs ago but haven't added assignments
-      const assignmentReminderTask = cron.schedule(
-        "0 * * * *", // Every hour
+      const assignmentReminderTask = this.scheduleOnce("assignment-reminder", "0 * * * *", // Every hour
         async () => {
           try {
             await this.assignmentReminderService?.sendAssignmentReminders();
@@ -271,8 +292,7 @@ export class CronService {
       const subscriptionService = new SubscriptionService(subEmailService);
 
       // Daily at 09:00 UTC — trial reminders (3 days out and 1 day out)
-      const trialReminderTask = cron.schedule(
-        "0 9 * * *",
+      const trialReminderTask = this.scheduleOnce("trial-reminder", "0 9 * * *",
         async () => {
           try {
             const threeDay = await subscriptionService.getExpiringTrials(3);
@@ -298,8 +318,7 @@ export class CronService {
       logger.info("Trial reminder cron job scheduled (daily 09:00 UTC)");
 
       // Daily at 10:00 UTC — convert expired trials to Free
-      const trialConvertTask = cron.schedule(
-        "0 10 * * *",
+      const trialConvertTask = this.scheduleOnce("trial-convert", "0 10 * * *",
         async () => {
           try {
             const converted = await subscriptionService.convertExpiredTrials();
@@ -316,8 +335,7 @@ export class CronService {
       logger.info("Trial conversion cron job scheduled (daily 10:00 UTC)");
 
       // Daily at 11:00 UTC — downgrade past_due accounts after 1-day grace period
-      const gracePeriodTask = cron.schedule(
-        "0 11 * * *",
+      const gracePeriodTask = this.scheduleOnce("grace-period-downgrade", "0 11 * * *",
         async () => {
           try {
             const overdue = await subscriptionService.getPastDueSubscriptions();
@@ -350,8 +368,7 @@ export class CronService {
       logger.info("Grace period downgrade cron job scheduled (daily 11:00 UTC)");
 
       // Daily at 07:30 UTC — the 30% youth discount ends when a member turns 19
-      const youthDiscountTask = cron.schedule(
-        "30 7 * * *",
+      const youthDiscountTask = this.scheduleOnce("youth-discount-expiry", "30 7 * * *",
         async () => {
           try {
             const { runYouthDiscountExpiry } = await import("@/services/youthDiscountExpiry.service");
@@ -369,8 +386,7 @@ export class CronService {
       logger.info("Youth discount expiry cron job scheduled (daily 07:30 UTC)");
 
       // Daily at 08:00 UTC — this month's invoice for churches with automatic invoicing on
-      const churchAutoInvoiceTask = cron.schedule(
-        "0 8 * * *",
+      const churchAutoInvoiceTask = this.scheduleOnce("church-auto-invoice", "0 8 * * *",
         async () => {
           try {
             const { churchBillingService } = await import("@/services/churchBilling.service");
@@ -388,8 +404,7 @@ export class CronService {
       logger.info("Church auto-invoice cron job scheduled (daily 08:00 UTC)");
 
       // Daily at 09:30 UTC — refresh open church invoices from Stripe, alert on overdue ones
-      const churchInvoiceTask = cron.schedule(
-        "30 9 * * *",
+      const churchInvoiceTask = this.scheduleOnce("church-invoice-reconcile", "30 9 * * *",
         async () => {
           try {
             const { checked, overdueAlerts } = await adminOrgPlanService.reconcileChurchInvoices();
@@ -406,8 +421,7 @@ export class CronService {
       logger.info("Church invoice reconcile cron job scheduled (daily 09:30 UTC)");
 
       // Daily at 00:15 UTC — persist MRR snapshot for admin revenue history
-      const mrrSnapshotTask = cron.schedule(
-        "15 0 * * *",
+      const mrrSnapshotTask = this.scheduleOnce("mrr-snapshot", "15 0 * * *",
         async () => {
           try {
             await mrrSnapshotService.captureCurrentMonthSnapshot();
@@ -423,8 +437,7 @@ export class CronService {
       this.tasks.set("mrr-snapshot", mrrSnapshotTask);
       logger.info("MRR snapshot cron job scheduled (daily 00:15 UTC)");
 
-      const webhookPruneTask = cron.schedule(
-        "45 0 * * *",
+      const webhookPruneTask = this.scheduleOnce("webhook-idempotency-prune", "45 0 * * *",
         async () => {
           try {
             const deleted = await webhookIdempotencyService.pruneOlderThanDays(90);
@@ -443,8 +456,7 @@ export class CronService {
       this.tasks.set("webhook-idempotency-prune", webhookPruneTask);
       logger.info("Webhook idempotency prune cron scheduled (daily 00:45 UTC)");
 
-      const churchHistoryPruneTask = cron.schedule(
-        "50 0 * * *",
+      const churchHistoryPruneTask = this.scheduleOnce("church-history-prune", "50 0 * * *",
         async () => {
           try {
             const { churchPortalHistory } = await import("@/church-portal/services/churchPortalHistory.service");
@@ -465,8 +477,7 @@ export class CronService {
       logger.info("Church portal history prune cron scheduled (daily 00:50 UTC)");
 
       // Weekly quiz reminder — every Monday at 9:00 AM UTC
-      const weeklyQuizTask = cron.schedule(
-        "0 9 * * 1",
+      const weeklyQuizTask = this.scheduleOnce("weekly-quiz-reminder", "0 9 * * 1",
         async () => {
           try {
             await quizNotificationService.sendWeeklyQuizReminder();
@@ -482,8 +493,7 @@ export class CronService {
       this.tasks.set("weekly-quiz-reminder", weeklyQuizTask);
       logger.info("Weekly quiz reminder cron scheduled (every Monday 09:00 UTC)");
 
-      const broadcastScheduleTask = cron.schedule(
-        "* * * * *",
+      const broadcastScheduleTask = this.scheduleOnce("broadcast-schedule", "* * * * *",
         async () => {
           try {
             await adminBroadcastService.processScheduledCampaigns();
@@ -498,6 +508,18 @@ export class CronService {
       );
       this.tasks.set("broadcast-schedule", broadcastScheduleTask);
       logger.info("Broadcast schedule cron scheduled (every minute UTC)");
+
+      const cronRunsPruneTask = this.scheduleOnce(
+        "cron-runs-prune",
+        "55 0 * * *",
+        async () => {
+          const deleted = await pruneCronRuns(14);
+          if (deleted > 0) logger.info(`Pruned ${deleted} cron run records older than 14 days`);
+        },
+        { timezone: "UTC" }
+      );
+      this.tasks.set("cron-runs-prune", cronRunsPruneTask);
+      logger.info("Cron runs prune cron scheduled (daily 00:55 UTC — retains 14 days)");
 
     } catch (error) {
       logger.error(
@@ -586,6 +608,8 @@ export class CronService {
         return "* * * * * (Every minute)";
       case "weekly-quiz-reminder":
         return "0 9 * * 1 (Every Monday 09:00 UTC)";
+      case "cron-runs-prune":
+        return "55 0 * * * (Daily at 00:55 UTC — retains 14 days)";
       default:
         return "Unknown";
     }
