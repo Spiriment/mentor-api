@@ -94,6 +94,11 @@ describe('computeProficiency', () => {
     assert.deepEqual([gospels.booksPlayed, gospels.booksTotal], [2, 4]);
   });
 
+  it('counts a book as tried even when nothing was right', () => {
+    const r = computeProficiency([attempt('Ruth', 1, 0)], ALL_BOOKS, now);
+    assert.equal(r.areas.find((x) => x.key === 'history')!.booksPlayed, 1);
+  });
+
   it('only counts books that have quizzes', () => {
     const r = computeProficiency([attempt('Revelation', 4, 10)], ['Revelation'], now);
     assert.equal(r.areas.length, 1);

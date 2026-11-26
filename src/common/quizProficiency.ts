@@ -137,7 +137,8 @@ export function computeProficiency(attempts: ProficiencyAttempt[], availableBook
       key: area.key,
       name: area.name,
       score: books.length ? Math.round((sum / books.length) * 1000) : 0,
-      booksPlayed: books.filter((b) => (mastery.get(b) ?? 0) > 0).length,
+      // Any attempt counts as having tried the book, even a round with nothing right
+      booksPlayed: books.filter((b) => mastery.has(b)).length,
       booksTotal: books.length,
     };
   }).filter((a) => a.booksTotal > 0);
