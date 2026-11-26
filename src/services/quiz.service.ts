@@ -1,3 +1,4 @@
+import { In } from 'typeorm';
 import { AppDataSource } from '@/config/data-source';
 import { QuizBook } from '@/database/entities/quizBook.entity';
 import { QuizQuestion } from '@/database/entities/quizQuestion.entity';
@@ -39,6 +40,9 @@ export type LeaderboardEntry = {
   rank: number;
   isCurrentUser: boolean;
 };
+
+/** Leaderboard shows 50; a little headroom */
+const MAX_LEVEL_LOOKUPS = 60;
 
 export class QuizService {
   private bookRepo = AppDataSource.getRepository(QuizBook);
@@ -620,6 +624,38 @@ export class QuizService {
       suggestion: suggestNext(areas, mastery, availableBooks),
       quizzesCounted: attempts.length,
     };
+  }
+
+  /**
+   * Proficiency levels for several users at once (leaderboard emblems). One query for all of
+   * their attempts; the leaderboard itself doesn't wait for this.
+   */
+  async getProficiencyLevels(userIds: string[]): Promise<Record<string, { key: string; name: string; score: number }>> {
+    const ids = [...new Set(userIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)))].slice(0, MAX_LEVEL_LOOKUPS);
+    if (ids.length === 0) return {};
+    const now = new Date();
+    const latestAllowed = now.getTime() + FUTURE_TOLERANCE_MS;
+    const [books, rows] = await Promise.all([
+      this.bookRepo.find({ where: { isActive: true }, select: { book: true } }),
+      this.attemptRepo.find({
+        where: { userId: In(ids) },
+        select: { userId: true, book: true, version: true, score: true, total: true, completedAt: true },
+      }),
+    ]);
+    const availableBooks = books.map((b) => b.book);
+    const byUser = new Map<string, { book: string; version: number; score: number; total: number; completedAt: Date }[]>();
+    for (const a of rows) {
+      if (!a.completedAt || new Date(a.completedAt).getTime() > latestAllowed) continue;
+      const list = byUser.get(a.userId) ?? [];
+      list.push({ book: a.book, version: Number(a.version), score: Number(a.score), total: Number(a.total), completedAt: new Date(a.completedAt) });
+      byUser.set(a.userId, list);
+    }
+    const out: Record<string, { key: string; name: string; score: number }> = {};
+    for (const id of ids) {
+      const { score, level } = computeProficiency(byUser.get(id) ?? [], availableBooks, now);
+      out[id] = { key: level.key, name: level.name, score };
+    }
+    return out;
   }
 
   async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {

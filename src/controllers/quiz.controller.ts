@@ -80,6 +80,14 @@ export const getProficiency = async (req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 };
 
+export const getProficiencyLevels = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const ids = String(req.query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const data = await quizService.getProficiencyLevels(ids);
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+};
+
 export const submitFeedback = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { book, version, helpful } = req.body;
