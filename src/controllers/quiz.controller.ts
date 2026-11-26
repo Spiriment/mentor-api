@@ -73,6 +73,13 @@ export const getLeaderboard = async (req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 };
 
+export const getProficiency = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await quizService.getProficiency(req.user!.id);
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+};
+
 export const submitFeedback = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { book, version, helpful } = req.body;

@@ -21,6 +21,7 @@ import {
 } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { ACCOUNT_STATUS } from '@/common/constants/options';
+import { computeProficiency, suggestNext, weeklyTrend } from '@/common/quizProficiency';
 import {
   assignRanks,
   FUTURE_TOLERANCE_MS,
@@ -582,6 +583,43 @@ export class QuizService {
     });
 
     return { entries, me };
+  }
+
+  /**
+   * Scripture Proficiency (Seed → Oak of Righteousness) from this user's quiz results: an
+   * overall score, one per area of the Bible, a 12-week trend and where to grow next.
+   * Same caps as the leaderboard, so posted numbers can't inflate it.
+   */
+  async getProficiency(userId: string) {
+    const now = new Date();
+    const [books, rows] = await Promise.all([
+      this.bookRepo.find({ where: { isActive: true }, select: { book: true } }),
+      this.attemptRepo.find({
+        where: { userId },
+        select: { book: true, version: true, score: true, total: true, completedAt: true },
+      }),
+    ]);
+    const availableBooks = books.map((b) => b.book);
+    const latestAllowed = now.getTime() + FUTURE_TOLERANCE_MS;
+    const attempts = rows
+      .filter((a) => a.completedAt && new Date(a.completedAt).getTime() <= latestAllowed)
+      .map((a) => ({
+        book: a.book,
+        version: Number(a.version),
+        score: Number(a.score),
+        total: Number(a.total),
+        completedAt: new Date(a.completedAt),
+      }));
+
+    const { score, level, areas, mastery } = computeProficiency(attempts, availableBooks, now);
+    return {
+      score,
+      level,
+      areas,
+      trend: weeklyTrend(attempts, availableBooks, now, 12),
+      suggestion: suggestNext(areas, mastery, availableBooks),
+      quizzesCounted: attempts.length,
+    };
   }
 
   async submitFeedback(userId: string, book: string, version: number, helpful: boolean): Promise<void> {
