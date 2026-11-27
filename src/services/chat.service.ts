@@ -1,5 +1,6 @@
 import { DataSource, Repository, In } from 'typeorm';
 import { logger } from '@/config/int-services';
+import { safetyService } from './safety.service';
 import {
   User,
   Conversation,
@@ -445,6 +446,10 @@ export class ChatService {
   async createMessageOnce(
     data: CreateMessageData
   ): Promise<{ message: Message; duplicate: boolean }> {
+    // Blocked either way: nothing gets through (private notes only reach the sender, so they stay)
+    if (!(data.metadata as any)?.isPrivate) {
+      await safetyService.assertCanMessageConversation(data.conversationId, data.senderId);
+    }
     const clientMessageId = (data.metadata as any)?.clientMessageId;
     if (typeof clientMessageId === 'string' && clientMessageId) {
       const existing = await this.messageRepository

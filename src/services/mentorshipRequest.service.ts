@@ -8,6 +8,7 @@ import { User } from '../database/entities/user.entity';
 import { AppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '../database/entities/appNotification.entity';
 import { logger } from '@/config/int-services';
+import { safetyService } from './safety.service';
 import { getEmailService, formatUserName } from './emailHelper';
 import { pushNotificationService } from './pushNotification.service';
 import { AppError } from '../common/errors';
@@ -34,6 +35,8 @@ export class MentorshipRequestService {
     message?: string;
   }): Promise<{ request: MentorshipRequest; alreadyExists: boolean }> {
     try {
+      await safetyService.assertNotBlocked(data.menteeId, data.mentorId, "You can't send a request to this mentor.");
+
       // Check if request already exists
       const existingRequest = await this.requestRepository.findOne({
         where: {
@@ -239,6 +242,8 @@ export class MentorshipRequestService {
           StatusCodes.NOT_FOUND
         );
       }
+
+      await safetyService.assertNotBlocked(request.mentorId, request.menteeId, "You can't accept this request.");
 
       if (!request.canRespond()) {
         throw new AppError(

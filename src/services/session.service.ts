@@ -38,6 +38,7 @@ import {
 import { getAppNotificationService } from './appNotification.service';
 import { AppNotificationType } from '@/database/entities/appNotification.entity';
 import { pushNotificationService } from './pushNotification.service';
+import { safetyService } from './safety.service';
 import {
   MentorshipRequest,
   MENTORSHIP_REQUEST_STATUS,
@@ -152,6 +153,8 @@ export class SessionService {
           StatusCodes.FORBIDDEN
         );
       }
+
+      await safetyService.assertNotBlocked(data.menteeId, data.mentorId, "You can't book a session with this person.");
 
       await new SubscriptionService(new EmailService(null)).assertSessionQuotaAvailable(
         data.menteeId,
@@ -422,6 +425,12 @@ export class SessionService {
           );
         }
         throw error;
+      }
+
+      // Joining a session between two people where one blocked the other: the session is on
+      // hold until an admin cancels or keeps it (see SafetyService.resolveBlockSessions)
+      if (updates.menteeJoinedAt || updates.mentorJoinedAt || updates.status === SESSION_STATUS.IN_PROGRESS) {
+        await safetyService.assertNotBlocked(session.mentorId, session.menteeId, 'This session is on hold.');
       }
 
       // First person into the call while the other hasn't joined yet → tell the other one
@@ -1201,6 +1210,8 @@ export class SessionService {
         );
       }
 
+      await safetyService.assertNotBlocked(session.mentorId, session.menteeId, "This session is on hold.");
+
       // Check current status
       if (session.status !== SESSION_STATUS.SCHEDULED) {
         throw new AppError(
@@ -1405,6 +1416,8 @@ export class SessionService {
       if (!session) {
         throw new AppError('Session not found', StatusCodes.NOT_FOUND);
       }
+
+      await safetyService.assertNotBlocked(session.mentorId, session.menteeId, "This session can't be changed.");
 
       // The mentee requests a new time (the mentor then accepts or declines it). The mentor
       // can move a still-pending request straight to a time that suits them ("Decline &
@@ -1725,6 +1738,8 @@ export class SessionService {
       const newTimeFormatted = formatSessionTime(requestedNewTime, session.mentee?.timezone);
 
       // Use a transaction to prevent race conditions when accepting reschedule
+      await safetyService.assertNotBlocked(session.mentorId, session.menteeId, "This session is on hold.");
+
       const updatedSession = await AppDataSource.transaction(
         async (transactionalEntityManager) => {
           const sessionRepository =

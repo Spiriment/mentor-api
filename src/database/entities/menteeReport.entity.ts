@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
+import type { ContextMessage } from '@/common/safety';
 
 export type MenteeReportStatus = 'open' | 'in_review' | 'resolved' | 'dismissed';
 
@@ -40,4 +41,22 @@ export class MenteeReport extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   resolutionNotes?: string | null;
+
+  /** Where in the app the report was made (see common/safety REPORT_SOURCES) */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  source?: string | null;
+
+  /** The reported message, when a message was reported */
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  messageId?: string | null;
+
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  conversationId?: string | null;
+
+  /**
+   * Copy of the messages around the reported one, taken when the report was made, so admins
+   * see what happened even if the sender deletes the message afterwards
+   */
+  @Column({ type: 'json', nullable: true })
+  context?: { messages: ContextMessage[]; reportedMessageId: string } | null;
 }

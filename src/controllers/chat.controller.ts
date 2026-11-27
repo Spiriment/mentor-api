@@ -1,3 +1,4 @@
+import { BLOCKED_ERROR_CODE } from '@/services/safety.service';
 import { Request, Response } from 'express';
 import { logger } from '@/config/int-services';
 import { ChatService } from '@/services/chat.service';
@@ -315,6 +316,13 @@ export class ChatController {
         message: 'Message sent successfully',
       });
     } catch (error: any) {
+      // Blocked: a clear 403 the app shows as "You can't send messages here"
+      if (error?.code === BLOCKED_ERROR_CODE) {
+        return res.status(403).json({
+          success: false,
+          error: { message: error.message, code: BLOCKED_ERROR_CODE },
+        });
+      }
       logger.error('Error sending message:', error);
       res.status(500).json({
         success: false,

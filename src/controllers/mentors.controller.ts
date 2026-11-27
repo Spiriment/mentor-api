@@ -4,12 +4,19 @@ import { MentorProfile } from '../database/entities/mentorProfile.entity';
 import { User } from '../database/entities/user.entity';
 import { Logger } from '../common';
 import { ACCOUNT_STATUS } from '../common/constants/options';
+import { safetyService } from '../services/safety.service';
 
 /** Mentors whose account was deleted, suspended, blocked or deactivated are never shown */
 const HIDDEN_ACCOUNT_STATUSES = [ACCOUNT_STATUS.DELETED, ACCOUNT_STATUS.SUSPENDED, ACCOUNT_STATUS.BLOCKED];
 const VISIBLE_MENTOR_ACCOUNT =
   'user.id IS NOT NULL AND user.isActive = :mentorAccountActive AND (user.accountStatus IS NULL OR user.accountStatus NOT IN (:...hiddenAccountStatuses))';
 const VISIBLE_MENTOR_PARAMS = { mentorAccountActive: true, hiddenAccountStatuses: HIDDEN_ACCOUNT_STATUSES };
+
+/** Mentors the viewer blocked, or who blocked the viewer, are left out of every list */
+const NOT_BLOCKED_WITH_VIEWER =
+  'user.id NOT IN (SELECT b.blockedId FROM user_blocks b WHERE b.blockerId = :blockViewerId AND b.unblockedAt IS NULL) ' +
+  'AND user.id NOT IN (SELECT b2.blockerId FROM user_blocks b2 WHERE b2.blockedId = :blockViewerId AND b2.unblockedAt IS NULL)';
+const notBlockedParams = (req: Request) => ({ blockViewerId: req.user?.id ?? '' });
 
 export class MentorsController {
   private logger: Logger;
@@ -43,6 +50,7 @@ export class MentorsController {
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
         .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
+        .andWhere(NOT_BLOCKED_WITH_VIEWER, notBlockedParams(req))
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         });
@@ -145,8 +153,21 @@ export class MentorsController {
         });
       }
 
+      // Someone who blocked the viewer can't be looked up; one the viewer blocked still can
+      // (so they can see who it is and unblock)
+      const blockStatus = req.user?.id
+        ? await safetyService.blockStatus(req.user.id, mentor.userId)
+        : { blockedByMe: false, blockedMe: false };
+      if (blockStatus.blockedMe) {
+        return res.status(404).json({
+          success: false,
+          error: { message: 'Mentor not found', code: 'MENTOR_NOT_FOUND' },
+        });
+      }
+
       // Format full profile data
       const formattedMentor = {
+        blockedByMe: blockStatus.blockedByMe,
         id: mentor.id,
         userId: mentor.userId,
         firstName: mentor.user.firstName,
@@ -207,6 +228,7 @@ export class MentorsController {
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
         .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
+        .andWhere(NOT_BLOCKED_WITH_VIEWER, notBlockedParams(req))
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         });
@@ -312,6 +334,7 @@ export class MentorsController {
         .leftJoinAndSelect('profile.user', 'user')
         .where('profile.isApproved = :isApproved', { isApproved: true })
         .andWhere(VISIBLE_MENTOR_ACCOUNT, VISIBLE_MENTOR_PARAMS)
+        .andWhere(NOT_BLOCKED_WITH_VIEWER, notBlockedParams(req))
         .andWhere('profile.isOnboardingComplete = :isComplete', {
           isComplete: true,
         })

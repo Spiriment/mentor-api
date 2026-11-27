@@ -4,7 +4,7 @@
  */
 import { ADMIN_ROLE } from './constants/adminRoles';
 
-export const ADMIN_ALERT_EVENTS = ['mentor_application', 'support_ticket', 'subscription'] as const;
+export const ADMIN_ALERT_EVENTS = ['mentor_application', 'support_ticket', 'subscription', 'safety'] as const;
 export type AdminAlertEvent = (typeof ADMIN_ALERT_EVENTS)[number];
 
 export const ADMIN_ALERT_CHANNELS = ['push', 'email', 'bell'] as const;
@@ -20,6 +20,7 @@ export const EVENT_ROLES: Record<AdminAlertEvent, ADMIN_ROLE[]> = {
   mentor_application: [ADMIN_ROLE.SUPER_ADMIN, ADMIN_ROLE.SUPPORT],
   support_ticket: [ADMIN_ROLE.SUPER_ADMIN, ADMIN_ROLE.SUPPORT],
   subscription: [ADMIN_ROLE.SUPER_ADMIN],
+  safety: [ADMIN_ROLE.SUPER_ADMIN, ADMIN_ROLE.SUPPORT],
 };
 
 /**
@@ -36,6 +37,8 @@ export const DEFAULT_PREFERENCES: AdminNotificationPreferences = {
   mentor_application: { push: true, email: false, bell: false },
   support_ticket: { push: true, email: false, bell: true },
   subscription: { push: true, email: false, bell: true },
+  // User reports and blocks need a reply within a day (App Store guideline 1.2), so email too
+  safety: { push: true, email: true, bell: true },
 };
 
 /** Merge stored (possibly partial or stale) preferences over the defaults. */

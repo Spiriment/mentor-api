@@ -67,6 +67,7 @@ import {
   AdminReceipt,
   DemoVisitor,
   UserPushToken,
+  UserBlock,
 } from '@/database/entities';
 
 import { ChurchPrivacyAcceptance } from '@/church-portal/entities/churchPrivacyAcceptance.entity';
@@ -161,6 +162,7 @@ export const AppDataSource = new DataSource({
     AdminReceipt,
     DemoVisitor,
     UserPushToken,
+    UserBlock,
   ],
   migrations: [
     process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging'

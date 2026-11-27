@@ -13,6 +13,8 @@ import { MentorshipRequest, MENTORSHIP_REQUEST_STATUS } from '@/database/entitie
 import { RefreshToken } from '@/database/entities';
 import { AppError, USER_ROLE } from '@/common';
 import { adminAuditService } from './adminAudit.service';
+import { WebSocketService } from './websocket.service';
+import { logger } from '@/config/int-services';
 import {
   adminSubscriptionService,
   getEntitlementKind,
@@ -606,6 +608,16 @@ export class AdminUserService {
     }
 
     await repo.save(user);
+
+    // Sign them out everywhere now: no new tokens, and live chat/call connections close
+    if (status !== 'active') {
+      await AppDataSource.getRepository(RefreshToken).delete({ userId });
+      try {
+        WebSocketService.getInstance()?.disconnectUser(userId);
+      } catch (error) {
+        logger.warn('Could not close live connections for a suspended user', { userId });
+      }
+    }
 
     await adminAuditService.log({
       adminUserId,

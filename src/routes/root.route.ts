@@ -44,6 +44,7 @@ import aiRoutes from './ai.routes';
 import quizRoutes from './quiz.routes';
 import referralRoutes from './referral.routes';
 import marketingRoutes from './marketing.routes';
+import safetyRoutes from './safety.routes';
 
 let queueManager: QueueManager | null = null;
 let queueService: QueueService | null = null;
@@ -218,6 +219,9 @@ const createRootRoutes = () => {
 
   // Marketing (public unsubscribe, etc.)
   rootRouter.use('/api/marketing', marketingRoutes);
+
+  // Report & block
+  rootRouter.use('/api/safety', safetyRoutes);
 
   // Public email icons (store buttons in broadcasts)
   rootRouter.use(

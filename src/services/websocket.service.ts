@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import jwt from 'jsonwebtoken';
 import { Config } from '@/config';
 import { logger } from '@/config/int-services';
+import { safetyService, BLOCKED_ERROR_CODE } from './safety.service';
 import { User, Message } from '@/database/entities';
 import { ChatService } from '@/services/chat.service';
 import { pushNotificationService } from '@/services/pushNotification.service';
@@ -358,7 +359,7 @@ export class WebSocketService {
   private async handleSendMessage(
     socket: AuthenticatedSocket,
     data: any,
-    ack?: (res: { ok: boolean; message?: any; error?: string }) => void
+    ack?: (res: { ok: boolean; message?: any; error?: string; code?: string }) => void
   ) {
     try {
       const { conversationId, content, type = 'text', metadata } = data;
@@ -474,6 +475,12 @@ export class WebSocketService {
         `Message sent in conversation ${conversationId} by user ${socket.userId}`
       );
     } catch (error: any) {
+      // Blocked: say so, so the app shows it instead of retrying
+      if (error?.code === BLOCKED_ERROR_CODE) {
+        ack?.({ ok: false, error: error.message, code: BLOCKED_ERROR_CODE });
+        socket.emit('error', { message: error.message, code: BLOCKED_ERROR_CODE });
+        return;
+      }
       logger.error('Error sending message:', error);
       socket.emit('error', { message: 'Failed to send message' });
       ack?.({ ok: false, error: 'Failed to send message' });
@@ -675,6 +682,11 @@ export class WebSocketService {
           to: targetUserId,
         });
         socket.emit('error', { message: 'You can only call your mentor or mentees' });
+        return;
+      }
+      if (await safetyService.isBlockedBetween(socket.userId!, targetUserId)) {
+        // The caller's screen already ends on call-rejected (every app version)
+        socket.emit('call-rejected', { rejectorId: targetUserId, sessionId, conversationId, reason: 'blocked' });
         return;
       }
     } catch (error: any) {
@@ -899,6 +911,11 @@ export class WebSocketService {
       isStarred,
     });
     logger.info(`Broadcasted message star status: ${messageId} isStarred=${isStarred} in ${conversationId}`);
+  }
+
+  /** Close every live connection a person has (e.g. an admin suspended the account) */
+  public disconnectUser(userId: string) {
+    this.io.in(`user:${userId}`).disconnectSockets(true);
   }
 
   // Static instance helper for easy access if needed

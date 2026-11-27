@@ -1,6 +1,9 @@
 import { AppDataSource } from '@/config/data-source';
 import { MenteeReport, MenteeReportStatus } from '@/database/entities/menteeReport.entity';
 import { AppError } from '@/common';
+import { In } from 'typeorm';
+import { User } from '@/database/entities/user.entity';
+import { isReportReason, REPORT_REASONS } from '@/common/safety';
 import { adminAuditService } from './adminAudit.service';
 
 const DEFAULT_PAGE = 1;
@@ -49,7 +52,37 @@ export class AdminReportService {
       qb.andWhere('r.createdAt <= :dateTo', { dateTo: new Date(params.dateTo) });
     }
 
-    const [data, total] = await qb.getManyAndCount();
+    const [reports, total] = await qb.getManyAndCount();
+
+    // Names for both sides, looked up by id (no SQL join: see the user_blocks migration on
+    // production collations), plus how often each reported person has been reported
+    const ids = [...new Set(reports.flatMap((r) => [r.reporterId, r.reportedUserId]))];
+    const users = ids.length
+      ? await AppDataSource.getRepository(User).find({
+          where: { id: In(ids) },
+          select: ['id', 'firstName', 'lastName', 'email', 'role', 'accountStatus', 'isActive'],
+        })
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u]));
+    const reportedIds = [...new Set(reports.map((r) => r.reportedUserId))];
+    const counts = reportedIds.length
+      ? await this.repo
+          .createQueryBuilder('r')
+          .select('r.reportedUserId', 'id')
+          .addSelect('COUNT(*)', 'n')
+          .where('r.reportedUserId IN (:...reportedIds)', { reportedIds })
+          .groupBy('r.reportedUserId')
+          .getRawMany<{ id: string; n: string }>()
+      : [];
+    const reportCount = new Map(counts.map((c) => [c.id, Number(c.n)]));
+
+    const data = reports.map((r) => ({
+      ...r,
+      reasonLabel: isReportReason(r.reason) ? REPORT_REASONS[r.reason] : r.reason,
+      reporter: byId.get(r.reporterId) ?? null,
+      reportedUser: byId.get(r.reportedUserId) ?? null,
+      reportsAgainstUser: reportCount.get(r.reportedUserId) ?? 1,
+    }));
 
     return {
       data,

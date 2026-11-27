@@ -19,6 +19,7 @@ import plansRoutes from './routes/plans.routes';
 import settingsRoutes from './routes/settings.routes';
 import exportsRoutes from './routes/exports.routes';
 import reportsRoutes from './routes/reports.routes';
+import safetyRoutes from './routes/safety.routes';
 import adminUsersRoutes from './routes/adminUsers.routes';
 import profileRoutes from './routes/profile.routes';
 import notificationsRoutes from './routes/notifications.routes';
@@ -79,6 +80,7 @@ export function createAdminRouter(): Router {
   protectedAdmin.use('/settings', settingsRoutes);
   protectedAdmin.use('/exports', exportsRoutes);
   protectedAdmin.use('/reports', reportsRoutes);
+  protectedAdmin.use('/safety', safetyRoutes);
   protectedAdmin.use('/admin-users', adminUsersRoutes);
   protectedAdmin.use('/profile', profileRoutes);
   protectedAdmin.use('/notifications', notificationsRoutes);
