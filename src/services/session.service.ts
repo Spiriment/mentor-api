@@ -1454,6 +1454,24 @@ export class SessionService {
 
       // Validate mentor availability at the new requested time
       const newScheduledAtDate = new Date(newScheduledAt);
+
+      // Moving into another month uses that month's allowance (checked again on accept)
+      try {
+        await new SubscriptionService(new EmailService(null)).assertQuotaForMovedSession(
+          session.menteeId,
+          session.scheduledAt,
+          newScheduledAtDate,
+        );
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'SESSION_QUOTA_EXCEEDED' && userId === session.mentorId) {
+          throw new AppError(
+            "Your mentee has no sessions left in that month on their plan. Choose a time in the session's current month.",
+            StatusCodes.FORBIDDEN,
+            'SESSION_QUOTA_EXCEEDED',
+          );
+        }
+        throw error;
+      }
       const isAvailable = await this.isMentorAvailable(
         session.mentorId,
         newScheduledAtDate,
@@ -1875,6 +1893,14 @@ export class SessionService {
               StatusCodes.CONFLICT
             );
           }
+
+          // The month may have filled up since the request was made
+          await new SubscriptionService(new EmailService(null)).assertQuotaForMovedSession(
+            currentSession.menteeId,
+            currentSession.scheduledAt,
+            currentSession.requestedScheduledAt,
+            transactionalEntityManager,
+          );
 
           // Update session with new time within transaction
           currentSession.scheduledAt = currentSession.requestedScheduledAt;

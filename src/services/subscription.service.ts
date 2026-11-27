@@ -13,6 +13,7 @@ import { buildPricingPreview, discountCouponLabel, getSubscriptionDiscount } fro
 import { APP_DEEP_LINK_CANCEL, APP_DEEP_LINK_SUCCESS } from '@/common/constants/appDeepLinks';
 import { inferBillingIntervalFromMrr } from '@/common/constants/subscriptionMrr';
 import { logger } from '@/config/int-services';
+import { sameQuotaMonth } from '@/common/sessionQuota';
 import { familyPlanService } from './familyPlan.service';
 import { shouldIgnoreCrossProviderUpdate } from '@/common/subscription/crossProviderGuard';
 import {
@@ -149,9 +150,11 @@ export class SubscriptionService {
   }
 
   /**
-   * Sessions in the calendar month containing `inMonthOf` (default: this month). Bounded at
-   * both ends: it used to count everything from the 1st onwards, so a session booked for
-   * next month used up this month's allowance (Pro has 1 a month).
+   * The mentee's sessions in the calendar month containing `inMonthOf` (default: this month).
+   * Bounded at both ends: it used to count everything from the 1st onwards, so a session booked
+   * for next month used up this month's allowance (Pro has 1 a month).
+   * Only sessions as the mentee count: the allowance is the mentee's (mentors aren't capped),
+   * and counting hosted sessions showed mentors things like "5 of 4 used".
    */
   private async countSessionsThisMonth(
     userId: string,
@@ -167,10 +170,10 @@ export class SubscriptionService {
 
     const result = await runQuery(
       `SELECT COUNT(*) as cnt FROM sessions
-       WHERE (menteeId = ? OR mentorId = ?)
+       WHERE menteeId = ?
          AND status IN ('completed','in_progress','scheduled','confirmed')
          AND scheduledAt >= ? AND scheduledAt < ?`,
-      [userId, userId, startOfMonth, startOfNextMonth],
+      [userId, startOfMonth, startOfNextMonth],
     );
     return parseInt(result[0]?.cnt ?? '0', 10);
   }
@@ -208,6 +211,21 @@ export class SubscriptionService {
         'SESSION_QUOTA_EXCEEDED',
       );
     }
+  }
+
+  /**
+   * A session moving to another calendar month needs room in that month's allowance: otherwise
+   * rescheduling skipped the limit (move this month's session into a full month, book again).
+   * Within the same month nothing changes, so nothing is checked.
+   */
+  async assertQuotaForMovedSession(
+    menteeId: string,
+    from: Date,
+    to: Date,
+    manager?: EntityManager,
+  ): Promise<void> {
+    if (sameQuotaMonth(from, to)) return;
+    await this.assertSessionQuotaAvailable(menteeId, manager, to);
   }
 
   async completePromoRedemption(userId: string, promoCodeId: string): Promise<void> {
